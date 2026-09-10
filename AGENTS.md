@@ -65,3 +65,18 @@ For substantial implementation work, prefer a dedicated Git worktree.
 
 If the current branch is `main`, do not modify files before creating or
 switching to an appropriate branch.
+
+## Roadmap, Issues and Plans
+
+Use each artifact for its intended purpose:
+
+- `docs/roadmap.md` — project direction and future features
+- GitHub Issues — active actionable backlog items
+- `.agents/plans/` — detailed technical execution plans
+
+Do not duplicate detailed implementation plans into GitHub Issues.
+
+Do not create separate Issues for every plan step.
+
+Do not assume future roadmap items are still valid without reviewing the current
+architecture and roadmap first.
