@@ -1,0 +1,20 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+build/
+coverage/
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+*.pyc
+.DS_Store
+*.log
+# Credentials / keys
+*.pem
+*.key
+service-account*.json
+credentials*.json

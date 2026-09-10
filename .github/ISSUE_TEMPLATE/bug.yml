@@ -1,0 +1,19 @@
+name: Bug
+about: Report reproducible incorrect behavior
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: Current behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction / evidence
+    validations:
+      required: true

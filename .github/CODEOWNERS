@@ -1,0 +1,6 @@
+# Replace @YOUR_GITHUB_USERNAME before enabling required CODEOWNERS review.
+/AGENTS.md @YOUR_GITHUB_USERNAME
+/.agents/policies/ @YOUR_GITHUB_USERNAME
+/.github/workflows/ @YOUR_GITHUB_USERNAME
+/docs/decisions/ @YOUR_GITHUB_USERNAME
+/infra/ @YOUR_GITHUB_USERNAME
