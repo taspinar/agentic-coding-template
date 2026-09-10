@@ -37,3 +37,31 @@ If a material conflict remains, stop and report it.
 
 ## Context freshness
 When resuming work, compare the plan/handoff base commit with current repository state. Revalidate assumptions before continuing and update stale artifacts.
+
+## Branch and worktree policy
+
+Agents must not make repository changes directly on `main`.
+
+This applies to:
+
+- application code
+- architecture documentation
+- roadmap changes
+- ADRs
+- feature plans
+- CI/CD configuration
+- infrastructure configuration
+
+Before modifying repository files, work on an appropriate branch.
+
+Examples:
+
+- `planning/project-bootstrap`
+- `planning/issue-12-authentication`
+- `feature/12-authentication`
+- `fix/27-login-error`
+
+For substantial implementation work, prefer a dedicated Git worktree.
+
+If the current branch is `main`, do not modify files before creating or
+switching to an appropriate branch.
