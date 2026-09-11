@@ -101,8 +101,43 @@ created Issue numbers. Declining the proposal creates neither an artifact nor
 Issues. The source review remains unchanged. A separate `create-followups.sh`
 is therefore not needed.
 
-Resolve the `FIX_NOW` set recorded in the triage artifact. Run another review
-and triage when fixes require independent confirmation.
+Deferred follow-up Issue titles include deterministic provenance:
+
+```text
+[F02][R01][S9] Concise follow-up title
+```
+
+The script obtains the feature ID from the source Issue title, the review round
+from the review filename, and the finding ID from the review. When no feature
+ID is available, it falls back to the source Issue number:
+
+```text
+[#12][R01][S9] Concise follow-up title
+```
+
+Apply the approved `FIX_NOW` set from the same feature worktree:
+
+```bash
+./scripts/apply-triage.sh \
+  .agents/triage/feature-12-player-movement-review-01-triage.md \
+  codex
+```
+
+The full interface is:
+
+```text
+./scripts/apply-triage.sh <triage-file> <agent> [model]
+```
+
+The helper validates the approved artifact and source review, shows the exact
+`FIX_NOW` scope, and asks for confirmation before starting a write-capable
+agent. It never passes `DEFER` or `ACCEPT` findings to that agent. After the
+agent exits, it verifies that the review and triage artifacts are unchanged and
+runs `./scripts/verify.sh`.
+
+The helper does not commit, push, merge, deploy, or create/close Issues. Inspect
+the resulting diff and run another independent review and triage when fixes
+require confirmation.
 
 Verify again after review fixes, then commit and push:
 
@@ -137,8 +172,8 @@ repository-relative plan path; the detailed plan remains in `.agents/plans/`.
 
 Roadmap item → GitHub Issue → optional implementation plan → isolated feature
 worktree → implementation → verification → independent review when required →
-triage → resolve `FIX_NOW` findings → verification/re-review when needed →
-commit → push/PR → CI and gates → merge → automatic Issue closure → worktree
+triage → apply approved `FIX_NOW` findings → verification/re-review when needed
+→ commit → push/PR → CI and gates → merge → automatic Issue closure → worktree
 cleanup.
 
 Do not use `scripts/finish-feature.sh` as part of this flow until it has been

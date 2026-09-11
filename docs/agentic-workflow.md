@@ -6,16 +6,18 @@ Template → architecture/roadmap → necessary ADRs → GitHub Issues.
 ## Feature lifecycle
 Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
 branch/worktree → implementation → local verification → independent review
-when required → review triage → fix-now work → verification/re-review when
-needed → commit → push/PR → CI → human gate where required → merge → automatic
-Issue closure → cleanup.
+when required → review triage → approved fix-now application →
+verification/re-review when needed → commit → push/PR → CI → human gate where
+required → merge → automatic Issue closure → cleanup.
 
 Independent review happens before the implementation commit so it can include
 uncommitted working-tree changes. `triage-review.sh` classifies every finding as
 `FIX_NOW`, `DEFER`, or `ACCEPT` and displays the proposal before side effects.
 Critical and Major findings must be `FIX_NOW`. Human approval is required
-before triage artifacts or deferred follow-up Issues are created. See
-`docs/development.md` for the concrete commands.
+before triage artifacts or provenance-prefixed deferred follow-up Issues are
+created. `apply-triage.sh` requires the approved artifact explicitly and starts
+a write-capable agent for only its `FIX_NOW` scope after a second confirmation.
+See `docs/development.md` for the concrete commands.
 
 ## Persistent state
 - GitHub Issue: what/why, acceptance criteria, priority/status.

@@ -31,7 +31,8 @@ Every decision requires a concise rationale.
 
 For `DEFER`, also propose:
 
-- a concise GitHub Issue title
+- a concise GitHub Issue title without feature, review, or finding prefixes;
+  the calling script adds deterministic provenance
 - a recommended action
 - practical acceptance criteria
 

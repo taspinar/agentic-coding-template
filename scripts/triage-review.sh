@@ -72,7 +72,9 @@ trap 'rm -rf "$tmp_work"' EXIT
 
 findings_file="$tmp_work/findings.tsv"
 decisions_file="$tmp_work/decisions.tsv"
+followup_titles_file="$tmp_work/followup-titles.tsv"
 mapping_file="$tmp_work/mappings.tsv"
+: >"$followup_titles_file"
 : >"$mapping_file"
 
 if ! awk -v output="$findings_file" '
@@ -228,8 +230,17 @@ if [[ -z "$source_issue" ]]; then
 fi
 
 source_issue_context="Not available."
+source_issue_title=""
+feature_ref=""
 if [[ -n "$source_issue" ]]; then
-  source_issue_context="$(gh issue view "$source_issue" --json title,body --jq '"Title: \(.title)\n\n\(.body)')"
+  source_issue_context="$(gh issue view "$source_issue" \
+    --json title,body \
+    --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')"
+  source_issue_title="${source_issue_context%%$'\n'*}"
+  source_issue_title="${source_issue_title#Title: }"
+  if [[ "$source_issue_title" =~ (^|[^[:alnum:]])(F[0-9]+)([^[:alnum:]]|$) ]]; then
+    feature_ref="${BASH_REMATCH[2]}"
+  fi
 fi
 
 reviewer_verdict="$(awk '
@@ -248,6 +259,11 @@ reviewer_verdict="$(awk '
 reviewer_verdict="${reviewer_verdict:-Not recorded}"
 
 review_relative="${review_path#"$root"/}"
+review_stem="$(basename "$review_path" .md)"
+review_ref=""
+if [[ "$review_stem" =~ review-([0-9]+) ]]; then
+  printf -v review_ref 'R%02d' "$((10#${BASH_REMATCH[1]}))"
+fi
 findings_manifest="$(<"$findings_file")"
 if [[ -z "$findings_manifest" ]]; then
   findings_manifest="(empty)"
@@ -403,11 +419,44 @@ if ! awk -F '\t' '
   exit 1
 fi
 
+while IFS=$'\t' read -r key decision rationale proposed_issue_title recommended_action acceptance_criteria; do
+  [[ "$decision" == "DEFER" ]] || continue
+
+  finding_id="$(awk -F '\t' -v wanted="$key" '$1 == wanted { print $3; exit }' "$findings_file")"
+  finding_ref="${finding_id// /-}"
+  if [[ "$finding_id" =~ ^Suggestion[[:space:]]+([0-9]+)$ ]]; then
+    finding_ref="S${BASH_REMATCH[1]}"
+  elif [[ "$finding_id" =~ ^Critical[[:space:]]+([0-9]+)$ ]]; then
+    finding_ref="C${BASH_REMATCH[1]}"
+  elif [[ "$finding_id" =~ ^Major[[:space:]]+([0-9]+)$ ]]; then
+    finding_ref="M${BASH_REMATCH[1]}"
+  elif [[ "$finding_id" =~ ^Minor[[:space:]]+([0-9]+)$ ]]; then
+    finding_ref="Minor-${BASH_REMATCH[1]}"
+  fi
+
+  prefixed_issue_title=""
+  if [[ -n "$feature_ref" ]]; then
+    prefixed_issue_title="[$feature_ref]"
+  elif [[ -n "$source_issue" ]]; then
+    prefixed_issue_title="[#$source_issue]"
+  fi
+  if [[ -n "$review_ref" ]]; then
+    prefixed_issue_title+="[$review_ref]"
+  fi
+  prefixed_issue_title+="[$finding_ref] $proposed_issue_title"
+
+  printf '%s\t%s\n' "$key" "$prefixed_issue_title" >>"$followup_titles_file"
+done <"$decisions_file"
+
 render_proposal() {
   awk -F '\t' '
     FILENAME == ARGV[1] {
       id[$1] = $3
       title[$1] = $4
+      next
+    }
+    FILENAME == ARGV[3] {
+      followup_title[$1] = $2
       next
     }
     $0 == "NO_FINDINGS" {
@@ -431,12 +480,15 @@ render_proposal() {
           for (i = 1; i <= count[group]; i++) {
             finding_key = key[group, i]
             printf "- %s %s — %s\n", id[finding_key], title[finding_key], rationale[finding_key]
+            if (group == "DEFER") {
+              printf "  Follow-up Issue: %s\n", followup_title[finding_key]
+            }
           }
         }
         print ""
       }
     }
-  ' "$findings_file" "$decisions_file"
+  ' "$findings_file" "$decisions_file" "$followup_titles_file"
 }
 
 echo
@@ -461,7 +513,6 @@ esac
 
 triage_dir="$root/.agents/triage"
 mkdir -p "$triage_dir"
-review_stem="$(basename "$review_path" .md)"
 artifact="$triage_dir/${review_stem}-triage.md"
 artifact_number=2
 while [[ -e "$artifact" ]]; do
@@ -506,6 +557,10 @@ append_artifact_group() {
         line[$1] = $5
         next
       }
+      FILENAME == ARGV[3] {
+        followup_title[$1] = $2
+        next
+      }
       $0 == "NO_FINDINGS" {
         next
       }
@@ -517,7 +572,7 @@ append_artifact_group() {
         printf "- Source line: %s\n", line[$1]
         printf "- Rationale: %s\n", $3
         if ($2 == "DEFER") {
-          printf "- Proposed Issue: %s\n", $4
+          printf "- Proposed Issue: %s\n", followup_title[$1]
           printf "- Recommended action: %s\n", $5
           printf "- Acceptance criteria: %s\n", $6
           print "- Created Issue: see Traceability"
@@ -530,7 +585,7 @@ append_artifact_group() {
           print ""
         }
       }
-    ' "$findings_file" "$decisions_file"
+    ' "$findings_file" "$decisions_file" "$followup_titles_file"
   } >>"$artifact"
 }
 
@@ -543,9 +598,10 @@ append_artifact_group "ACCEPT" "Accepted"
   echo
 } >>"$artifact"
 
-while IFS=$'\t' read -r key decision rationale issue_title recommended_action acceptance_criteria; do
+while IFS=$'\t' read -r key decision rationale proposed_issue_title recommended_action acceptance_criteria; do
   [[ "$decision" == "DEFER" ]] || continue
 
+  issue_title="$(awk -F '\t' -v wanted="$key" '$1 == wanted { print $2; exit }' "$followup_titles_file")"
   finding_record="$(awk -F '\t' -v wanted="$key" '$1 == wanted { print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6; exit }' "$findings_file")"
   IFS=$'\t' read -r severity finding_id finding_title source_line source_type <<<"$finding_record"
   trace_token="triage-source:${review_relative}#${key}"
