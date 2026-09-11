@@ -19,9 +19,14 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    ```bash
    ./scripts/verify.sh
    ./scripts/review-feature.sh 12 claude
+   ./scripts/triage-review.sh \
+     .agents/reviews/feature-12-player-movement-review-01.md \
+     codex
    ```
 
-7. Resolve Critical/Major findings, resolve or explicitly defer Minor findings, and verify again.
+7. Approve the proposed triage, resolve `FIX_NOW` findings, and verify again.
+   Approved `DEFER` findings become linked follow-up Issues; `ACCEPT` findings
+   retain their rationale in the triage artifact.
 8. Commit, push, and open a PR containing `Closes #12`. After CI and required gates pass, merge the PR and clean up the worktree.
 
 See `docs/development.md` for commands, `docs/agentic-workflow.md` for the lifecycle, and `.agents/policies/` for boundaries.
