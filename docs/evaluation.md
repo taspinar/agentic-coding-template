@@ -26,5 +26,7 @@ decline the proposed decisions.
   accepted with a rationale.
 
 The approved `.agents/triage/` artifact is the source of truth for these
-decisions. After resolving `FIX_NOW` findings, run `./scripts/verify.sh` again
+decisions. Use `./scripts/apply-triage.sh` to hand only its `FIX_NOW` scope to a
+write-capable implementation agent. The helper verifies the result but does not
+commit it. Inspect the diff and run a new independent review/triage when needed
 before committing.

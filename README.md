@@ -24,7 +24,16 @@ A lightweight, model-agnostic repository template for agentic software engineeri
      codex
    ```
 
-7. Approve the proposed triage, resolve `FIX_NOW` findings, and verify again.
+7. Approve the proposed triage and apply its `FIX_NOW` scope:
+
+   ```bash
+   ./scripts/apply-triage.sh \
+     .agents/triage/feature-12-player-movement-review-01-triage.md \
+     codex
+   ```
+
+   The script starts a write-capable agent only after confirmation and verifies
+   the resulting implementation.
    Approved `DEFER` findings become linked follow-up Issues; `ACCEPT` findings
    retain their rationale in the triage artifact.
 8. Commit, push, and open a PR containing `Closes #12`. After CI and required gates pass, merge the PR and clean up the worktree.

@@ -292,7 +292,7 @@ Review triage with human approval
     ↓
 Create approved deferred follow-up Issues
     ↓
-Fix FIX_NOW findings
+Apply approved FIX_NOW findings
     ↓
 Verification
     ↓
