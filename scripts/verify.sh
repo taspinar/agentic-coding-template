@@ -21,4 +21,15 @@ else
   test -f .agents/prompts/reviewer.md
 fi
 
+echo "Checking shell scripts."
+shell_files=(scripts/*.sh tests/*.sh)
+for shell_file in "${shell_files[@]}"; do
+  [[ -f "$shell_file" ]] || continue
+  bash -n "$shell_file"
+done
+
+if [[ -x tests/triage-review-test.sh ]]; then
+  ./tests/triage-review-test.sh
+fi
+
 echo "Verification completed. Customize scripts/verify.sh for this project's stack."

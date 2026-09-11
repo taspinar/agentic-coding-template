@@ -288,7 +288,11 @@ Local verification
     ↓
 Independent AI review when required
     ↓
-Fix findings or explicitly defer eligible findings
+Review triage with human approval
+    ↓
+Create approved deferred follow-up Issues
+    ↓
+Fix FIX_NOW findings
     ↓
 Verification
     ↓

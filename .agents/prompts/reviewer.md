@@ -6,6 +6,12 @@ Read `AGENTS.md`, the issue, active plan, relevant architecture/ADRs, and `docs/
 
 Report findings as **Critical**, **Major**, **Minor**, or **Suggestion**. For each finding include evidence/file location, why it matters, and a recommended action. Check correctness, issue/plan compliance, architecture, security, edge cases, test coverage, reliability, and unnecessary complexity.
 
+Place every finding under its matching `## Critical`, `## Major`, `## Minor`,
+or `## Suggestions` section and give it a stable heading such as
+`### C1. Title`, `### M1. Title`, `### Minor 1. Title`, or `### S1. Title`.
+Write `None.` when a section has no findings. These identifiers are preserved
+by review triage and follow-up Issues.
+
 If a review artifact path is provided, write the final review there and do not modify other files.
 
 End with a verdict: `PASS`, `PASS WITH MINOR FINDINGS`, or `CHANGES REQUIRED`.

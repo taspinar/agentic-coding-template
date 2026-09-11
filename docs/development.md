@@ -66,10 +66,43 @@ numbered artifacts without overwriting earlier reviews:
 .agents/reviews/feature-12-player-movement-review-02.md
 ```
 
-Resolve all Critical and Major findings. Resolve Minor findings or defer them
-explicitly to a linked follow-up Issue with the reason recorded in the review
-artifact or PR. Suggestions are optional unless they are accepted into scope.
-Run another review when fixes require independent confirmation.
+Triage an explicit review artifact with an agent independent from the
+implementation:
+
+```bash
+./scripts/triage-review.sh \
+  .agents/reviews/feature-12-player-movement-review-01.md \
+  codex
+```
+
+The full interface is:
+
+```text
+./scripts/triage-review.sh <review-file> <agent> [model]
+```
+
+The triage agent classifies every finding as:
+
+- `FIX_NOW`: resolve before the feature proceeds. Critical and Major findings
+  always use this category.
+- `DEFER`: valid non-blocking work proposed as a separate follow-up Issue.
+- `ACCEPT`: consciously take no action, with an explicit rationale.
+
+The script displays the complete proposal before side effects. Only after
+interactive approval does it create one GitHub Issue per `DEFER` finding and
+write a persistent, uniquely named artifact such as:
+
+```text
+.agents/triage/feature-12-player-movement-review-01-triage.md
+```
+
+That artifact maps the source review findings to their decisions and any
+created Issue numbers. Declining the proposal creates neither an artifact nor
+Issues. The source review remains unchanged. A separate `create-followups.sh`
+is therefore not needed.
+
+Resolve the `FIX_NOW` set recorded in the triage artifact. Run another review
+and triage when fixes require independent confirmation.
 
 Verify again after review fixes, then commit and push:
 
@@ -104,8 +137,9 @@ repository-relative plan path; the detailed plan remains in `.agents/plans/`.
 
 Roadmap item → GitHub Issue → optional implementation plan → isolated feature
 worktree → implementation → verification → independent review when required →
-finding resolution or explicit deferral → verification → commit → push/PR →
-CI and gates → merge → automatic Issue closure → worktree cleanup.
+triage → resolve `FIX_NOW` findings → verification/re-review when needed →
+commit → push/PR → CI and gates → merge → automatic Issue closure → worktree
+cleanup.
 
 Do not use `scripts/finish-feature.sh` as part of this flow until it has been
 redesigned or deprecated; its interface predates the current review script.

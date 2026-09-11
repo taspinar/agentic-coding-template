@@ -29,8 +29,9 @@ If a material conflict remains, stop and report it.
 - Verification evidence is recorded in the active plan or PR.
 - Required independent review is complete and no Critical or Major findings
   remain unresolved.
-- Deferred Minor findings have a linked follow-up Issue and an explicit reason
-  recorded in the review artifact or PR.
+- Required review findings have an approved triage artifact.
+- Deferred findings have a linked follow-up Issue; accepted findings have an
+  explicit rationale.
 
 ## Boundaries
 - Never push directly to `main`.

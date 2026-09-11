@@ -6,13 +6,15 @@ Template → architecture/roadmap → necessary ADRs → GitHub Issues.
 ## Feature lifecycle
 Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
 branch/worktree → implementation → local verification → independent review
-when required → fixes or explicit deferral → verification → commit → push/PR →
-CI → human gate where required → merge → automatic Issue closure → cleanup.
+when required → review triage → fix-now work → verification/re-review when
+needed → commit → push/PR → CI → human gate where required → merge → automatic
+Issue closure → cleanup.
 
 Independent review happens before the implementation commit so it can include
-uncommitted working-tree changes. Critical and Major findings must be resolved.
-Minor findings may be deferred to a linked follow-up Issue with an explicit
-reason. Suggestions are optional unless accepted into scope. See
+uncommitted working-tree changes. `triage-review.sh` classifies every finding as
+`FIX_NOW`, `DEFER`, or `ACCEPT` and displays the proposal before side effects.
+Critical and Major findings must be `FIX_NOW`. Human approval is required
+before triage artifacts or deferred follow-up Issues are created. See
 `docs/development.md` for the concrete commands.
 
 ## Persistent state
@@ -23,6 +25,7 @@ reason. Suggestions are optional unless accepted into scope. See
 - `.agents/plans/`: active implementation state for complex work.
 - `.agents/handoffs/`: compressed continuation context.
 - `.agents/reviews/`: temporary independent-review artifacts.
+- `.agents/triage/`: approved finding decisions and deferred-Issue traceability.
 - `.agents/lessons/`: recurring failure lessons awaiting/promoting durable rules.
 - Git history: what actually changed.
 - PR + CI: review discussion and deterministic evidence.
