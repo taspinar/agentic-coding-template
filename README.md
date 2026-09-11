@@ -5,12 +5,23 @@ A lightweight, model-agnostic repository template for agentic software engineeri
 ## Start a new project
 1. Create a repository from this GitHub template (or clone it and point it at a new remote).
 2. Replace placeholder project information in `README.md`, `docs/architecture.md`, and `.env.example`.
-3. Ask a planning agent to inspect the repo and create `docs/roadmap.md`, update `docs/architecture.md`, and propose only necessary ADRs. Do **not** create detailed plans for every future feature.
-4. Create GitHub Issues for actionable features.
-5. For a selected non-trivial issue, create `.agents/plans/<issue>-<slug>.md` using `.agents/prompts/planner.md`.
-6. Run `./scripts/start-feature.sh <issue> <slug>` to create an isolated worktree.
-7. Start an implementation agent in that worktree using `.agents/prompts/implementer.md`.
-8. Run `./scripts/verify.sh`, commit a stable implementation, then run an independent review using `.agents/prompts/reviewer.md` (or configure `review-feature.sh`).
-9. Address findings, verify again, push, open a PR, let GitHub Actions run, then merge after the appropriate human gate.
+3. Complete `docs/repository-setup.md`, create `planning/project-bootstrap`, and ask a planning agent to create the initial roadmap and architecture artifacts. Merge that planning work through a PR before feature development.
+4. Create a GitHub Issue for the next actionable feature. For non-trivial work, create `.agents/plans/<issue>-<slug>.md` using `.agents/prompts/planner.md`.
+5. Start the feature and implementation agent:
 
-See `docs/agentic-workflow.md` for the lifecycle and `.agents/policies/` for boundaries.
+   ```bash
+   ./scripts/start-feature.sh 12 player-movement codex
+   ```
+
+   This creates `feature/12-player-movement` in an isolated worktree and starts the selected `codex` or `claude` agent there.
+6. In the feature worktree, verify and run an independent review when required by `.agents/policies/autonomy.md`:
+
+   ```bash
+   ./scripts/verify.sh
+   ./scripts/review-feature.sh 12 claude
+   ```
+
+7. Resolve Critical/Major findings, resolve or explicitly defer Minor findings, and verify again.
+8. Commit, push, and open a PR containing `Closes #12`. After CI and required gates pass, merge the PR and clean up the worktree.
+
+See `docs/development.md` for commands, `docs/agentic-workflow.md` for the lifecycle, and `.agents/policies/` for boundaries.

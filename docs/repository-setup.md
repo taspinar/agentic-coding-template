@@ -278,7 +278,7 @@ Recommended lifecycle:
 ``` text
 GitHub Issue
     ↓
-Feature plan
+Feature plan when warranted
     ↓
 Feature branch / worktree
     ↓
@@ -286,13 +286,13 @@ Implementation
     ↓
 Local verification
     ↓
-Commit
+Independent AI review when required
     ↓
-Independent AI review
-    ↓
-Fix findings
+Fix findings or explicitly defer eligible findings
     ↓
 Verification
+    ↓
+Commit
     ↓
 Push
     ↓
@@ -301,6 +301,10 @@ Pull Request
 GitHub Actions
     ↓
 Merge
+    ↓
+Automatic Issue closure
+    ↓
+Worktree cleanup
 ```
 
 Pull Requests should reference their issue.

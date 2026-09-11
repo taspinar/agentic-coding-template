@@ -4,7 +4,16 @@
 Template → architecture/roadmap → necessary ADRs → GitHub Issues.
 
 ## Feature lifecycle
-Issue → feature plan (when warranted) → isolated branch/worktree → implementation → local verification → stable commit → independent review → fixes → verification → push/PR → CI → human gate where required → merge → cleanup.
+Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
+branch/worktree → implementation → local verification → independent review
+when required → fixes or explicit deferral → verification → commit → push/PR →
+CI → human gate where required → merge → automatic Issue closure → cleanup.
+
+Independent review happens before the implementation commit so it can include
+uncommitted working-tree changes. Critical and Major findings must be resolved.
+Minor findings may be deferred to a linked follow-up Issue with an explicit
+reason. Suggestions are optional unless accepted into scope. See
+`docs/development.md` for the concrete commands.
 
 ## Persistent state
 - GitHub Issue: what/why, acceptance criteria, priority/status.
@@ -78,6 +87,8 @@ F05
 GitHub Issues:
 #1 F01 — active
 #2 F02 — optional next
+```
+
 Before starting F03, review the roadmap again and only then create its Issue.
 
 GitHub Issues are the actionable source of truth once created.

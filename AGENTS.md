@@ -27,6 +27,10 @@ If a material conflict remains, stop and report it.
 - No unrelated changes are included.
 - Docs/ADRs are updated when architecture or behavior changed.
 - Verification evidence is recorded in the active plan or PR.
+- Required independent review is complete and no Critical or Major findings
+  remain unresolved.
+- Deferred Minor findings have a linked follow-up Issue and an explicit reason
+  recorded in the review artifact or PR.
 
 ## Boundaries
 - Never push directly to `main`.
