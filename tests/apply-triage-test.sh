@@ -203,7 +203,17 @@ fi
 exit "${MOCK_AGENT_EXIT:-0}"
 CLAUDE
 
-chmod +x "$tmp/bin/gh" "$tmp/bin/codex" "$tmp/bin/claude"
+real_git="$(command -v git)"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  'if [[ "${1:-} ${2:-}" == "branch --show-current" ]]; then' \
+  '  echo "feature/13-apply-test"' \
+  '  exit 0' \
+  'fi' \
+  "exec \"$real_git\" \"\$@\"" >"$tmp/bin/git"
+
+chmod +x "$tmp/bin/gh" "$tmp/bin/git" "$tmp/bin/codex" "$tmp/bin/claude"
 
 review_hash_before="$(git hash-object "$review")"
 triage_hash_before="$(git hash-object "$triage")"

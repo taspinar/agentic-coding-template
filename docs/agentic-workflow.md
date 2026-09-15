@@ -1,7 +1,9 @@
 # Agentic Development Workflow
 
 ## Project bootstrap
-Template → architecture/roadmap → necessary ADRs → GitHub Issues.
+Template → Project Grill → draft project requirements → human approval →
+architecture/roadmap and necessary ADRs → planning PR → GitHub Issues for
+ready work.
 
 ## Feature lifecycle
 Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
@@ -41,24 +43,37 @@ Recommended sequence:
 
 1. Create the repository from this template.
 2. Complete `docs/repository-setup.md`.
-3. Create a branch:
+3. Run the bootstrap entrypoint with an explicit agent and model:
 
-   `planning/project-bootstrap`
+   `./scripts/start-planning.sh codex astra`
 
-4. Run the project planner.
-5. The planner may create or update:
+   or:
+
+   `./scripts/start-planning.sh claude fable`
+
+4. The script creates `planning/project-bootstrap` in an isolated sibling
+   worktree from the current `origin/main`.
+5. Project Grill asks material project-level questions and writes:
+
+   - `docs/PROJECT_REQUIREMENTS.md`
+
+6. Review the proposed requirements. The script records approval only after an
+   explicit human confirmation.
+7. A separate project-planner session may then create or update:
    - `docs/architecture.md`
    - `docs/roadmap.md`
    - required ADRs under `docs/decisions/`
 
-6. Review the bootstrap artifacts.
-7. Commit and push the planning branch.
-8. Open a Pull Request.
-9. Merge the approved bootstrap into `main`.
-10. Convert roadmap items into GitHub Issues.
-11. Start feature development.
+8. Review and verify the bootstrap artifacts.
+9. Commit and push the planning branch.
+10. Open a Pull Request.
+11. Merge the approved bootstrap into `main`.
+12. Convert only ready roadmap items into GitHub Issues.
+13. Start feature clarification and development.
 
-Do not begin feature implementation during project bootstrap.
+Declining requirements approval or an agent failure preserves the worktree and
+stops later phases. The script does not fall back to another model, implement
+features, create Issues, commit, push, open or merge a PR, or deploy.
 
 ## Roadmap to GitHub Issues
 
