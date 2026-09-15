@@ -36,4 +36,8 @@ if [[ -x tests/apply-triage-test.sh && "${APPLY_TRIAGE_TEST_ACTIVE:-0}" != "1" ]
   ./tests/apply-triage-test.sh
 fi
 
+if [[ -x tests/start-planning-test.sh && "${APPLY_TRIAGE_TEST_ACTIVE:-0}" != "1" ]]; then
+  ./tests/start-planning-test.sh
+fi
+
 echo "Verification completed. Customize scripts/verify.sh for this project's stack."

@@ -10,6 +10,72 @@
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.
 
+## Project bootstrap workflow
+
+Run project bootstrap from a clean checkout after recording the initial project
+idea and completing `docs/repository-setup.md`:
+
+```bash
+./scripts/start-planning.sh codex astra
+```
+
+Or use Claude:
+
+```bash
+./scripts/start-planning.sh claude fable
+```
+
+The full interface is:
+
+```text
+./scripts/start-planning.sh <agent> <model> [name]
+```
+
+The optional name defaults to `project-bootstrap`. A custom planning cycle such
+as:
+
+```bash
+./scripts/start-planning.sh codex astra architecture-refresh
+```
+
+creates `planning/architecture-refresh` in a sibling worktree named
+`../<repository>-planning-architecture-refresh`.
+
+The script fetches `origin/main` and creates the planning branch from that
+remote ref without switching or modifying the primary checkout. It refuses a
+dirty checkout, unsafe name, missing agent or prompt, unavailable base,
+duplicate branch, or existing target path.
+
+Bootstrap has two separate interactive agent sessions:
+
+1. Project Grill reads the project context, asks only questions that materially
+   affect product or technical direction, and refines
+   `docs/PROJECT_REQUIREMENTS.md` in Draft state.
+2. The script validates and displays the requirements. It records Approved
+   status and a UTC timestamp only after explicit human confirmation.
+3. A fresh project-planner session consumes the approved requirements and
+   creates or updates `docs/architecture.md`, `docs/roadmap.md`, and only
+   necessary ADRs under `docs/decisions/`.
+
+Declining requirements approval or an agent failure stops the workflow and
+leaves the planning worktree intact. Inspect or revise it there; the script
+never substitutes another model or removes user work automatically.
+
+After successful planning, review the artifacts and complete the process
+manually:
+
+```bash
+cd ../<repository>-planning-project-bootstrap
+./scripts/verify.sh
+git add docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions
+git commit -m "Plan project bootstrap"
+git push -u origin planning/project-bootstrap
+```
+
+Open and merge a planning PR before creating Issues for actionable roadmap
+features. The script never implements features, creates Issues, commits,
+pushes, opens or merges a PR, or deploys.
+
 ## Canonical feature workflow
 
 Start with an actionable GitHub Issue. Create a detailed implementation plan

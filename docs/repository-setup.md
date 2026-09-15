@@ -246,6 +246,17 @@ Do not replace GitHub Issues with local feature files.
 
 Never implement directly on `main`.
 
+Bootstrap a new project first with:
+
+``` text
+./scripts/start-planning.sh codex astra
+```
+
+This creates `planning/project-bootstrap` in an isolated sibling worktree,
+runs Project Grill, requires approval of `docs/PROJECT_REQUIREMENTS.md`, and
+then starts architecture and roadmap planning. Merge the verified planning
+branch through a Pull Request before creating feature Issues.
+
 Use:
 
 ``` text
