@@ -522,11 +522,21 @@ git push -u origin feature/12-player-movement
 
 Open a PR containing `Closes #12`. After CI and required human gates pass,
 merge it; GitHub then closes the linked Issue. From the primary checkout,
-remove the merged worktree:
+remove the merged worktree and its branch:
 
 ```bash
-./scripts/cleanup-worktree.sh ../project-12-player-movement
+./scripts/cleanup-worktree.sh 12
 ```
+
+The script asks GitHub whether the branch's pull request is merged, so it also
+works after a squash merge. It refuses an unmerged worktree, a branch with
+commits after its merged pull request, and a worktree with uncommitted changes;
+ignored review and triage files do not count. After removing the worktree and
+the local branch it fast-forwards `main` when the primary checkout is a clean
+checkout of `main`. A planning worktree is cleaned with
+`./scripts/cleanup-worktree.sh planning/<name>`, every merged worktree at once
+with `--merged`, and an abandoned, unmerged one with `--discard` after
+confirmation.
 
 ## Linking a feature plan
 

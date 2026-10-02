@@ -212,4 +212,5 @@ echo "  git push -u origin \"$branch\""
 echo
 echo "Open the planning PR; $PLANNING_APPROVAL_FILE summarizes the review rounds and the"
 echo "findings that were not adopted for its description. After the merge, create"
-echo "feature Issues with ./scripts/create-feature-issue.sh <feature-id>."
+echo "feature Issues with ./scripts/create-feature-issue.sh <feature-id>, and remove"
+echo "this worktree from the primary checkout with ./scripts/cleanup-worktree.sh $branch."

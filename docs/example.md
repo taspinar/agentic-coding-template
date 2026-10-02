@@ -139,7 +139,7 @@ its description, and merge it after CI. Remove the planning worktree from the
 primary checkout:
 
 ```bash
-./scripts/cleanup-worktree.sh ../recipe-box-planning-project-bootstrap
+./scripts/cleanup-worktree.sh planning/project-bootstrap
 ```
 
 ## 4. Start the first feature
@@ -241,7 +241,7 @@ Open a pull request containing `Closes #12` and merge it after CI. Remove the
 worktree from the primary checkout:
 
 ```bash
-./scripts/cleanup-worktree.sh ../recipe-box-12-recipes
+./scripts/cleanup-worktree.sh 12
 ```
 
 The next feature starts again at step 4 with `create-feature-issue.sh F02`.

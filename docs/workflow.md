@@ -102,8 +102,8 @@ flowchart TD
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - After `finish-feature.sh`, push the branch, open a pull request containing
-  `Closes #<issue>`, and merge it after CI. Then remove the worktree with
-  `cleanup-worktree.sh`.
+  `Closes #<issue>`, and merge it after CI. Then remove the worktree and its
+  branch with `cleanup-worktree.sh <issue>`.
 
 ## Artifacts
 
@@ -215,4 +215,4 @@ tools.
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |
 | `update-issue-with-plan.sh <issue> <plan>` | To link an optional feature plan in `.agents/plans/` to its Issue |
-| `cleanup-worktree.sh <path>` | After a merge, from the primary checkout, to remove the worktree |
+| `cleanup-worktree.sh <issue>`, `planning/<name>`, or `--merged` | After a merge, from the primary checkout: removes the worktree and its branch once GitHub reports the pull request as merged, and updates `main` |
