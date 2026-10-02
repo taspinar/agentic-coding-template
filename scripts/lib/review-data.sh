@@ -301,8 +301,11 @@ triage_artifact_errors() {
     if type != "object" or .schema != "triage/v1" then
       "the file is not a triage/v1 artifact"
     else
-      unexpected(["approved_at", "decisions", "issue", "review_verdict", "reviewed_tree",
+      unexpected(["approved_at", "decisions", "issue", "published_at", "review_verdict", "reviewed_tree",
                   "schema", "source_review", "triage"]; "the triage"),
+      (if .published_at == null or ((.published_at | type) == "string"
+          and (.published_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))) then empty
+       else "published_at must be a UTC timestamp" end),
       (if (.approved_at | type) == "string"
           and (.approved_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) then empty
        else "the triage has no valid UTC approval timestamp" end),

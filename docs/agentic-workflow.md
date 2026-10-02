@@ -9,7 +9,7 @@ ready work.
 Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
 branch/worktree → implementation → local verification → independent review
 when required → review triage → approved fix-now application →
-verification/re-review when needed → commit → push/PR → CI → human gate where
+verification/re-review when needed → `finish-feature.sh` → push/PR → CI → human gate where
 required → merge → automatic Issue closure → cleanup.
 
 Independent review happens before the implementation commit so it can include
