@@ -152,6 +152,20 @@ repo="$(setup_repo create)"
 MOCK_AGENT_ACTION="printf 'created by the reviewer\n' >'$repo/reviewer-note.txt'" \
   expect_no_review "$repo" "the reviewer created a file" 7
 
+# A reviewer that changes an earlier review artifact is detected, although
+# artifacts are not part of the reviewed content.
+repo="$(setup_repo modifies-artifact)"
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "the first review round failed"
+}
+earlier="$repo/.agents/reviews/feature-7-marker-review-01.json"
+if MOCK_AGENT_ACTION="printf ' ' >>'$earlier'" run_review "$repo" 7; then
+  fail "a reviewer that changed an earlier review artifact was accepted"
+fi
+[[ ! -e "$repo/.agents/reviews/feature-7-marker-review-02.json" ]] ||
+  fail "a review was stored although the reviewer changed an earlier review artifact"
+
 # A failed reviewer stores nothing.
 repo="$(setup_repo agent-fails)"
 MOCK_AGENT_EXIT=43 expect_no_review "$repo" "the reviewer failed" 7

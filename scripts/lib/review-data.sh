@@ -169,7 +169,10 @@ review_artifact_errors() {
       "the file is not a review/v1 artifact"
     else
       unexpected(["base", "branch", "created_at", "findings", "head", "issue", "limitations",
-                  "merge_base", "reviewed_tree", "reviewer", "round", "schema", "verdict"]; "the review"),
+                  "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "verdict"]; "the review"),
+      (if .reviewed_paths == null
+          or ((.reviewed_paths | type) == "array" and (.reviewed_paths | length) > 0 and (.reviewed_paths | all(nonempty))) then empty
+       else "reviewed_paths must be null or a non-empty list of paths" end),
       (if (.issue | positive_integer) then empty else "issue must be a positive integer" end),
       (if (.round | positive_integer) then empty else "round must be a positive integer" end),
       (("branch", "base", "merge_base", "head", "reviewed_tree", "created_at") as $field |

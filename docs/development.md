@@ -336,6 +336,28 @@ fields the scripts own, so editing a stored artifact cannot weaken a decision.
 Documents that people maintain, such as the roadmap, requirements, and
 architecture, keep Markdown as their source.
 
+### When a review becomes stale
+
+Every review records a fingerprint of what it reviewed (`reviewed_tree`): the
+Git tree hash of the file contents at review time, including uncommitted and
+untracked changes. Review and triage artifacts and ignored files are not part
+of it, except files Git already tracks. A review may instead cover an explicit
+list of files (`reviewed_paths`); then only those files count.
+
+The fingerprint depends on content, not on commits. Committing the reviewed
+content keeps the review current; changing, adding, or deleting a covered file
+makes it stale. `triage-review.sh` and `apply-triage.sh` refuse a stale review
+before they start an agent. After `apply-triage.sh` changes the code, the
+review is stale by design: run a new review when the fixes need confirmation.
+
+Check a review yourself with:
+
+```bash
+./scripts/check-review.sh .agents/reviews/feature-12-player-movement-review-01.json
+```
+
+It exits 0 when the review is current, 1 when it is stale, and 2 on an error.
+
 Verify again after review fixes, then commit and push:
 
 ```bash

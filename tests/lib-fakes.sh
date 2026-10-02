@@ -88,3 +88,26 @@ copy_workflow() {
   cp "$source_root"/.agents/prompts/*.md "$repo/.agents/prompts/"
   cp "$source_root"/.agents/schemas/*.json "$repo/.agents/schemas/"
 }
+
+# record_reviewed_tree <repo> <review-json> [triage-json]
+# Stores the current fingerprint of the repository as the reviewed tree of a
+# fixture review, and copies it into a triage fixture, so the review is current.
+record_reviewed_tree() {
+  local repo="$1"
+  local review="$2"
+  local triage="${3:-}"
+  local scratch
+  local tree
+
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/fingerprint.XXXXXX")"
+  tree="$(
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/scripts/lib/fingerprint.sh"
+    fingerprint_worktree "$repo" "$scratch"
+  )"
+  rm -rf "$scratch"
+
+  jq --arg tree "$tree" '.reviewed_tree = $tree' "$review" >"$review.tmp" && mv "$review.tmp" "$review"
+  if [[ -n "$triage" ]]; then
+    jq --arg tree "$tree" '.reviewed_tree = $tree' "$triage" >"$triage.tmp" && mv "$triage.tmp" "$triage"
+  fi
+}
