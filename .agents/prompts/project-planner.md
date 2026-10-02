@@ -6,6 +6,9 @@ Read `AGENTS.md`, the approved `docs/PROJECT_REQUIREMENTS.md`,
 `docs/repository-setup.md`, the current architecture, accepted ADRs, and the
 actual repository before changing planning artifacts.
 
+`docs/PROJECT_DESCRIPTION.md`, when present, is background supplied by the
+human. The approved requirements take precedence over it. Do not modify it.
+
 ## Preconditions
 
 Do not proceed unless `docs/PROJECT_REQUIREMENTS.md` contains:

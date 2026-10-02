@@ -97,8 +97,23 @@ idea and completing `docs/repository-setup.md`:
 The full interface is:
 
 ```text
-./scripts/start-planning.sh [name] [--agent <agent>] [--model <model>]
+./scripts/start-planning.sh [name] [--description <file>] [--agent <agent>] [--model <model>]
 ```
+
+If you already have a project description, pass it with `--description`:
+
+```bash
+./scripts/start-planning.sh --description ~/notes/project-idea.md
+```
+
+The file may be anywhere, including outside the repository. An uncommitted
+description inside the repository is the one change the clean-checkout check
+allows.
+The script copies it to `docs/PROJECT_DESCRIPTION.md` in the planning worktree
+before the first session. Project Grill reads it first and asks only about
+what it leaves unresolved. Neither planning phase may modify it, and it is
+committed with the planning branch as the recorded input. A missing, empty, or
+non-regular file fails before a branch or worktree is created.
 
 Project Grill uses role `project-grill` and the planning session uses role
 `project-planner`; `--agent` and `--model` override both. The optional name
@@ -137,6 +152,7 @@ manually:
 ```bash
 cd ../<repository>-planning-project-bootstrap
 ./scripts/verify.sh
+git add docs/PROJECT_DESCRIPTION.md  # only when --description was used
 git add docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions
 git commit -m "Plan project bootstrap"
 git push -u origin planning/project-bootstrap

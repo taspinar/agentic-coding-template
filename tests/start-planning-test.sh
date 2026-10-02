@@ -119,6 +119,8 @@ REQUIREMENTS
     printf 'Out-of-scope Grill change.\n' >README.md
   elif [[ "${MOCK_GRILL_MODE:-success}" == "ignored" ]]; then
     printf 'IGNORED_SECRET=test\n' >.env
+  elif [[ "${MOCK_GRILL_MODE:-success}" == "edit-description" ]]; then
+    printf 'Changed by Project Grill.\n' >>docs/PROJECT_DESCRIPTION.md
   elif [[ "${MOCK_GRILL_MODE:-success}" == "weird-paths" ]]; then
     printf 'Tab path.\n' >$'docs/PROJECT_REQUIREMENTS.md\textra'
     printf 'Newline path.\n' >$'unexpected\nfile'
@@ -793,5 +795,98 @@ if (
 fi
 [[ ! -e "$tmp/dirty-repo-planning-project-bootstrap" ]] ||
   fail "dirty repository created a worktree"
+
+# A project description from outside the repository is copied into the
+# planning worktree before the phases start and is announced to Project Grill.
+description="$tmp/project idea.txt"
+printf 'A local-first recipe organizer.\n' >"$description"
+description_repo="$(setup_repo description)"
+description_log="$tmp/description.log"
+(
+  cd "$description_repo"
+  printf 'y\n' |
+    PATH="$tmp/bin:/usr/bin:/bin" \
+    MOCK_AGENT_LOG="$description_log" \
+    ./scripts/start-planning.sh --description "$description" --agent claude --model fable \
+    >"$tmp/description.out" 2>&1
+) || {
+  cat "$tmp/description.out" >&2
+  fail "planning with a project description failed"
+}
+description_worktree="$tmp/description-repo-planning-project-bootstrap"
+cmp -s "$description" "$description_worktree/docs/PROJECT_DESCRIPTION.md" ||
+  fail "project description was not copied into the planning worktree"
+grep -Fq "docs/PROJECT_DESCRIPTION.md" "$description_log" ||
+  fail "project description was not announced to the agent"
+[[ -z "$(git -C "$description_repo" status --porcelain)" ]] ||
+  fail "project description changed the primary checkout"
+
+# An uncommitted description inside the repository is accepted, but it does
+# not excuse other uncommitted changes.
+inside_repo="$(setup_repo description-inside)"
+printf 'An untracked description in the checkout.\n' >"$inside_repo/idea.md"
+printf '\nDirty.\n' >>"$inside_repo/AGENTS.md"
+if (
+  cd "$inside_repo"
+  PATH="$tmp/bin:/usr/bin:/bin" \
+    MOCK_AGENT_LOG="$tmp/description-inside.log" \
+    ./scripts/start-planning.sh --description idea.md --agent codex --model astra >/dev/null 2>&1
+); then
+  fail "unrelated uncommitted changes were accepted together with a description"
+fi
+[[ ! -e "$tmp/description-inside-repo-planning-project-bootstrap" ]] ||
+  fail "a dirty checkout created a worktree"
+git -C "$inside_repo" checkout -q -- AGENTS.md
+(
+  cd "$inside_repo"
+  printf 'y\n' |
+    PATH="$tmp/bin:/usr/bin:/bin" \
+    MOCK_AGENT_LOG="$tmp/description-inside.log" \
+    ./scripts/start-planning.sh --description idea.md --agent codex --model astra \
+    >"$tmp/description-inside.out" 2>&1
+) || {
+  cat "$tmp/description-inside.out" >&2
+  fail "an uncommitted description inside the repository was rejected"
+}
+cmp -s "$inside_repo/idea.md" \
+  "$tmp/description-inside-repo-planning-project-bootstrap/docs/PROJECT_DESCRIPTION.md" ||
+  fail "in-repository description was not copied into the planning worktree"
+
+# A phase that modifies the supplied description exceeds its scope.
+description_edit_repo="$(setup_repo description-edit)"
+if (
+  cd "$description_edit_repo"
+  printf 'y\n' |
+    PATH="$tmp/bin:/usr/bin:/bin" \
+    MOCK_AGENT_LOG="$tmp/description-edit.log" \
+    MOCK_GRILL_MODE=edit-description \
+    ./scripts/start-planning.sh --description "$description" --agent codex --model astra \
+    >/dev/null 2>&1
+); then
+  fail "a modified project description returned success"
+fi
+[[ "$(grep -c '^PHASE=' "$tmp/description-edit.log")" -eq 1 ]] ||
+  fail "planner ran after the project description was modified"
+
+# An unusable description fails before any branch or worktree is created.
+: >"$tmp/empty-description.txt"
+description_invalid_repo="$(setup_repo description-invalid)"
+for invalid_description in "$tmp/no-such-description.txt" "$tmp/empty-description.txt" "$tmp/bin" ""; do
+  if (
+    cd "$description_invalid_repo"
+    PATH="$tmp/bin:/usr/bin:/bin" \
+      MOCK_AGENT_LOG="$tmp/description-invalid.log" \
+      ./scripts/start-planning.sh --agent codex --model astra --description "$invalid_description" \
+      >/dev/null 2>&1
+  ); then
+    fail "unusable project description returned success: '$invalid_description'"
+  fi
+done
+[[ ! -e "$tmp/description-invalid-repo-planning-project-bootstrap" ]] ||
+  fail "unusable project description created a worktree"
+if git -C "$description_invalid_repo" show-ref --verify --quiet refs/heads/planning/project-bootstrap; then
+  fail "unusable project description created a branch"
+fi
+[[ ! -e "$tmp/description-invalid.log" ]] || fail "an agent started despite an unusable project description"
 
 echo "start-planning tests passed"

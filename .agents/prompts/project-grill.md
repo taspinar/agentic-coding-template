@@ -6,6 +6,11 @@ Read `AGENTS.md`, `README.md`, `docs/repository-setup.md`, any existing
 `docs/PROJECT_REQUIREMENTS.md`, accepted ADRs, and the actual repository before
 asking questions.
 
+If `docs/PROJECT_DESCRIPTION.md` exists, read it first. It is the project
+description supplied by the human. Take every decision it already makes as
+given, ask only about what it leaves unresolved or contradictory, and do not
+modify it.
+
 ## Goal
 
 Discover only unresolved decisions that materially affect the product,
