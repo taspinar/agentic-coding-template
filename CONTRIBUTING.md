@@ -7,9 +7,9 @@ All non-trivial changes should originate from a GitHub Issue and use a feature b
 Everything committed to the template repository is inherited by every project
 created from it. When developing the template:
 
-- Do not commit the plans, reviews, triage artifacts, or handoffs of that
-  work under `.agents/`. Keep the design in the GitHub Issue and the review
-  outcome in the Pull Request.
+- Do not commit the plans or handoffs of that work under `.agents/`. Keep the
+  design in the GitHub Issue. Review and triage results are ignored by Git and
+  published on the Issue, as in any project.
 - Record design decisions about the template in the Issue and in the workflow
   documentation under `docs/`. `docs/decisions/` is reserved for the ADRs of
   projects that use the template.

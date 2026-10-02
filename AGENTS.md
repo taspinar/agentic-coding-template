@@ -29,7 +29,8 @@ If a material conflict remains, stop and report it.
 - Verification evidence is recorded in the active plan or PR.
 - Required independent review is complete and no Critical or Major findings
   remain unresolved.
-- Required review findings have an approved triage artifact.
+- Required review findings have an approved triage, published on the feature
+  Issue by `triage-review.sh`.
 - Deferred findings have a linked follow-up Issue; accepted findings have an
   explicit rationale.
 

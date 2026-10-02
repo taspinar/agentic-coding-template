@@ -264,7 +264,13 @@ write a persistent, uniquely named artifact such as:
 ```
 
 That artifact maps the source review findings to their decisions and any
-created Issue numbers. Declining the proposal creates neither an artifact nor
+created Issue numbers. After storing it, the script publishes the review and
+triage reports as one comment on the source Issue, so the outcome is visible in
+the Issue and, through `Closes #12`, from the pull request. The reports are
+rendered from the JSON. When they exceed the size of one GitHub comment, they
+are published in numbered parts rather than shortened. A failed publication
+keeps the stored triage and prints the command to retry each unpublished
+part. Declining the proposal creates neither an artifact nor
 Issues. The source review remains unchanged. The artifact is stored only after
 every follow-up Issue exists; if creating one fails, nothing is stored and a
 new triage reuses the Issues created so far, which it finds by their trace
@@ -315,6 +321,10 @@ each triage is stored as two files with the same name:
 - `.json` is the source of truth. The scripts read only this file.
 - `.md` is a report generated from the JSON for reading. It is never parsed;
   editing it has no effect.
+
+Both are working files for the scripts during a feature and are ignored by
+Git, so `git add .` does not commit them. The record that stays is the comment
+on the Issue and the follow-up Issues, each of which names its source finding.
 
 The agent's result must match a schema in `.agents/schemas/`
 (`review.schema.json`, `triage.schema.json`). The schema is passed to the

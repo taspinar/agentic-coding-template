@@ -223,6 +223,7 @@ deferred_count="$(jq '[.[] | select(.decision == "DEFER")] | length' "$proposal_
 if [[ "$deferred_count" -gt 0 ]]; then
   echo "Approval will create $deferred_count follow-up GitHub issue(s)."
 fi
+echo "Approval will publish the review and triage reports as a comment on Issue #$source_issue."
 
 printf "Proceed with this triage? [y/N] "
 approval=""
@@ -361,3 +362,70 @@ echo "  $artifact_relative.md    (generated report)"
 echo
 jq '.decisions' "$artifact.json" >"$tmp_work/final.json"
 render_proposal "$tmp_work/final.json"
+
+# The reports are published on the Issue instead of being committed, rendered
+# from the validated JSON. A comment holds at most 65,536 characters: when both
+# reports do not fit in one comment, they are published in numbered parts, so
+# the record is never shortened.
+round="$(jq -r '.round' "$review_path")"
+comment_base="$artifact-comment"
+rm -f "$comment_base"*.md
+heading="## Independent review and triage — round $round"
+{
+  echo "Reviewer verdict: $(jq -r '.verdict | gsub("_"; " ")' "$review_path")"
+  echo
+  echo "<details>"
+  echo "<summary>Review report</summary>"
+  echo
+  review_render_markdown "$review_path" "$review_stem.json" | sed '1{/^<!-- Generated/d;}'
+  echo
+  echo "</details>"
+  echo
+  sed '1{/^<!-- Generated/d;}' "$artifact.md"
+} >"$tmp_work/comment-body.md"
+
+comment_limit=60000
+if [[ "$(wc -c <"$tmp_work/comment-body.md")" -le "$comment_limit" ]]; then
+  { echo "$heading"; echo; cat "$tmp_work/comment-body.md"; } >"$comment_base.md"
+else
+  # Split on line boundaries; a part never ends inside a line.
+  awk -v limit="$comment_limit" -v base="$tmp_work/part-" '
+    BEGIN { part = 1; size = 0 }
+    {
+      line_size = length($0) + 1
+      if (size > 0 && size + line_size > limit) { part++; size = 0 }
+      print > (base part ".md")
+      size += line_size
+    }
+  ' "$tmp_work/comment-body.md"
+  parts="$(find "$tmp_work" -name 'part-*.md' | wc -l | tr -d ' ')"
+  for ((part = 1; part <= parts; part++)); do
+    {
+      echo "$heading (part $part of $parts)"
+      echo
+      cat "$tmp_work/part-$part.md"
+    } >"$comment_base-$part.md"
+  done
+fi
+
+comment_files=()
+if [[ -f "$comment_base.md" ]]; then
+  comment_files=("$comment_base.md")
+else
+  for ((part = 1; part <= parts; part++)); do
+    comment_files+=("$comment_base-$part.md")
+  done
+fi
+
+echo
+for index in "${!comment_files[@]}"; do
+  if ! gh issue comment "$source_issue" --body-file "${comment_files[$index]}" </dev/null >/dev/null; then
+    echo "Error: publishing the reports on Issue #$source_issue failed. The triage is stored." >&2
+    echo "Retry the unpublished part(s) in this order with:" >&2
+    for ((retry = index; retry < ${#comment_files[@]}; retry++)); do
+      echo "  gh issue comment $source_issue --body-file ${comment_files[$retry]#"$root"/}" >&2
+    done
+    exit 1
+  fi
+done
+echo "Published the review and triage reports on Issue #$source_issue (${#comment_files[@]} comment(s))."

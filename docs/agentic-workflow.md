@@ -31,9 +31,12 @@ See `docs/development.md` for the concrete commands.
 - `.agents/plans/`: active implementation state for complex work.
 - `.agents/handoffs/`: compressed continuation context.
 - `.agents/reviews/`: independent-review results as validated JSON, each with a
-  generated Markdown report.
+  generated Markdown report. Working files, ignored by Git.
 - `.agents/triage/`: approved finding decisions and deferred-Issue traceability
-  as validated JSON, each with a generated Markdown report.
+  as validated JSON, each with a generated Markdown report. Working files,
+  ignored by Git.
+- Feature Issue comments: the published review and triage reports of each
+  round.
 - `.agents/schemas/`: the schemas of those results.
 - `.agents/lessons/`: recurring failure lessons awaiting/promoting durable rules.
 - Git history: what actually changed.
