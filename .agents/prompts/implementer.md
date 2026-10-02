@@ -31,6 +31,9 @@ Add or update:
 
 where required by the issue or architecture.
 
+Follow the "Meaningful tests" principle in `docs/evaluation.md` when adding or
+changing tests.
+
 Update the feature plan when material discoveries change execution details.
 
 Do not:
