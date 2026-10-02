@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/review-run.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -83,7 +84,6 @@ head_before="$(git -C "$root" rev-parse HEAD)"
 tree_before="$(fingerprint_worktree "$root" "$tmp_work")" ||
   fail "could not compute the fingerprint of the working tree."
 cp "$tmp_work/fingerprint.index" "$tmp_work/index.before"
-artifacts_before="$(fingerprint_artifacts "$root")"
 
 review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage")
 context_file="$tmp_work/context.md"
@@ -170,42 +170,9 @@ script validates and stores it."
 echo "Starting $agent reviewer ($model) with read-only permissions..."
 echo
 
-# Invalid output is retried once; a failed agent or a modified tree is not.
-attempt_prompt="$START_PROMPT"
-for attempt in 1 2; do
-  : >"$report_file"
-  set +e
-  agent_run read-only "$agent" "$model" "$root" "$attempt_prompt" "$report_file" "$context_file" "$schema_file"
-  agent_status=$?
-  set -e
+review_run_reviewer "$agent" "$model" "$root" "$START_PROMPT" "$context_file" "$schema_file" "$report_file" "$tmp_work"
 
-  if [[ "$(git -C "$root" rev-parse HEAD)" != "$head_before" || "$(fingerprint_worktree "$root" "$tmp_work")" != "$tree_before" ||
-        "$(fingerprint_artifacts "$root")" != "$artifacts_before" ]]; then
-    echo "Error: the reviewer modified the working tree or created a commit. No review was stored." >&2
-    git -C "$root" status --short >&2
-    exit 1
-  fi
-
-  [[ "$agent_status" -eq 0 ]] ||
-    fail "reviewer failed with status $agent_status. No review was stored."
-
-  result_errors="$(review_result_errors "$report_file")"
-  [[ -n "$result_errors" ]] || break
-
-  echo "The reviewer returned an invalid result (attempt $attempt of 2):" >&2
-  printf '%s\n' "$result_errors" | sed 's/^/  - /' >&2
-  [[ "$attempt" -lt 2 ]] || fail "the reviewer's result is invalid. No review was stored."
-  echo "Retrying once..." >&2
-  attempt_prompt="$START_PROMPT
-
-Your previous result was rejected for these reasons:
-$result_errors
-
-Return a corrected result."
-done
-
-mkdir -p "$reviews_dir"
-review_result_with_ids "$report_file" | jq \
+metadata="$(jq -n \
   --argjson issue "$issue" \
   --argjson round "$review_number" \
   --arg branch "$branch" \
@@ -218,6 +185,7 @@ review_result_with_ids "$report_file" | jq \
   --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   '{
     schema: "review/v1",
+    kind: "feature",
     issue: $issue,
     round: $round,
     branch: $branch,
@@ -227,22 +195,8 @@ review_result_with_ids "$report_file" | jq \
     reviewed_tree: $tree,
     reviewed_paths: null,
     reviewer: {agent: $agent, model: $model},
-    created_at: $created_at,
-    verdict: .verdict,
-    limitations: .limitations,
-    findings: .findings
-  }' >"$out.json"
-
-artifact_errors="$(review_artifact_errors "$out.json")"
-if [[ -n "$artifact_errors" ]]; then
-  rm -f "$out.json"
-  echo "Error: the stored review would be invalid; nothing was stored:" >&2
-  printf '%s\n' "$artifact_errors" | sed 's/^/  - /' >&2
-  exit 1
-fi
-review_render_markdown "$out.json" "$(basename "$out").json" >"$out.md"
-
-verdict="$(jq -r '.verdict | gsub("_"; " ")' "$out.json")"
-echo "Review completed: $verdict ($(jq '.findings | length' "$out.json") findings)"
+    created_at: $created_at
+  }')"
+review_store "$report_file" "$out" "$metadata"
 echo "  $review_relative.json  (source of truth)"
 echo "  $review_relative.md    (generated report)"

@@ -162,6 +162,29 @@ git commit -m "Plan project bootstrap"
 git push -u origin planning/project-bootstrap
 ```
 
+### Planning review
+
+Before committing the planning, let an independent agent review it from the
+planning worktree:
+
+```bash
+./scripts/review-planning.sh
+```
+
+It uses role `planning-reviewer` with the `read-only` profile; configure a
+different provider than for `project-planner`. The reviewed file set is the
+planning documents: `docs/PROJECT_DESCRIPTION.md` when present,
+`docs/PROJECT_REQUIREMENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, and
+the ADRs in `docs/decisions/`. The script supplies their contents and their
+diff against `origin/main`. The requirements must be approved first.
+
+Each round is stored as `.agents/reviews/planning-<name>-review-NN.json` with
+a generated report, in the same format as feature reviews but without an Issue.
+The review covers only the planning documents, so it becomes stale when one of
+them is added, changed, or deleted, and stays current otherwise
+(`./scripts/check-review.sh`). A planning review is not triaged: revise the
+planning documents for the findings you accept and run the review again.
+
 Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,
 pushes, opens or merges a PR, or deploys.
