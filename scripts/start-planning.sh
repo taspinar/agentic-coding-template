@@ -2,14 +2,19 @@
 
 set -euo pipefail
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+
 usage() {
   cat <<EOF
-Usage: $0 <agent> <model> [name]
+Usage: $0 [name] [--agent <agent>] [--model <model>]
+
+The agent and model of each phase come from .agents/agents.conf (roles
+project-grill and project-planner). --agent and --model override both phases.
 
 Examples:
-  $0 codex astra
-  $0 claude fable
-  $0 codex astra architecture-refresh
+  $0
+  $0 architecture-refresh
+  $0 --agent claude --model fable
 EOF
 }
 
@@ -18,35 +23,18 @@ fail() {
   exit 1
 }
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
+agent_parse_args "$@"
+if [[ "${#AGENT_POSITIONAL[@]}" -gt 1 ]]; then
   usage
   exit 1
 fi
 
-agent="$1"
-model="$2"
-name="${3:-project-bootstrap}"
-
-case "$agent" in
-  codex | claude) ;;
-  *) fail "unsupported agent '$agent'. Supported agents: codex, claude." ;;
-esac
-
-[[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:/+@-]*$ ]] ||
-  fail "model must use only letters, numbers, '.', '_', ':', '/', '+', '@', or '-': $model"
-
-case "$agent:$model" in
-  codex:fable | claude:astra)
-    fail "unsupported agent/model combination: $agent + $model."
-    ;;
-esac
+name="${AGENT_POSITIONAL[0]:-project-bootstrap}"
 
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] ||
   fail "planning name must match [a-z0-9][a-z0-9-]*: $name"
 
 command -v git >/dev/null 2>&1 || fail "Git is required."
-command -v "$agent" >/dev/null 2>&1 ||
-  fail "selected agent CLI '$agent' was not found."
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" ||
   fail "run this script from inside a Git repository."
@@ -55,6 +43,13 @@ branch="planning/$name"
 worktree="$(dirname "$repo_root")/${repo_name}-planning-${name}"
 grill_prompt="$repo_root/.agents/prompts/project-grill.md"
 planner_prompt="$repo_root/.agents/prompts/project-planner.md"
+
+agent_resolve "$repo_root" project-grill "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+grill_agent="$AGENT_PROVIDER"
+grill_model="$AGENT_MODEL"
+agent_resolve "$repo_root" project-planner "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+planner_agent="$AGENT_PROVIDER"
+planner_model="$AGENT_MODEL"
 
 [[ -f "$grill_prompt" ]] || fail "missing Project Grill prompt: $grill_prompt"
 [[ -f "$planner_prompt" ]] || fail "missing project-planner prompt: $planner_prompt"
@@ -74,8 +69,8 @@ fi
 echo "Preparing project planning:"
 echo "  Branch:   $branch"
 echo "  Worktree: $worktree"
-echo "  Agent:    $agent"
-echo "  Model:    $model"
+echo "  Grill:    $grill_agent ($grill_model)"
+echo "  Planner:  $planner_agent ($planner_model)"
 echo
 
 git -C "$repo_root" fetch origin main ||
@@ -238,6 +233,8 @@ EOF
 run_agent() {
   local phase="$1"
   local prompt_path="$2"
+  local agent="$3"
+  local model="$4"
   local prompt
   local status
 
@@ -248,27 +245,8 @@ run_agent() {
   echo
 
   set +e
-  case "$agent" in
-    codex)
-      (
-        cd "$worktree"
-        codex \
-          --model "$model" \
-          --sandbox workspace-write \
-          --ask-for-approval never \
-          --cd "$worktree" \
-          "$prompt"
-      )
-      status=$?
-      ;;
-    claude)
-      (
-        cd "$worktree"
-        claude --model "$model" "$prompt"
-      )
-      status=$?
-      ;;
-  esac
+  agent_run write "$agent" "$model" "$worktree" "$prompt"
+  status=$?
   set -e
 
   if [[ "$status" -ne 0 ]]; then
@@ -403,7 +381,7 @@ planner_baseline="$state_dir/planner-baseline.tsv"
 snapshot_forbidden_paths "grill" "$grill_baseline"
 snapshot_forbidden_paths "planner" "$planner_baseline"
 
-run_agent "Project Grill" "$grill_prompt"
+run_agent "Project Grill" "$grill_prompt" "$grill_agent" "$grill_model"
 require_unchanged_head "Project Grill"
 require_scope_unchanged "grill" "$grill_baseline" "Project Grill"
 
@@ -431,7 +409,7 @@ approve_requirements
 validate_requirements "Approved"
 approved_requirements_signature="$(requirements_signature)"
 
-run_agent "project planning" "$planner_prompt"
+run_agent "project planning" "$planner_prompt" "$planner_agent" "$planner_model"
 require_unchanged_head "project planner"
 
 if [[ "$(requirements_signature)" != "$approved_requirements_signature" ]]; then

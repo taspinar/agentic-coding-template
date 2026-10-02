@@ -55,8 +55,12 @@ FAKE
   printf '%s\n' "$bin"
 }
 
+# Every run uses an explicit agent configuration instead of the repository's.
+config="$tmp/agents.conf"
+printf 'implementer: codex model-a\nreviewer: claude model-b\n' >"$config"
+
 run_doctor() {
-  PATH="$1" "$bash_path" "$script" >"$tmp/out.log" 2>&1
+  PATH="$1" AGENT_CONFIG_FILE="$config" "$bash_path" "$script" >"$tmp/out.log" 2>&1
 }
 
 # Requires a non-zero exit with exactly one FAILED line, matching the pattern,
@@ -105,15 +109,19 @@ MOCK_REPO_EXIT=128 expect_failure "$bin" "not inside a Git repository"
 MOCK_ORIGIN_EXIT=2 expect_failure "$bin" "'origin' is not configured"
 MOCK_MAIN_EXIT=2 expect_failure "$bin" "'main' is not reachable"
 
-# One missing agent CLI is only a warning; no agent CLI at all fails.
+# A missing agent CLI fails when a role uses it and is a warning otherwise.
 bin="$(make_bin one-agent git gh jq claude)"
+expect_failure "$bin" "codex CLI is not installed"
+
+printf 'implementer: claude model-a\nreviewer: claude model-b\n' >"$config"
 run_doctor "$bin" || {
   cat "$tmp/out.log" >&2
-  fail "a single installed agent CLI must be sufficient"
+  fail "an agent CLI that no role uses must not be required"
 }
-grep -Eq '^WARNING +codex' "$tmp/out.log" || fail "missing optional agent was not reported as a warning"
+grep -Eq '^WARNING +codex' "$tmp/out.log" || fail "unused missing agent was not reported as a warning"
 
-bin="$(make_bin no-agent git gh jq)"
-expect_failure "$bin" "no agent CLI"
+# Invalid agent configuration fails.
+printf 'implementer claude model-a\n' >"$config"
+expect_failure "$bin" "agent configuration is invalid"
 
 echo "doctor tests passed"

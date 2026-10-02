@@ -229,7 +229,7 @@ output="$(
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$triage" codex test-model
+    "$script" "$triage" --agent codex --model test-model
 )"
 
 [[ "$output" == *"Approved FIX_NOW scope"* ]]
@@ -250,7 +250,7 @@ decline_output="$(
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$decline_triage" claude
+    "$script" "$decline_triage" --agent claude --model sonnet
 )"
 [[ "$decline_output" == *"Apply triage declined"* ]]
 [[ "$(grep -c '^[a-z]' "$tmp/agent.log")" -eq "$agent_calls_before" ]]
@@ -259,7 +259,7 @@ empty_output="$(
   PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$empty_triage" claude
+    "$script" "$empty_triage" --agent claude --model sonnet
 )"
 [[ "$empty_output" == *"No FIX_NOW findings found"* ]]
 [[ "$(grep -c '^[a-z]' "$tmp/agent.log")" -eq "$agent_calls_before" ]]
@@ -269,7 +269,7 @@ claude_output="$(
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$triage" claude opus
+    "$script" "$triage" --agent claude --model opus
 )"
 [[ "$claude_output" == *"verification passed"* ]]
 grep -Fq "claude --permission-mode acceptEdits --model opus" "$tmp/agent.log"
@@ -277,7 +277,7 @@ grep -Fq "claude --permission-mode acceptEdits --model opus" "$tmp/agent.log"
 if PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$malformed_triage" claude </dev/null >"$tmp/malformed.out" 2>&1; then
+  "$script" "$malformed_triage" --agent claude --model sonnet </dev/null >"$tmp/malformed.out" 2>&1; then
   echo "Expected malformed triage validation to fail." >&2
   exit 1
 fi
@@ -286,7 +286,7 @@ grep -Fq "wrong decision section" "$tmp/malformed.out"
 if PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$unapproved_triage" claude >"$tmp/unapproved.out" 2>&1; then
+  "$script" "$unapproved_triage" --agent claude --model sonnet >"$tmp/unapproved.out" 2>&1; then
   echo "Expected unapproved triage validation to fail." >&2
   exit 1
 fi
@@ -295,7 +295,7 @@ grep -Fq "approval timestamp" "$tmp/unapproved.out"
 if PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$stale_triage" claude >"$tmp/stale.out" 2>&1; then
+  "$script" "$stale_triage" --agent claude --model sonnet >"$tmp/stale.out" 2>&1; then
   echo "Expected stale triage validation to fail." >&2
   exit 1
 fi
@@ -307,7 +307,7 @@ fi
 if PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$ambiguous_triage" claude >"$tmp/ambiguous.out" 2>&1; then
+  "$script" "$ambiguous_triage" --agent claude --model sonnet >"$tmp/ambiguous.out" 2>&1; then
   echo "Expected ambiguous Issue metadata validation to fail." >&2
   exit 1
 fi
@@ -317,7 +317,7 @@ if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   MOCK_AGENT_EXIT=7 \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$triage" claude >"$tmp/failed-agent.out" 2>&1; then
+  "$script" "$triage" --agent claude --model sonnet >"$tmp/failed-agent.out" 2>&1; then
   echo "Expected failed implementation agent to propagate failure." >&2
   exit 1
 fi
@@ -333,7 +333,7 @@ if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   MOCK_CHMOD_PATH="$triage" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$triage" claude >"$tmp/mode.out" 2>&1; then
+  "$script" "$triage" --agent claude --model sonnet >"$tmp/mode.out" 2>&1; then
   echo "Expected protected artifact mode change to fail." >&2
   exit 1
 fi
@@ -345,21 +345,21 @@ if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   MOCK_DELETE_PATH="$deleted_triage" \
   APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$deleted_triage" claude >"$tmp/deleted.out" 2>&1; then
+  "$script" "$deleted_triage" --agent claude --model sonnet >"$tmp/deleted.out" 2>&1; then
   echo "Expected protected artifact deletion to fail." >&2
   exit 1
 fi
 grep -Fq "modified the approved triage artifact" "$tmp/deleted.out"
 grep -Fq "Running repository verification" "$tmp/deleted.out"
 
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage_dir/missing.md" claude >"$tmp/missing.out" 2>&1; then
+if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage_dir/missing.md" --agent claude --model sonnet >"$tmp/missing.out" 2>&1; then
   echo "Expected missing triage validation to fail." >&2
   exit 1
 fi
 grep -Fq "triage artifact not found" "$tmp/missing.out"
 
 rm "$tmp/bin/codex"
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage" codex >"$tmp/agent.out" 2>&1; then
+if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage" --agent codex --model test-model >"$tmp/agent.out" 2>&1; then
   echo "Expected missing agent validation to fail." >&2
   exit 1
 fi

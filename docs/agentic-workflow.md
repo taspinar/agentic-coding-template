@@ -13,7 +13,9 @@ verification/re-review when needed → commit → push/PR → CI → human gate 
 required → merge → automatic Issue closure → cleanup.
 
 Independent review happens before the implementation commit so it can include
-uncommitted working-tree changes. `triage-review.sh` classifies every finding as
+uncommitted working-tree changes. The reviewer runs read-only and
+non-interactively; `review-feature.sh` supplies the Issue and diff and stores
+the returned report. `triage-review.sh` classifies every finding as
 `FIX_NOW`, `DEFER`, or `ACCEPT` and displays the proposal before side effects.
 Critical and Major findings must be `FIX_NOW`. Human approval is required
 before triage artifacts or provenance-prefixed deferred follow-up Issues are
@@ -43,13 +45,10 @@ Recommended sequence:
 
 1. Create the repository from this template.
 2. Complete `docs/repository-setup.md`.
-3. Run the bootstrap entrypoint with an explicit agent and model:
+3. Set the agent and model per role in `.agents/agents.conf`, then run the
+   bootstrap entrypoint:
 
-   `./scripts/start-planning.sh codex astra`
-
-   or:
-
-   `./scripts/start-planning.sh claude fable`
+   `./scripts/start-planning.sh`
 
 4. The script creates `planning/project-bootstrap` in an isolated sibling
    worktree from the current `origin/main`.

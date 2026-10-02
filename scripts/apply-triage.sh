@@ -2,22 +2,26 @@
 
 set -euo pipefail
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+
 usage() {
-  echo "Usage: $0 <triage-file> <agent> [model]"
+  echo "Usage: $0 <triage-file> [--agent <agent>] [--model <model>]"
+  echo
+  echo "The agent and model come from role 'triage-implementer' in"
+  echo ".agents/agents.conf unless --agent and --model are given."
   echo
   echo "Examples:"
-  echo "  $0 .agents/triage/feature-5-rendering-review-01-triage.md codex"
-  echo "  $0 .agents/triage/feature-5-rendering-review-01-triage.md claude opus"
+  echo "  $0 .agents/triage/feature-5-rendering-review-01-triage.md"
+  echo "  $0 .agents/triage/feature-5-rendering-review-01-triage.md --agent claude --model opus"
   exit 1
 }
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
+agent_parse_args "$@"
+if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
   usage
 fi
 
-triage_input="$1"
-agent="$2"
-model="${3:-}"
+triage_input="${AGENT_POSITIONAL[0]}"
 
 root="$(git rev-parse --show-toplevel)"
 prompt_file="$root/.agents/prompts/triage-implementer.md"
@@ -42,19 +46,9 @@ if [[ ! -f "$prompt_file" ]]; then
   exit 1
 fi
 
-case "$agent" in
-  codex | claude) ;;
-  *)
-    echo "Error: unsupported agent '$agent'"
-    echo "Supported agents: codex, claude"
-    exit 1
-    ;;
-esac
-
-if ! command -v "$agent" >/dev/null 2>&1; then
-  echo "Error: '$agent' command not found."
-  exit 1
-fi
+agent_resolve "$root" triage-implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+agent="$AGENT_PROVIDER"
+model="$AGENT_MODEL"
 
 approval_metadata_count="$(awk '/^Approved at:/ { count++ } END { print count + 0 }' "$triage_path")"
 approval_valid_count="$(awk '
@@ -472,35 +466,8 @@ echo "Starting $agent implementation agent..."
 echo
 
 set +e
-case "$agent" in
-  codex)
-    codex_args=(
-      --sandbox workspace-write
-      --ask-for-approval never
-    )
-    if [[ -n "$model" ]]; then
-      codex_args+=(--model "$model")
-    fi
-    (
-      cd "$root"
-      codex "${codex_args[@]}" "$start_prompt"
-    )
-    agent_status=$?
-    ;;
-  claude)
-    claude_args=(
-      --permission-mode acceptEdits
-    )
-    if [[ -n "$model" ]]; then
-      claude_args+=(--model "$model")
-    fi
-    (
-      cd "$root"
-      claude "${claude_args[@]}" "$start_prompt"
-    )
-    agent_status=$?
-    ;;
-esac
+agent_run write "$agent" "$model" "$root" "$start_prompt"
+agent_status=$?
 set -e
 
 review_signature_after="$(file_signature "$source_review_path")"

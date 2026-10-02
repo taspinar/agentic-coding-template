@@ -153,7 +153,7 @@ output="$(
     MOCK_TRIAGE_OUTPUT="$decisions" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     MOCK_GH_LOG="$tmp/gh.log" \
-    "$script" "$review" claude
+    "$script" "$review" --agent claude --model sonnet
 )"
 
 [[ -f "$artifact" ]]
@@ -194,7 +194,7 @@ fallback_output="$(
     MOCK_TRIAGE_OUTPUT="$decisions" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     MOCK_GH_LOG="$tmp/fallback-gh.log" \
-    "$script" "$fallback_review" claude
+    "$script" "$fallback_review" --agent claude --model sonnet
 )"
 [[ "$fallback_output" == *"[#5][R07][Minor-1] Add boundary-condition coverage"* ]]
 grep -Fq "TITLE: [#5][R07][Minor-1] Add boundary-condition coverage" "$tmp/fallback-gh.log"
@@ -206,7 +206,7 @@ decline_output="$(
     MOCK_TRIAGE_OUTPUT="$decisions" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     MOCK_GH_LOG="$tmp/gh.log" \
-    "$script" "$decline_review" claude
+    "$script" "$decline_review" --agent claude --model sonnet
 )"
 [[ "$decline_output" == *"Triage declined"* ]]
 [[ ! -e "$decline_artifact" ]]
@@ -218,7 +218,7 @@ codex_output="$(
     MOCK_TRIAGE_OUTPUT="$decisions" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     MOCK_GH_LOG="$tmp/gh.log" \
-    "$script" "$decline_review" codex test-model
+    "$script" "$decline_review" --agent codex --model test-model
 )"
 [[ "$codex_output" == *"Triage declined"* ]]
 grep -Fq -- "exec --sandbox read-only --ephemeral --color never" "$tmp/agent.log"
@@ -230,7 +230,7 @@ rerun_output="$(
     MOCK_TRIAGE_OUTPUT="$decisions" \
     MOCK_AGENT_LOG="$tmp/agent.log" \
     MOCK_GH_LOG="$tmp/gh.log" \
-    "$script" "$review" claude
+    "$script" "$review" --agent claude --model sonnet
 )"
 [[ "$rerun_output" == *"Reusing existing follow-up Issue #123"* ]]
 [[ "$(grep -c '^TITLE:' "$tmp/gh.log")" -eq 1 ]]
@@ -241,21 +241,21 @@ if PATH="$tmp/bin:/usr/bin:/bin" \
   MOCK_TRIAGE_OUTPUT="$invalid_decisions" \
   MOCK_AGENT_LOG="$tmp/agent.log" \
   MOCK_GH_LOG="$tmp/gh.log" \
-  "$script" "$review" claude </dev/null >"$tmp/invalid.out" 2>&1; then
+  "$script" "$review" --agent claude --model sonnet </dev/null >"$tmp/invalid.out" 2>&1; then
   echo "Expected Critical downgrade validation to fail." >&2
   exit 1
 fi
 grep -Fq "Critical finding F001 must be FIX_NOW" "$tmp/invalid.out"
 [[ "$(grep -c '^TITLE:' "$tmp/gh.log")" -eq 1 ]]
 
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$review_dir/missing.md" claude >"$tmp/missing.out" 2>&1; then
+if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$review_dir/missing.md" --agent claude --model sonnet >"$tmp/missing.out" 2>&1; then
   echo "Expected missing review validation to fail." >&2
   exit 1
 fi
 grep -Fq "review artifact not found" "$tmp/missing.out"
 
 rm "$tmp/bin/codex"
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$review" codex >"$tmp/agent.out" 2>&1; then
+if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$review" --agent codex --model test-model >"$tmp/agent.out" 2>&1; then
   echo "Expected missing agent validation to fail." >&2
   exit 1
 fi

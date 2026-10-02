@@ -3,6 +3,12 @@
 set -euo pipefail
 
 # Read-only check of the local prerequisites for the template workflow.
+# Uses only Bash builtins besides the tools it checks.
+
+script_dir="${BASH_SOURCE[0]%/*}"
+[[ "$script_dir" != "${BASH_SOURCE[0]}" ]] || script_dir="."
+root="$script_dir/.."
+source "$script_dir/lib/agent.sh"
 
 failed=0
 
@@ -50,18 +56,42 @@ else
   missing "GitHub CLI (gh) is not installed" "Install it: https://cli.github.com"
 fi
 
-agents_found=0
+# Providers that .agents/agents.conf assigns to a role are required.
+codex_roles=""
+claude_roles=""
+if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
+  if [[ -f "${AGENT_CONFIG_FILE:-$root/.agents/agents.conf}" ]]; then
+    ok "agent configuration is valid"
+    for role in $AGENT_ROLES; do
+      agent_lookup "$root" "$role"
+      case "$AGENT_CONFIG_PROVIDER" in
+        codex) codex_roles+=" $role" ;;
+        claude) claude_roles+=" $role" ;;
+        "") ;;
+        *)
+          missing "role '$role' uses unsupported agent '$AGENT_CONFIG_PROVIDER'" \
+            "Use 'codex' or 'claude' in .agents/agents.conf."
+          ;;
+      esac
+    done
+  else
+    warn "agent configuration .agents/agents.conf was not found" \
+      "Every workflow script then needs --agent and --model."
+  fi
+else
+  missing "agent configuration is invalid" "${config_error#Error: }"
+fi
+
 for agent in codex claude; do
+  roles="${agent}_roles"
   if have "$agent"; then
     ok "$agent CLI is installed"
-    agents_found=$((agents_found + 1))
+  elif [[ -n "${!roles}" ]]; then
+    missing "$agent CLI is not installed" "It is configured for:${!roles}. Install it or change .agents/agents.conf."
   else
     warn "$agent CLI is not installed" "Install it before selecting '$agent' in a workflow script."
   fi
 done
-if [[ "$agents_found" -eq 0 ]]; then
-  missing "no agent CLI is installed" "Install at least one of: codex, claude"
-fi
 
 if have git; then
   if git rev-parse --show-toplevel >/dev/null 2>&1; then
