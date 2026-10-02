@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "findings", "limitations"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "PASS_WITH_MINOR_FINDINGS", "CHANGES_REQUIRED"]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "title", "evidence", "impact", "recommendation"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor", "suggestion"]
+          },
+          "title": { "type": "string" },
+          "evidence": { "type": "string" },
+          "impact": { "type": "string" },
+          "recommendation": { "type": "string" }
+        }
+      }
+    },
+    "limitations": { "type": "string" }
+  }
+}

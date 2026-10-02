@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$script_dir/lib/agent.sh"
+source "$script_dir/lib/review-data.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -34,6 +36,7 @@ slug="${branch//\//-}"
 
 reviews_dir="$root/.agents/reviews"
 prompt_file="$root/.agents/prompts/reviewer.md"
+schema_file="$root/.agents/schemas/review.schema.json"
 
 # Ensure we're reviewing the expected feature branch.
 if [[ "$branch" != feature/${issue}-* ]]; then
@@ -47,6 +50,8 @@ agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
 [[ -f "$prompt_file" ]] || fail "reviewer prompt not found: $prompt_file"
+[[ -f "$schema_file" ]] || fail "review schema not found: $schema_file"
+review_data_require_jq
 
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated. Run: gh auth login"
@@ -93,7 +98,7 @@ tree_before="$(snapshot_tree before)"
 
 review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage")
 context_file="$tmp_work/context.md"
-report_file="$tmp_work/report.md"
+report_file="$tmp_work/result.json"
 
 if GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --quiet "$merge_base" -- "${review_paths[@]}"; then
   fail "no changes to review between $base_ref and the working tree."
@@ -119,12 +124,16 @@ fi
 review_number=1
 previous_review=""
 while true; do
-  candidate="$reviews_dir/${slug}-review-$(printf "%02d" "$review_number").md"
-  if [[ ! -e "$candidate" ]]; then
+  candidate="$reviews_dir/${slug}-review-$(printf "%02d" "$review_number")"
+  if [[ ! -e "$candidate.json" && ! -e "$candidate.md" ]]; then
     out="$candidate"
     break
   fi
-  previous_review="$candidate"
+  # A round without JSON, such as a review from before JSON artifacts, is not
+  # an input for the re-review.
+  if [[ -f "$candidate.json" ]]; then
+    previous_review="$candidate.json"
+  fi
   review_number=$((review_number + 1))
 done
 review_relative=".agents/reviews/$(basename "$out")"
@@ -135,7 +144,7 @@ echo "  Branch:   $branch"
 echo "  Base:     $base_ref"
 echo "  Agent:    $agent"
 echo "  Model:    $model"
-echo "  Output:   $review_relative"
+echo "  Output:   $review_relative.json"
 if [[ -n "$previous_review" ]]; then
   echo "  Previous: .agents/reviews/$(basename "$previous_review")"
 fi
@@ -157,7 +166,7 @@ if [[ -n "$previous_review" ]]; then
 
 This is a re-review.
 
-Read the previous review:
+Read the previous review (JSON):
 .agents/reviews/$(basename "$previous_review")
 
 Check whether its findings have been resolved, but perform an independent review of the complete current implementation. Do not limit the review to the previous findings."
@@ -166,74 +175,83 @@ fi
 START_PROMPT+="
 
 You have read-only access. Do not modify, create, or delete any file.
-Return the complete review as your final message, starting with the
-'## Critical' section. The calling script stores it."
+Return the review as JSON that matches the supplied schema. The calling
+script validates and stores it."
 
 echo "Starting $agent reviewer ($model) with read-only permissions..."
 echo
 
-set +e
-agent_run read-only "$agent" "$model" "$root" "$START_PROMPT" "$report_file" "$context_file"
-agent_status=$?
-set -e
+# Invalid output is retried once; a failed agent or a modified tree is not.
+attempt_prompt="$START_PROMPT"
+for attempt in 1 2; do
+  : >"$report_file"
+  set +e
+  agent_run read-only "$agent" "$model" "$root" "$attempt_prompt" "$report_file" "$context_file" "$schema_file"
+  agent_status=$?
+  set -e
 
-if [[ "$(git -C "$root" rev-parse HEAD)" != "$head_before" || "$(snapshot_tree after)" != "$tree_before" ]]; then
-  echo "Error: the reviewer modified the working tree or created a commit. No review was stored." >&2
-  git -C "$root" status --short >&2
-  exit 1
-fi
-
-[[ "$agent_status" -eq 0 ]] ||
-  fail "reviewer failed with status $agent_status. No review was stored."
-
-# Keep the report from its first section heading and require a usable verdict.
-report_body="$(awk '/^## / { found = 1 } found { print }' "$report_file" 2>/dev/null || true)"
-verdict="$(printf '%s\n' "$report_body" | awk '
-  /^## Verdict[[:space:]]*$/ { in_verdict = 1; next }
-  in_verdict && /^## / { exit }
-  in_verdict && $0 !~ /^[[:space:]]*$/ {
-    gsub(/[*`]/, "")
-    sub(/^[[:space:]]+/, "")
-    sub(/[[:space:]]+$/, "")
-    print
-    exit
-  }
-')"
-
-for section in "## Critical" "## Major" "## Minor" "## Suggestions" "## Verdict"; do
-  if ! grep -Eq "^${section}[[:space:]]*$" <<<"$report_body"; then
-    echo "Error: the reviewer's report has no '$section' section. No review was stored." >&2
-    echo "Returned output:" >&2
-    cat "$report_file" >&2 2>/dev/null || true
+  if [[ "$(git -C "$root" rev-parse HEAD)" != "$head_before" || "$(snapshot_tree "after-$attempt")" != "$tree_before" ]]; then
+    echo "Error: the reviewer modified the working tree or created a commit. No review was stored." >&2
+    git -C "$root" status --short >&2
     exit 1
   fi
+
+  [[ "$agent_status" -eq 0 ]] ||
+    fail "reviewer failed with status $agent_status. No review was stored."
+
+  result_errors="$(review_result_errors "$report_file")"
+  [[ -n "$result_errors" ]] || break
+
+  echo "The reviewer returned an invalid result (attempt $attempt of 2):" >&2
+  printf '%s\n' "$result_errors" | sed 's/^/  - /' >&2
+  [[ "$attempt" -lt 2 ]] || fail "the reviewer's result is invalid. No review was stored."
+  echo "Retrying once..." >&2
+  attempt_prompt="$START_PROMPT
+
+Your previous result was rejected for these reasons:
+$result_errors
+
+Return a corrected result."
 done
 
-case "$verdict" in
-  PASS | "PASS WITH MINOR FINDINGS" | "CHANGES REQUIRED") ;;
-  *)
-    fail "the reviewer's verdict is missing or invalid: '${verdict}'. No review was stored."
-    ;;
-esac
-
 mkdir -p "$reviews_dir"
-{
-  echo "# Independent Review — $branch"
-  echo
-  echo "Issue: #$issue"
-  echo
-  echo "Base: $base_ref ($merge_base)"
-  echo
-  echo "HEAD at review start: $head_before"
-  echo
-  echo "Working tree changes included: yes"
-  echo
-  echo "Reviewed tree: $tree_before"
-  echo
-  echo "Reviewer: $agent ($model), read-only"
-  echo
-  printf '%s\n' "$report_body"
-} >"$out"
+review_result_with_ids "$report_file" | jq \
+  --argjson issue "$issue" \
+  --argjson round "$review_number" \
+  --arg branch "$branch" \
+  --arg base "$base_ref" \
+  --arg merge_base "$merge_base" \
+  --arg head "$head_before" \
+  --arg tree "$tree_before" \
+  --arg agent "$agent" \
+  --arg model "$model" \
+  --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  '{
+    schema: "review/v1",
+    issue: $issue,
+    round: $round,
+    branch: $branch,
+    base: $base,
+    merge_base: $merge_base,
+    head: $head,
+    reviewed_tree: $tree,
+    reviewer: {agent: $agent, model: $model},
+    created_at: $created_at,
+    verdict: .verdict,
+    limitations: .limitations,
+    findings: .findings
+  }' >"$out.json"
 
-echo "Review completed: $verdict"
-echo "  $review_relative"
+artifact_errors="$(review_artifact_errors "$out.json")"
+if [[ -n "$artifact_errors" ]]; then
+  rm -f "$out.json"
+  echo "Error: the stored review would be invalid; nothing was stored:" >&2
+  printf '%s\n' "$artifact_errors" | sed 's/^/  - /' >&2
+  exit 1
+fi
+review_render_markdown "$out.json" "$(basename "$out").json" >"$out.md"
+
+verdict="$(jq -r '.verdict | gsub("_"; " ")' "$out.json")"
+echo "Review completed: $verdict ($(jq '.findings | length' "$out.json") findings)"
+echo "  $review_relative.json  (source of truth)"
+echo "  $review_relative.md    (generated report)"

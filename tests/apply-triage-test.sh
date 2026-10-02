@@ -2,367 +2,241 @@
 
 set -euo pipefail
 
-# apply-triage.sh runs ./scripts/verify.sh; do not recurse into this suite.
-if [[ "${APPLY_TRIAGE_TEST_ACTIVE:-0}" == "1" ]]; then
-  echo "apply-triage tests skipped inside a nested verification run"
-  exit 0
-fi
-
-root="$(git rev-parse --show-toplevel)"
-script="$root/scripts/apply-triage.sh"
-review_dir="$root/.agents/reviews"
-triage_dir="$root/.agents/triage"
-test_stem="feature-13-apply-test-$$-$RANDOM"
-review="$review_dir/${test_stem}-review-01.md"
-triage="$triage_dir/${test_stem}-review-01-triage.md"
-decline_triage="$triage_dir/${test_stem}-review-02-triage.md"
-empty_triage="$triage_dir/${test_stem}-review-03-triage.md"
-malformed_triage="$triage_dir/${test_stem}-review-04-triage.md"
-unapproved_triage="$triage_dir/${test_stem}-review-05-triage.md"
-stale_triage="$triage_dir/${test_stem}-review-06-triage.md"
-ambiguous_triage="$triage_dir/${test_stem}-review-07-triage.md"
-deleted_triage="$triage_dir/${test_stem}-review-08-triage.md"
+source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/apply-triage-test.XXXXXX")"
 
 cleanup() {
   rm -rf "$tmp"
-  rm -f "$review" "$triage" "$decline_triage" "$empty_triage" "$malformed_triage"
-  rm -f "$unapproved_triage" "$stale_triage" "$ambiguous_triage"
-  rm -f "$deleted_triage"
 }
 trap cleanup EXIT
 
-mkdir -p "$review_dir" "$triage_dir" "$tmp/bin"
-for test_path in "$review" "$triage" "$decline_triage" "$empty_triage" "$malformed_triage" "$unapproved_triage" "$stale_triage" "$ambiguous_triage" "$deleted_triage"; do
-  if [[ -e "$test_path" ]]; then
-    echo "Refusing to overwrite pre-existing test path: $test_path" >&2
-    exit 1
-  fi
-done
-
-cat >"$review" <<'REVIEW'
-# Independent Review — feature/13-apply-test
-
-Issue: #13
-
-## Critical
-
-### C1. Correctness regression
-
-The incorrect branch must be fixed.
-- S99. Evidence detail that is not a finding
-
-## Minor
-
-### Minor 1. Deferred cleanup
-
-This work is outside the current scope.
-
-## Suggestions
-
-### Accepted rename
-
-The existing name is acceptable.
-
-## Verdict
-
-CHANGES REQUIRED
-REVIEW
-
-write_triage() {
-  local target="$1"
-  local fix_decision="$2"
-  local include_approval="$3"
-
-  {
-    echo "# Review Triage — $test_stem"
-    echo
-    echo "Source review: \`.agents/reviews/$(basename "$review")\`"
-    echo
-    echo "Source feature Issue: #13"
-    echo
-    echo "Reviewer verdict: CHANGES REQUIRED"
-    echo
-    echo "Triage agent: claude"
-    if [[ "$include_approval" == "yes" ]]; then
-      echo
-      echo "Approved at: 2026-09-11T10:00:00Z"
-    fi
-    echo
-    echo "## Fix now"
-    echo
-    echo "### C1. Correctness regression"
-    echo
-    echo "- Severity: Critical"
-    echo "- Decision: $fix_decision"
-    echo "- Source line: 7"
-    echo "- Rationale: Correctness blocks the feature."
-    echo
-    echo "## Deferred"
-    echo
-    echo "### Minor 1. Deferred cleanup"
-    echo
-    echo "- Severity: Minor"
-    echo "- Decision: DEFER"
-    echo "- Source line: 15"
-    echo "- Rationale: This belongs in follow-up work."
-    echo "- Proposed Issue: [F03][R01][Minor-1] Deferred cleanup"
-    echo "- Recommended action: Handle separately."
-    echo "- Acceptance criteria: Cleanup is complete."
-    echo "- Created Issue: see Traceability"
-    echo
-    echo "## Accepted"
-    echo
-    echo "### Suggestion-1. Accepted rename"
-    echo
-    echo "- Severity: Suggestions"
-    echo "- Decision: ACCEPT"
-    echo "- Source line: 23"
-    echo "- Rationale: The existing name is adequate."
-    echo
-    echo "## Traceability"
-    echo
-    echo "- Minor 1 → [#99](https://github.com/example/project/issues/99)"
-  } >"$target"
+fail() {
+  echo "apply-triage test failed: $*" >&2
+  exit 1
 }
 
-write_triage "$triage" "FIX_NOW" "yes"
-cp "$triage" "$decline_triage"
-write_triage "$malformed_triage" "DEFER" "yes"
-write_triage "$unapproved_triage" "FIX_NOW" "no"
-awk '{ gsub(/C1\. Correctness regression/, "S99. Evidence detail that is not a finding"); print }' "$triage" >"$stale_triage"
-awk '
-  { print }
-  /^Source feature Issue: #13$/ {
-    print "Source feature Issue: #99"
-  }
-' "$triage" >"$ambiguous_triage"
-cp "$triage" "$deleted_triage"
-
-cat >"$empty_triage" <<EOF
-# Review Triage — $test_stem
-
-Source review: \`.agents/reviews/$(basename "$review")\`
-
-Source feature Issue: #13
-
-Reviewer verdict: PASS
-
-Triage agent: claude
-
-Approved at: 2026-09-11T10:00:00Z
-
-## Fix now
-
-None.
-
-## Deferred
-
-None.
-
-## Accepted
-
-None.
-
-## Traceability
-
-No follow-up Issues created.
-EOF
+source "$source_root/tests/lib-fakes.sh"
+make_fake_agents "$tmp/bin"
 
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-} ${2:-}" == "auth status" ]]; then
-  exit 0
-fi
-if [[ "${1:-} ${2:-}" == "issue view" ]]; then
-  echo "13"
-  exit 0
-fi
+case "${1:-} ${2:-}" in
+  "auth status") exit 0 ;;
+  "issue view") echo "13"; exit 0 ;;
+esac
 echo "Unexpected gh invocation: $*" >&2
 exit 1
 GH
+chmod +x "$tmp/bin/gh"
 
-cat >"$tmp/bin/codex" <<'CODEX'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'codex %s\n' "$*" >>"$MOCK_AGENT_LOG"
-if [[ -n "${MOCK_CHMOD_PATH:-}" ]]; then
-  chmod 600 "$MOCK_CHMOD_PATH"
+review=".agents/reviews/feature-13-apply-test-review-01.json"
+triage=".agents/triage/feature-13-apply-test-review-01-triage.json"
+
+# Creates a repository on feature/13-apply-test with a stored review and its
+# approved triage. Its verification passes unless a check is replaced.
+setup_repo() {
+  local repo="$tmp/$1"
+
+  mkdir -p "$repo/.agents/reviews" "$repo/.agents/triage"
+  copy_workflow "$repo"
+  printf 'triage-implementer: codex model-i\n' >"$repo/.agents/agents.conf"
+  printf 'marker: test -f AGENTS.md\n' >"$repo/scripts/verify.conf"
+  printf '# Agents\n' >"$repo/AGENTS.md"
+
+  jq -n '{
+    schema: "review/v1", issue: 13, round: 1, branch: "feature/13-apply-test", base: "main",
+    merge_base: "aaaa", head: "bbbb", reviewed_tree: "cccc",
+    reviewer: {agent: "claude", model: "model-r"}, created_at: "2026-01-01T00:00:00Z",
+    verdict: "CHANGES_REQUIRED", limitations: "",
+    findings: [
+      {id: "C1", severity: "critical", title: "Correctness regression", evidence: "src/a.sh:3", impact: "Wrong result.", recommendation: "Fix the branch."},
+      {id: "MIN1", severity: "minor", title: "Deferred cleanup", evidence: "src/a.sh:9", impact: "Clutter.", recommendation: "Clean up."},
+      {id: "S1", severity: "suggestion", title: "Accepted rename", evidence: "src/a.sh:8", impact: "Readability.", recommendation: "Rename."}
+    ]
+  }' >"$repo/$review"
+
+  jq -n --arg review "$review" '{
+    schema: "triage/v1", source_review: $review, issue: 13, reviewed_tree: "cccc",
+    review_verdict: "CHANGES_REQUIRED", triage: {agent: "claude", model: "model-t"},
+    approved_at: "2026-01-01T10:00:00Z",
+    decisions: [
+      {finding_id: "C1", severity: "critical", title: "Correctness regression", decision: "FIX_NOW", rationale: "Correctness blocks the feature.", followup: null},
+      {finding_id: "MIN1", severity: "minor", title: "Deferred cleanup", decision: "DEFER", rationale: "Follow-up work.",
+       followup: {title: "[#13][R01][MIN1] Deferred cleanup", recommended_action: "Handle separately.", acceptance_criteria: ["Done."], issue_number: 99, issue_url: "https://github.com/example/project/issues/99"}},
+      {finding_id: "S1", severity: "suggestion", title: "Accepted rename", decision: "ACCEPT", rationale: "Adequate.", followup: null}
+    ]
+  }' >"$repo/$triage"
+
+  git -C "$repo" init -q -b main
+  git -C "$repo" config user.name "Apply Test"
+  git -C "$repo" config user.email "apply-test@example.com"
+  git -C "$repo" add .
+  git -C "$repo" commit -qm "Seed project"
+  git -C "$repo" switch -q -c feature/13-apply-test
+
+  printf '%s\n' "$repo"
+}
+
+edit_triage() {
+  local repo="$1"
+  local filter="$2"
+
+  jq "$filter" "$repo/$triage" >"$repo/$triage.tmp"
+  mv "$repo/$triage.tmp" "$repo/$triage"
+}
+
+run_apply() {
+  local repo="$1"
+  local answer="$2"
+  shift 2
+
+  (
+    cd "$repo"
+    printf '%s\n' "$answer" |
+      PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo.log" ./scripts/apply-triage.sh "$@"
+  ) >"$repo.out" 2>&1
+}
+
+expect_rejected() {
+  local repo="$1"
+  local description="$2"
+  shift 2
+
+  if run_apply "$repo" y "$@"; then
+    cat "$repo.out" >&2
+    fail "expected failure: $description"
+  fi
+  [[ ! -e "$repo.log" ]] || fail "an implementation agent was started although: $description"
+}
+
+# After confirmation, a write-capable agent receives exactly the FIX_NOW
+# findings, and the result is verified.
+repo="$(setup_repo apply)"
+run_apply "$repo" y "$triage" || {
+  cat "$repo.out" >&2
+  fail "applying an approved triage failed"
+}
+grep -Fq -- "--sandbox workspace-write --ask-for-approval never --model model-i" "$repo.log" ||
+  fail "implementation agent was not started write-capable with the configured model"
+grep -Fq "C1. Correctness regression" "$repo.log" || fail "the FIX_NOW finding was not passed to the agent"
+if grep -Fq "Deferred cleanup" "$repo.log" || grep -Fq "Accepted rename" "$repo.log"; then
+  fail "the implementation agent received a finding that is not FIX_NOW"
 fi
-if [[ -n "${MOCK_DELETE_PATH:-}" ]]; then
-  rm -f "$MOCK_DELETE_PATH"
+grep -Fq "Verification passed." "$repo.out" || fail "the result was not verified"
+
+# Declining, and a triage without FIX_NOW findings, start no agent.
+repo="$(setup_repo decline)"
+run_apply "$repo" n "$triage" || fail "declined apply returned an error"
+[[ ! -e "$repo.log" ]] || fail "an agent was started after declining"
+
+repo="$(setup_repo nothing-to-fix)"
+jq '.verdict = "PASS_WITH_MINOR_FINDINGS" | del(.findings[0])' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+edit_triage "$repo" '.review_verdict = "PASS_WITH_MINOR_FINDINGS" | del(.decisions[0])'
+run_apply "$repo" y "$triage" || fail "a triage without FIX_NOW findings returned an error"
+[[ ! -e "$repo.log" ]] || fail "an agent was started without FIX_NOW findings"
+
+# Unapproved, mismatching, or misplaced triage artifacts are rejected.
+repo="$(setup_repo unapproved)"
+edit_triage "$repo" 'del(.approved_at)'
+expect_rejected "$repo" "the triage is not approved" "$triage"
+
+# An edited artifact cannot weaken a decision: the stored triage is checked
+# with the same rules as the triage agent's output.
+repo="$(setup_repo critical-accepted)"
+edit_triage "$repo" '.decisions[0].decision = "ACCEPT"'
+expect_rejected "$repo" "a Critical finding is not FIX_NOW" "$triage"
+
+repo="$(setup_repo no-followup-issue)"
+edit_triage "$repo" '.decisions[1].followup.issue_number = null | .decisions[1].followup.issue_url = null'
+expect_rejected "$repo" "a deferred finding has no follow-up Issue" "$triage"
+
+repo="$(setup_repo no-rationale)"
+edit_triage "$repo" '.decisions[0].rationale = ""'
+expect_rejected "$repo" "a decision has no rationale" "$triage"
+
+repo="$(setup_repo invalid-review)"
+jq '.findings[0].evidence = ""' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_rejected "$repo" "the source review is invalid" "$triage"
+
+# Script-owned fields of stored artifacts are constrained, so they cannot be
+# used as paths or contradict the review.
+repo="$(setup_repo unsafe-id)"
+jq '.findings[2].id = "../S1"' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_rejected "$repo" "a finding id is not a script-assigned identifier" "$triage"
+
+repo="$(setup_repo bad-round)"
+jq '.round = 1.5' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_rejected "$repo" "the review round is not a positive integer" "$triage"
+
+repo="$(setup_repo bad-issue-reference)"
+edit_triage "$repo" '.decisions[1].followup.issue_number = -0.5 | .decisions[1].followup.issue_url = "not an issue"'
+expect_rejected "$repo" "a follow-up Issue reference is invalid" "$triage"
+
+repo="$(setup_repo missing-metadata)"
+edit_triage "$repo" 'del(.triage) | del(.decisions[2].followup)'
+expect_rejected "$repo" "triage metadata and a required field are missing" "$triage"
+
+repo="$(setup_repo copied-title)"
+edit_triage "$repo" '.decisions[0].title = "Something else"'
+expect_rejected "$repo" "the triage misstates a finding of the review" "$triage"
+
+repo="$(setup_repo unknown-finding)"
+edit_triage "$repo" '.decisions[0].finding_id = "C9"'
+expect_rejected "$repo" "a decision does not map to the review" "$triage"
+
+repo="$(setup_repo undecided-finding)"
+edit_triage "$repo" 'del(.decisions[2])'
+expect_rejected "$repo" "a finding of the review has no decision" "$triage"
+
+repo="$(setup_repo other-issue)"
+edit_triage "$repo" '.issue = 99'
+expect_rejected "$repo" "triage and review reference different Issues" "$triage"
+
+repo="$(setup_repo missing-review)"
+rm "$repo/$review"
+expect_rejected "$repo" "the source review is missing" "$triage"
+
+repo="$(setup_repo wrong-branch)"
+git -C "$repo" switch -q -c feature/14-other
+expect_rejected "$repo" "the branch belongs to another Issue" "$triage"
+
+repo="$(setup_repo preconditions)"
+printf '# report\n' >"$repo/.agents/triage/report.md"
+expect_rejected "$repo" "the input is the generated report" ".agents/triage/report.md"
+expect_rejected "$repo" "the triage does not exist" ".agents/triage/missing.json"
+expect_rejected "$repo" "the agent is unsupported" "$triage" --agent copilot --model model-x
+
+# A failing agent is reported after verification still ran.
+repo="$(setup_repo agent-fails)"
+if MOCK_AGENT_EXIT=7 run_apply "$repo" y "$triage"; then
+  fail "a failed implementation agent returned success"
 fi
-exit "${MOCK_AGENT_EXIT:-0}"
-CODEX
+grep -Fq "== Verification summary ==" "$repo.out" || fail "verification did not run after a failed agent"
 
-cat >"$tmp/bin/claude" <<'CLAUDE'
-#!/usr/bin/env bash
-set -euo pipefail
-printf 'claude %s\n' "$*" >>"$MOCK_AGENT_LOG"
-if [[ -n "${MOCK_CHMOD_PATH:-}" ]]; then
-  chmod 600 "$MOCK_CHMOD_PATH"
+# An agent that changes or removes the protected artifacts is rejected.
+repo="$(setup_repo edits-triage)"
+if MOCK_AGENT_ACTION="chmod 600 '$repo/$triage'" run_apply "$repo" y "$triage" --agent claude --model model-c; then
+  fail "a changed triage artifact returned success"
 fi
-if [[ -n "${MOCK_DELETE_PATH:-}" ]]; then
-  rm -f "$MOCK_DELETE_PATH"
-fi
-exit "${MOCK_AGENT_EXIT:-0}"
-CLAUDE
+grep -Fq -- "--permission-mode acceptEdits --model model-c" "$repo.log" ||
+  fail "overridden Claude agent was not started write-capable with its model"
 
-real_git="$(command -v git)"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'set -euo pipefail' \
-  'if [[ "${1:-} ${2:-}" == "branch --show-current" ]]; then' \
-  '  echo "feature/13-apply-test"' \
-  '  exit 0' \
-  'fi' \
-  "exec \"$real_git\" \"\$@\"" >"$tmp/bin/git"
-
-chmod +x "$tmp/bin/gh" "$tmp/bin/git" "$tmp/bin/codex" "$tmp/bin/claude"
-
-review_hash_before="$(git hash-object "$review")"
-triage_hash_before="$(git hash-object "$triage")"
-
-output="$(
-  printf 'y\n' |
-    PATH="$tmp/bin:/usr/bin:/bin" \
-    MOCK_AGENT_LOG="$tmp/agent.log" \
-    APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$triage" --agent codex --model test-model
-)"
-
-[[ "$output" == *"Approved FIX_NOW scope"* ]]
-[[ "$output" == *"### C1. Correctness regression"* ]]
-[[ "$output" == *"verification passed"* ]]
-[[ "$(git hash-object "$review")" == "$review_hash_before" ]]
-[[ "$(git hash-object "$triage")" == "$triage_hash_before" ]]
-grep -Fq "codex --sandbox workspace-write --ask-for-approval never --model test-model" "$tmp/agent.log"
-grep -Fq "### C1. Correctness regression" "$tmp/agent.log"
-if grep -Fq "Deferred cleanup" "$tmp/agent.log" || grep -Fq "Accepted rename" "$tmp/agent.log"; then
-  echo "Implementation agent received a non-FIX_NOW finding." >&2
-  exit 1
-fi
-
-agent_calls_before="$(grep -c '^[a-z]' "$tmp/agent.log")"
-decline_output="$(
-  printf 'n\n' |
-    PATH="$tmp/bin:/usr/bin:/bin" \
-    MOCK_AGENT_LOG="$tmp/agent.log" \
-    APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$decline_triage" --agent claude --model sonnet
-)"
-[[ "$decline_output" == *"Apply triage declined"* ]]
-[[ "$(grep -c '^[a-z]' "$tmp/agent.log")" -eq "$agent_calls_before" ]]
-
-empty_output="$(
-  PATH="$tmp/bin:/usr/bin:/bin" \
-    MOCK_AGENT_LOG="$tmp/agent.log" \
-    APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$empty_triage" --agent claude --model sonnet
-)"
-[[ "$empty_output" == *"No FIX_NOW findings found"* ]]
-[[ "$(grep -c '^[a-z]' "$tmp/agent.log")" -eq "$agent_calls_before" ]]
-
-claude_output="$(
-  printf 'y\n' |
-    PATH="$tmp/bin:/usr/bin:/bin" \
-    MOCK_AGENT_LOG="$tmp/agent.log" \
-    APPLY_TRIAGE_TEST_ACTIVE=1 \
-    "$script" "$triage" --agent claude --model opus
-)"
-[[ "$claude_output" == *"verification passed"* ]]
-grep -Fq "claude --permission-mode acceptEdits --model opus" "$tmp/agent.log"
-
-if PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$malformed_triage" --agent claude --model sonnet </dev/null >"$tmp/malformed.out" 2>&1; then
-  echo "Expected malformed triage validation to fail." >&2
-  exit 1
-fi
-grep -Fq "wrong decision section" "$tmp/malformed.out"
-
-if PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$unapproved_triage" --agent claude --model sonnet >"$tmp/unapproved.out" 2>&1; then
-  echo "Expected unapproved triage validation to fail." >&2
-  exit 1
-fi
-grep -Fq "approval timestamp" "$tmp/unapproved.out"
-
-if PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$stale_triage" --agent claude --model sonnet >"$tmp/stale.out" 2>&1; then
-  echo "Expected stale triage validation to fail." >&2
-  exit 1
-fi
-if ! grep -Fq "does not map uniquely to the source review" "$tmp/stale.out"; then
-  cat "$tmp/stale.out" >&2
-  exit 1
+repo="$(setup_repo deletes-review)"
+if MOCK_AGENT_ACTION="rm '$repo/$review'" run_apply "$repo" y "$triage"; then
+  fail "a deleted review artifact returned success"
 fi
 
-if PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$ambiguous_triage" --agent claude --model sonnet >"$tmp/ambiguous.out" 2>&1; then
-  echo "Expected ambiguous Issue metadata validation to fail." >&2
-  exit 1
+# A failing verification fails the run.
+repo="$(setup_repo verification-fails)"
+printf 'broken: false\n' >"$repo/scripts/verify.conf"
+git -C "$repo" commit -qam "Break verification"
+if run_apply "$repo" y "$triage"; then
+  fail "a failed verification returned success"
 fi
-grep -Fq "ambiguous source Issue metadata" "$tmp/ambiguous.out"
-
-if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  MOCK_AGENT_EXIT=7 \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$triage" --agent claude --model sonnet >"$tmp/failed-agent.out" 2>&1; then
-  echo "Expected failed implementation agent to propagate failure." >&2
-  exit 1
-fi
-grep -Fq "Running repository verification" "$tmp/failed-agent.out"
-grep -Fq "implementation agent exited with status 7" "$tmp/failed-agent.out"
-
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  original_mode="$(stat -f '%Lp' "$triage")"
-else
-  original_mode="$(stat -c '%a' "$triage")"
-fi
-if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  MOCK_CHMOD_PATH="$triage" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$triage" --agent claude --model sonnet >"$tmp/mode.out" 2>&1; then
-  echo "Expected protected artifact mode change to fail." >&2
-  exit 1
-fi
-chmod "$original_mode" "$triage"
-grep -Fq "modified the approved triage artifact" "$tmp/mode.out"
-grep -Fq "Running repository verification" "$tmp/mode.out"
-
-if printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" \
-  MOCK_AGENT_LOG="$tmp/agent.log" \
-  MOCK_DELETE_PATH="$deleted_triage" \
-  APPLY_TRIAGE_TEST_ACTIVE=1 \
-  "$script" "$deleted_triage" --agent claude --model sonnet >"$tmp/deleted.out" 2>&1; then
-  echo "Expected protected artifact deletion to fail." >&2
-  exit 1
-fi
-grep -Fq "modified the approved triage artifact" "$tmp/deleted.out"
-grep -Fq "Running repository verification" "$tmp/deleted.out"
-
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage_dir/missing.md" --agent claude --model sonnet >"$tmp/missing.out" 2>&1; then
-  echo "Expected missing triage validation to fail." >&2
-  exit 1
-fi
-grep -Fq "triage artifact not found" "$tmp/missing.out"
-
-rm "$tmp/bin/codex"
-if PATH="$tmp/bin:/usr/bin:/bin" "$script" "$triage" --agent codex --model test-model >"$tmp/agent.out" 2>&1; then
-  echo "Expected missing agent validation to fail." >&2
-  exit 1
-fi
-grep -Fq "'codex' command not found" "$tmp/agent.out"
 
 echo "apply-triage tests passed"

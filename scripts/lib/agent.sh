@@ -2,7 +2,7 @@
 
 # Shared agent configuration and launcher for the workflow scripts.
 # Source this file; do not execute it. It uses only Bash builtins besides the
-# selected agent CLI.
+# selected agent CLI, and jq when an agent is asked for structured output.
 #
 # Provider and model per role come from .agents/agents.conf. The --agent and
 # --model options of a workflow script override that file. A requested model is
@@ -133,16 +133,27 @@ agent_resolve() {
   AGENT_MODEL="$model"
 }
 
-# agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file]
+# agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file] [schema-file]
 #
 # Profiles:
 #   write      Interactive session that may modify the work directory.
 #   read-only  Non-interactive session that cannot modify files. The agent's
 #              final message is stored in <output-file>. <context-file>, when
-#              given, is supplied to the agent on standard input.
+#              given, is supplied to the agent on standard input. With a
+#              <schema-file> (JSON Schema), the provider is asked for
+#              structured output and <output-file> holds that JSON; the
+#              caller must still validate it.
+#
+# Read-only sessions are isolated from the user's configuration, so they get no
+# MCP servers, apps, or other tools that act outside the sandbox. Codex runs in
+# its read-only sandbox without the user's config.toml and with apps, browser
+# use, computer use, and web search disabled. Claude runs restricted, without
+# user, project, or MCP configuration, with only its Read, Glob, and Grep tools,
+# and without asking for any further permission.
 #
 # A profile that the provider cannot enforce is an error; the agent is never
-# started with broader permissions instead. Returns the agent's status.
+# started with broader permissions instead. Returns the agent's status; a
+# Claude session that reports an error returns 1 even when the CLI exits 0.
 agent_run() {
   local profile="$1"
   local provider="$2"
@@ -151,6 +162,18 @@ agent_run() {
   local prompt="$5"
   local output_file="${6:-}"
   local context_file="${7:-/dev/null}"
+  local schema_file="${8:-}"
+  local codex_schema=()
+  local claude_read_only=(
+    --print
+    --restricted
+    --strict-mcp-config
+    --permission-mode dontAsk
+    --tools "Read,Glob,Grep"
+    --no-session-persistence
+  )
+  local envelope
+  local status
 
   case "$profile" in
     write | read-only) ;;
@@ -183,26 +206,59 @@ agent_run() {
       )
       ;;
     codex:read-only)
+      if [[ -n "$schema_file" ]]; then
+        codex_schema=(--output-schema "$schema_file")
+      fi
       codex exec \
+        --ignore-user-config \
         --sandbox read-only \
+        --disable apps \
+        --disable browser_use \
+        --disable computer_use \
+        -c 'web_search="disabled"' \
         --ephemeral \
         --color never \
         --cd "$workdir" \
         --output-last-message "$output_file" \
         --model "$model" \
+        ${codex_schema[@]+"${codex_schema[@]}"} \
         "$prompt" <"$context_file" >/dev/null
       ;;
     claude:read-only)
+      if [[ -z "$schema_file" ]]; then
+        (
+          cd "$workdir"
+          claude "${claude_read_only[@]}" --model "$model" "$prompt"
+        ) <"$context_file" >"$output_file"
+        return
+      fi
+
+      command -v jq >/dev/null 2>&1 || agent_fail "jq is required for structured agent output."
+
+      # Claude returns structured output inside a JSON result envelope.
+      envelope="$output_file.envelope"
+      # Capture the status without toggling errexit, which belongs to the caller.
+      status=0
       (
         cd "$workdir"
-        claude \
-          --print \
-          --permission-mode plan \
-          --tools "Read,Glob,Grep" \
-          --no-session-persistence \
+        claude "${claude_read_only[@]}" \
           --model "$model" \
+          --output-format json \
+          --json-schema "$(<"$schema_file")" \
           "$prompt"
-      ) <"$context_file" >"$output_file"
+      ) <"$context_file" >"$envelope" || status=$?
+
+      if [[ "$status" -ne 0 ]] || jq -e '.is_error == true' "$envelope" >/dev/null 2>&1; then
+        jq -r '.result // empty' "$envelope" >&2 2>/dev/null || cat "$envelope" >&2
+        [[ "$status" -ne 0 ]] || status=1
+        return "$status"
+      fi
+
+      # Without structured output, hand the raw result to the caller's
+      # validation, which rejects it.
+      jq -e '.structured_output // (.result | fromjson?)' "$envelope" >"$output_file" 2>/dev/null ||
+        jq -r '.result // empty' "$envelope" >"$output_file" 2>/dev/null ||
+        cp "$envelope" "$output_file"
       ;;
     *)
       agent_fail "agent '$provider' cannot enforce permission profile '$profile'."

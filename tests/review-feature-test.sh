@@ -31,99 +31,25 @@ echo "Unexpected gh invocation: $*" >&2
 exit 1
 GH
 
-# The fake reviewer records its arguments and standard input, then behaves
-# according to MOCK_REVIEW_MODE.
-cat >"$tmp/bin/claude" <<'AGENT'
-#!/usr/bin/env bash
-set -euo pipefail
+source "$source_root/tests/lib-fakes.sh"
+make_fake_agents "$tmp/bin"
+chmod +x "$tmp/bin/gh"
 
-agent="$(basename "$0")"
-{
-  echo "AGENT=$agent"
-  echo "ARGS=$*"
-} >>"$MOCK_AGENT_LOG"
-cat >"$MOCK_AGENT_LOG.stdin"
-
-output_file=""
-while [[ $# -gt 0 ]]; do
-  if [[ "$1" == "--output-last-message" ]]; then
-    output_file="$2"
-  fi
-  shift
-done
-
-report() {
-  if [[ -n "$output_file" ]]; then
-    cat >"$output_file"
-  else
-    cat
-  fi
+finding() {
+  printf '{"severity": "%s", "title": "%s", "evidence": "marker.txt:1", "impact": "The marker is never read.", "recommendation": "Read the marker."}' "$1" "$2"
 }
-
-case "${MOCK_REVIEW_MODE:-success}" in
-  fail)
-    exit 43
-    ;;
-  large)
-    {
-      printf '## Critical\n\nNone.\n\n## Major\n\nNone.\n\n## Minor\n\nNone.\n\n## Suggestions\n\n'
-      for ((line = 0; line < 6000; line++)); do
-        printf -- '- Suggestion detail line %s that pads the report beyond a pipe buffer.\n' "$line"
-      done
-      printf '\n## Verdict\n\nPASS WITH MINOR FINDINGS\n'
-    } | report
-    exit 0
-    ;;
-  no-verdict)
-    printf '## Critical\n\nNone.\n\n## Major\n\nNone.\n' | report
-    exit 0
-    ;;
-  modify)
-    printf 'changed by the reviewer\n' >>feature.txt
-    ;;
-  create)
-    printf 'created by the reviewer\n' >reviewer-note.txt
-    ;;
-esac
-
-report <<'REPORT'
-Preface that is not part of the review.
-
-## Critical
-
-None.
-
-## Major
-
-### M1. Marker content is unchecked
-
-The marker file is created but never read.
-
-## Minor
-
-None.
-
-## Suggestions
-
-None.
-
-## Verdict
-
-**CHANGES REQUIRED**
-REPORT
-AGENT
-cp "$tmp/bin/claude" "$tmp/bin/codex"
-chmod +x "$tmp/bin/gh" "$tmp/bin/claude" "$tmp/bin/codex"
+valid_result="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"Tests were not run.\", \"findings\": [$(finding minor "Marker name is vague"), $(finding major "Marker content is unchecked")]}"
+# A verdict that does not follow from the findings.
+inconsistent_result="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
+export MOCK_OUTPUT="$valid_result"
 
 # Creates a repository on feature/7-marker with one committed, one modified,
 # and one untracked file relative to main.
 setup_repo() {
   local repo="$tmp/$1"
 
-  mkdir -p "$repo/scripts/lib" "$repo/.agents/prompts"
-  cp "$source_root/scripts/review-feature.sh" "$repo/scripts/review-feature.sh"
-  cp "$source_root/scripts/lib/agent.sh" "$repo/scripts/lib/agent.sh"
-  cp "$source_root/.agents/prompts/reviewer.md" "$repo/.agents/prompts/reviewer.md"
+  mkdir -p "$repo"
+  copy_workflow "$repo"
   printf 'reviewer: claude model-r\n' >"$repo/.agents/agents.conf"
   printf 'base content\n' >"$repo/feature.txt"
   mkdir -p "$repo/docs"
@@ -165,34 +91,33 @@ expect_no_review() {
     cat "$repo.out" >&2
     fail "expected failure: $description"
   fi
-  if compgen -G "$repo/.agents/reviews/*.md" >/dev/null; then
+  if compgen -G "$repo/.agents/reviews/*" >/dev/null; then
     fail "a review was stored although: $description"
   fi
 }
 
-# The script stores the returned report; the reviewer runs read-only and
-# receives the Issue and the complete diff on standard input.
+# The script stores the validated result as JSON with script-assigned finding
+# identifiers and a generated report; the reviewer runs read-only and receives
+# the Issue and the complete diff on standard input.
 repo="$(setup_repo claude)"
 run_review "$repo" 7 || {
   cat "$repo.out" >&2
   fail "review with the configured agent failed"
 }
-artifact="$repo/.agents/reviews/feature-7-marker-review-01.md"
-[[ -f "$artifact" ]] || fail "the script did not store the review"
-grep -Fqx "Issue: #7" "$artifact" || fail "stored review lacks the Issue reference"
-grep -Fqx "### M1. Marker content is unchecked" "$artifact" || fail "stored review lacks the returned finding"
-if grep -Fq "Preface that is not part of the review" "$artifact"; then
-  fail "text before the first section was stored"
-fi
-grep -Fq -- "--permission-mode plan --tools Read,Glob,Grep" "$repo.log" ||
+artifact="$repo/.agents/reviews/feature-7-marker-review-01"
+[[ -f "$artifact.json" && -f "$artifact.md" ]] || fail "the script did not store the review and its report"
+[[ "$(jq -c '[.issue, .round, .verdict, (.findings | map(.id))]' "$artifact.json")" == '[7,1,"CHANGES_REQUIRED",["MIN1","M1"]]' ]] ||
+  fail "stored review lacks the Issue, round, verdict, or finding identifiers"
+[[ "$(jq -r '.reviewed_tree | length' "$artifact.json")" -eq 40 ]] || fail "stored review lacks the reviewed tree"
+grep -Fq "M1. Marker content is unchecked" "$artifact.md" || fail "generated report lacks a finding"
+grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Grep" "$repo.log" ||
   fail "Claude reviewer was not restricted to read tools"
+grep -Fq -- "--json-schema" "$repo.log" || fail "Claude reviewer was not given the schema"
 grep -Fq -- "--model model-r" "$repo.log" || fail "configured model was not passed to the reviewer"
 grep -Fq "The marker file must exist." "$repo.log.stdin" || fail "Issue was not supplied to the reviewer"
 for change in "+committed change" "+uncommitted change" "+untracked marker"; do
   grep -Fqx -- "$change" "$repo.log.stdin" || fail "diff supplied to the reviewer lacks: $change"
 done
-[[ -z "$(git -C "$repo" status --porcelain -- feature.txt marker.txt | grep -v '^ M feature.txt$' | grep -v '^?? marker.txt$')" ]] ||
-  fail "the review changed the state of the reviewed files"
 
 # A second round is numbered and points the reviewer at the previous review,
 # which is not part of the reviewed diff.
@@ -200,27 +125,74 @@ run_review "$repo" 7 --agent codex --model model-c || {
   cat "$repo.out" >&2
   fail "re-review with an overridden agent failed"
 }
-[[ -f "$repo/.agents/reviews/feature-7-marker-review-02.md" ]] || fail "re-review was not numbered"
-grep -Fq "feature-7-marker-review-01.md" "$repo.log" || fail "re-review did not reference the previous review"
-grep -Fq -- "exec --sandbox read-only" "$repo.log" || fail "Codex reviewer was not sandboxed read-only"
+[[ "$(jq '.round' "$repo/.agents/reviews/feature-7-marker-review-02.json")" -eq 2 ]] || fail "re-review was not numbered"
+grep -Fq "feature-7-marker-review-01.json" "$repo.log" || fail "re-review did not reference the previous review"
+grep -Fq -- "--sandbox read-only" "$repo.log" || fail "Codex reviewer was not sandboxed read-only"
+grep -Fq -- "--output-schema" "$repo.log" || fail "Codex reviewer was not given the schema"
 if grep -Fq "Marker content is unchecked" "$repo.log.stdin"; then
   fail "previous review artifact was included in the reviewed diff"
 fi
 
+# A review without findings is valid.
+repo="$(setup_repo no-findings)"
+MOCK_OUTPUT='{"verdict": "PASS", "limitations": "", "findings": []}' run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review without findings was rejected"
+}
+[[ "$(jq -c '[.verdict, (.findings | length)]' "$repo/.agents/reviews/feature-7-marker-review-01.json")" == '["PASS",0]' ]] ||
+  fail "a review without findings was not stored as PASS"
+
 # A reviewer that changes or creates files is detected.
 repo="$(setup_repo modify)"
-MOCK_REVIEW_MODE=modify expect_no_review "$repo" "the reviewer modified a file" 7
+MOCK_AGENT_ACTION="printf 'changed by the reviewer\n' >>'$repo/feature.txt'" \
+  expect_no_review "$repo" "the reviewer modified a file" 7
 grep -Fq "modified the working tree" "$repo.out" || fail "modification was not reported"
 
 repo="$(setup_repo create)"
-MOCK_REVIEW_MODE=create expect_no_review "$repo" "the reviewer created a file" 7
+MOCK_AGENT_ACTION="printf 'created by the reviewer\n' >'$repo/reviewer-note.txt'" \
+  expect_no_review "$repo" "the reviewer created a file" 7
 
-# A large valid report is stored.
-repo="$(setup_repo large)"
-MOCK_REVIEW_MODE=large run_review "$repo" 7 || {
+# A failed reviewer stores nothing.
+repo="$(setup_repo agent-fails)"
+MOCK_AGENT_EXIT=43 expect_no_review "$repo" "the reviewer failed" 7
+
+# An invalid result is retried once: it is accepted when the retry is valid
+# and rejected when it is not.
+repo="$(setup_repo retry)"
+MOCK_OUTPUT_FIRST="$inconsistent_result" run_review "$repo" 7 || {
   cat "$repo.out" >&2
-  fail "a large valid report was rejected"
+  fail "a valid result after one invalid result was rejected"
 }
+[[ "$(grep -c '^AGENT=' "$repo.log")" -eq 2 ]] || fail "an invalid result was not retried exactly once"
+[[ "$(grep -c 'previous result was rejected' "$repo.log")" -eq 1 ]] ||
+  fail "the retry did not tell the reviewer why its result was rejected"
+grep -Fq "requires a critical or major finding" "$repo.log" || fail "the retry prompt lacks the rejection reason"
+
+# The reviewer may not supply script-owned fields or more than one result.
+owned_fields_result="$(jq '. + {issue: 999} | .findings[0].id = "agent-id"' <<<"$valid_result")"
+pass_result='{"verdict": "PASS", "limitations": "", "findings": []}'
+minor_only_result="{\"verdict\": \"PASS_WITH_MINOR_FINDINGS\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
+
+# One invalid result per rule, each derived from a valid result.
+invalid_results=(
+  "not json"
+  "$pass_result $pass_result"
+  '{"verdict": "PASS"}'
+  "$owned_fields_result"
+  "$inconsistent_result"
+  "$(jq '.verdict = "APPROVED"' <<<"$valid_result")"
+  "$(jq '.findings[0].severity = "blocker"' <<<"$valid_result")"
+  "$(jq '.findings[1].evidence = " "' <<<"$valid_result")"
+  "$(jq '.verdict = "PASS"' <<<"$minor_only_result")"
+  "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$valid_result")"
+  "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$pass_result")"
+)
+for index in "${!invalid_results[@]}"; do
+  invalid_result="${invalid_results[$index]}"
+  repo="$(setup_repo "invalid-$index")"
+  MOCK_OUTPUT="$invalid_result" expect_no_review "$repo" "the result is invalid: $invalid_result" 7
+  [[ "$(grep -c '^AGENT=' "$repo.log")" -eq 2 ]] || fail "an invalid result was not retried exactly once"
+done
 
 # From a subdirectory, the snapshot still contains tracked files that match an
 # ignore rule, so they are not reviewed as deletions.
@@ -235,13 +207,6 @@ repo="$(setup_repo subdirectory)"
 if grep -Fq "tracked.log" "$repo.log.stdin"; then
   fail "an unchanged tracked file matching an ignore rule appeared in the reviewed diff"
 fi
-
-# A failed reviewer or an unusable report stores nothing.
-repo="$(setup_repo agent-fails)"
-MOCK_REVIEW_MODE=fail expect_no_review "$repo" "the reviewer failed" 7
-
-repo="$(setup_repo no-verdict)"
-MOCK_REVIEW_MODE=no-verdict expect_no_review "$repo" "the report has no verdict" 7
 
 # Invalid invocations fail before a reviewer starts.
 repo="$(setup_repo preconditions)"

@@ -2,12 +2,6 @@
 
 set -euo pipefail
 
-# Keep the verification runs nested inside the apply-triage suite fast.
-if [[ "${APPLY_TRIAGE_TEST_ACTIVE:-0}" == "1" ]]; then
-  echo "start-planning tests skipped inside a nested verification run"
-  exit 0
-fi
-
 root="$(git rev-parse --show-toplevel)"
 script_source="$root/scripts/start-planning.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/start-planning-test.XXXXXX")"

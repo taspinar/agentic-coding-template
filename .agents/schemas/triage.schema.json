@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decisions"],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "decision", "rationale", "followup"],
+        "properties": {
+          "finding_id": { "type": "string" },
+          "decision": {
+            "type": "string",
+            "enum": ["FIX_NOW", "DEFER", "ACCEPT"]
+          },
+          "rationale": { "type": "string" },
+          "followup": {
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "recommended_action", "acceptance_criteria"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "recommended_action": { "type": "string" },
+                  "acceptance_criteria": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

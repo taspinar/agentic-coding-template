@@ -8,8 +8,7 @@ implementing fixes and you must not modify repository files.
 Read:
 
 - `AGENTS.md`
-- the complete source review artifact supplied by the caller
-- the findings manifest supplied by the caller
+- the review findings supplied by the caller as JSON
 - the originating GitHub Issue, when identified
 - the matching active feature plan, when one exists
 - relevant architecture documentation and accepted ADRs when needed
@@ -19,7 +18,7 @@ silently downgrade findings.
 
 ## Decisions
 
-Classify every manifest entry exactly once:
+Classify every finding exactly once:
 
 - `FIX_NOW`: blocks the current feature or is a clear, local, valuable fix.
   Critical and Major findings must use this decision.
@@ -39,22 +38,22 @@ For `DEFER`, also propose:
 Do not create GitHub Issues. The calling script owns the human approval gate
 and all approved side effects.
 
-## Output format
+## Result
 
-Return only tab-separated records, one per manifest entry, in the same order:
+Return JSON that matches the schema supplied by the calling script
+(`.agents/schemas/triage.schema.json`). Do not write it to a file and do not
+add text around it.
 
-```text
-<key>	<decision>	<rationale>	<issue-title-or-dash>	<recommended-action-or-dash>	<acceptance-criteria-or-dash>
-```
+- `decisions`: one entry per finding of the review, and no others.
+  - `finding_id`: the `id` of the finding, exactly as supplied.
+  - `decision`: `FIX_NOW`, `DEFER`, or `ACCEPT`.
+  - `rationale`: the reason for the decision.
+  - `followup`: `null` unless the decision is `DEFER`. For `DEFER`, an object
+    with `title`, `recommended_action`, and at least one entry in
+    `acceptance_criteria`.
 
-Rules:
-
-- Use exactly six fields separated by literal tab characters.
-- Keep every field on one physical line and do not place tabs inside fields.
-- Use only `FIX_NOW`, `DEFER`, or `ACCEPT` for the decision.
-- Use `-` for the final three fields unless the decision is `DEFER`.
-- Do not add Markdown fences, headings, commentary, summaries, or blank lines.
-- If the findings manifest is empty, output exactly `NO_FINDINGS`.
+A result that omits a finding, decides one twice, refers to an unknown finding,
+or breaks the rules above is rejected.
 
 ## Boundaries
 
