@@ -17,6 +17,8 @@ A lightweight, model-agnostic repository template for agentic software engineeri
 
    ```bash
    ./scripts/start-planning.sh
+   # or, with an existing project description:
+   ./scripts/start-planning.sh --description path/to/description.md
    ```
 
    The script creates `planning/project-bootstrap` in a sibling worktree. The

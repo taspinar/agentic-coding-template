@@ -6,14 +6,18 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
 
 usage() {
   cat <<EOF
-Usage: $0 [name] [--agent <agent>] [--model <model>]
+Usage: $0 [name] [--description <file>] [--agent <agent>] [--model <model>]
 
 The agent and model of each phase come from .agents/agents.conf (roles
 project-grill and project-planner). --agent and --model override both phases.
 
+--description copies an existing project description into the planning
+worktree as docs/PROJECT_DESCRIPTION.md. Project Grill reads it first.
+
 Examples:
   $0
   $0 architecture-refresh
+  $0 --description ~/notes/project-idea.md
   $0 --agent claude --model fable
 EOF
 }
@@ -24,12 +28,41 @@ fail() {
 }
 
 agent_parse_args "$@"
-if [[ "${#AGENT_POSITIONAL[@]}" -gt 1 ]]; then
+
+description_source=""
+names=()
+set -- ${AGENT_POSITIONAL[@]+"${AGENT_POSITIONAL[@]}"}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --description)
+      [[ $# -ge 2 && -n "$2" ]] || fail "--description requires a file."
+      description_source="$2"
+      shift 2
+      ;;
+    --*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      names+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "${#names[@]}" -gt 1 ]]; then
   usage
   exit 1
 fi
 
-name="${AGENT_POSITIONAL[0]:-project-bootstrap}"
+name="${names[0]:-project-bootstrap}"
+
+if [[ -n "$description_source" ]]; then
+  [[ -f "$description_source" ]] ||
+    fail "project description is not a regular file: $description_source"
+  [[ -r "$description_source" && -s "$description_source" ]] ||
+    fail "project description is empty or unreadable: $description_source"
+  description_source="$(cd "$(dirname "$description_source")" && pwd -P)/$(basename "$description_source")"
+fi
 
 [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] ||
   fail "planning name must match [a-z0-9][a-z0-9-]*: $name"
@@ -54,7 +87,13 @@ planner_model="$AGENT_MODEL"
 [[ -f "$grill_prompt" ]] || fail "missing Project Grill prompt: $grill_prompt"
 [[ -f "$planner_prompt" ]] || fail "missing project-planner prompt: $planner_prompt"
 
-if [[ -n "$(git -C "$repo_root" status --porcelain)" ]]; then
+# An uncommitted description inside the repository is the only change that
+# does not count as a dirty checkout.
+clean_paths=(.)
+if [[ -n "$description_source" && "$description_source" == "$repo_root"/* ]]; then
+  clean_paths+=(":(exclude,literal)${description_source#"$repo_root"/}")
+fi
+if [[ -n "$(git -C "$repo_root" status --porcelain -- "${clean_paths[@]}")" ]]; then
   fail "current worktree is not clean. Commit or stash changes first."
 fi
 
@@ -71,6 +110,9 @@ echo "  Branch:   $branch"
 echo "  Worktree: $worktree"
 echo "  Grill:    $grill_agent ($grill_model)"
 echo "  Planner:  $planner_agent ($planner_model)"
+if [[ -n "$description_source" ]]; then
+  echo "  Description: $description_source"
+fi
 echo
 
 git -C "$repo_root" fetch origin main ||
@@ -228,6 +270,14 @@ $worktree
 Do not commit, push, open or merge a pull request, create GitHub Issues,
 implement application features, or deploy.
 EOF
+
+  if [[ -n "$description_source" ]]; then
+    cat <<EOF
+
+The user supplied a project description as $description_relative.
+Read it before anything else. Do not modify it.
+EOF
+  fi
 }
 
 run_agent() {
@@ -376,6 +426,20 @@ approve_requirements() {
   approval_tmp=""
 }
 
+# Copy the description before the scope baselines are taken, so it is part of
+# the protected state of both phases instead of an out-of-scope change.
+description_relative="docs/PROJECT_DESCRIPTION.md"
+if [[ -n "$description_source" ]]; then
+  description_target="$worktree/$description_relative"
+  [[ ! -L "$description_target" && (! -e "$description_target" || -f "$description_target") ]] ||
+    post_creation_fail "$description_relative exists in the worktree and is not a regular file."
+  mkdir -p "$worktree/docs" && cp "$description_source" "$description_target" ||
+    post_creation_fail "could not copy the project description into the planning worktree."
+  chmod 644 "$description_target" ||
+    post_creation_fail "could not set permissions on $description_relative."
+  echo "Copied project description to: $description_relative"
+fi
+
 grill_baseline="$state_dir/grill-baseline.tsv"
 planner_baseline="$state_dir/planner-baseline.tsv"
 snapshot_forbidden_paths "grill" "$grill_baseline"
@@ -468,6 +532,9 @@ echo
 echo "Review the planning artifacts, then run:"
 echo "  cd \"$worktree\""
 echo "  ./scripts/verify.sh"
+if [[ -n "$description_source" ]]; then
+  echo "  git add $description_relative"
+fi
 echo "  git add docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions"
 echo "  git commit -m \"Plan project bootstrap\""
 echo "  git push -u origin \"$branch\""
