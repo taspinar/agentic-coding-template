@@ -26,6 +26,8 @@ review_data_is_json() {
 _review_data_rules='
   def nonempty: type == "string" and test("\\S");
 
+  def positive_integer: type == "number" and . >= 1 and . == floor;
+
   def unexpected($allowed; $where):
     (keys - $allowed) as $extra
     | if ($extra | length) > 0 then "\($where) has unexpected fields: \($extra | join(", "))" else empty end;
@@ -168,14 +170,19 @@ review_artifact_errors() {
     else
       unexpected(["base", "branch", "created_at", "findings", "head", "issue", "limitations",
                   "merge_base", "reviewed_tree", "reviewer", "round", "schema", "verdict"]; "the review"),
-      (if (.issue | type) == "number" then empty else "issue must be a number" end),
-      (if (.round | type) == "number" then empty else "round must be a number" end),
-      (if (.reviewed_tree | nonempty) then empty else "reviewed_tree is missing" end),
+      (if (.issue | positive_integer) then empty else "issue must be a positive integer" end),
+      (if (.round | positive_integer) then empty else "round must be a positive integer" end),
+      (("branch", "base", "merge_base", "head", "reviewed_tree", "created_at") as $field |
+        if (.[$field] | nonempty) then empty else "\($field) is missing" end),
+      (if (.reviewer | type) == "object" and (.reviewer.agent | nonempty) and (.reviewer.model | nonempty) then empty
+       else "reviewer must name its agent and model" end),
       (if (.findings | type) == "array" and (.findings | all(type == "object")) then
+         (.findings[] |
+           if (.id | type) == "string" and (.id | test("^(C|M|MIN|S)[1-9][0-9]*$"))
+              and ((.id | sub("[0-9]+$"; "")) == ({"critical": "C", "major": "M", "minor": "MIN", "suggestion": "S"}[.severity])) then empty
+           else "finding id \(.id | tostring) does not match its severity \(.severity | tostring)" end),
          ([.findings[] | .id] as $ids
-          | if ($ids | all(nonempty) | not) then "every finding needs an id"
-            elif ($ids | unique | length) != ($ids | length) then "finding ids must be unique"
-            else empty end)
+          | if ($ids | unique | length) != ($ids | length) then "finding ids must be unique" else empty end)
        else empty end),
       ({
         verdict,
@@ -218,17 +225,17 @@ review_render_markdown() {
   ' "$1"
 }
 
-# triage_decision_errors <review-json> <decisions-file>: rules for a triage
+# triage_decision_errors <decisions-file> <review-json>: rules for a triage
 # agent's decisions about the findings of a review.
 triage_decision_errors() {
-  review_data_is_json "$2" || {
+  review_data_is_json "$1" || {
     echo "the decisions are not exactly one JSON value"
     return 0
   }
 
-  jq -r --slurpfile review "$1" "$_review_data_rules"'
+  jq -r --slurpfile review "$2" "$_review_data_rules"'
     triage_decision_rules($review[0].findings | map({key: .id, value: .severity}) | from_entries)
-  ' "$2"
+  ' "$1"
 }
 
 # triage_source_review <triage-json>
@@ -260,16 +267,31 @@ triage_artifact_errors() {
        else "the triage has no valid UTC approval timestamp" end),
       (if .issue == $review[0].issue then empty
        else "triage and review reference different source Issues" end),
+      (if (.triage | type) == "object" and (.triage.agent | nonempty) and (.triage.model | nonempty) then empty
+       else "triage must name its agent and model" end),
+      (if .review_verdict == $review[0].verdict and .reviewed_tree == $review[0].reviewed_tree then empty
+       else "the triage does not describe the stored state of its source review" end),
+      ($review[0].findings | map({key: .id, value: {severity, title}}) | from_entries) as $source
+      | (if (.decisions | type) == "array" then
+           (.decisions[] | objects | select($source[.finding_id] != null)
+            | if {severity, title} == $source[.finding_id] then empty
+              else "the decision for \(.finding_id) does not match the severity and title in the review" end)
+         else empty end),
       (if (.decisions | type) == "array" then
          (.decisions[] | objects |
            unexpected(["decision", "finding_id", "followup", "rationale", "severity", "title"];
+             "the decision for \(.finding_id | tostring)"),
+           missing(["decision", "finding_id", "followup", "rationale", "severity", "title"];
              "the decision for \(.finding_id | tostring)"),
            (if (.followup | type) == "object" then
               (.followup |
                 unexpected(["acceptance_criteria", "issue_number", "issue_url", "recommended_action", "title"];
                   "a follow-up"),
-                (if (.issue_number | type) == "number" and (.issue_url | nonempty) then empty
-                 else "a deferred finding has no follow-up Issue yet; run triage-review.sh again to complete it" end))
+                (if (.issue_number | positive_integer)
+                    and (.issue_url | type) == "string"
+                    and (.issue_url | test("^https://[^ ]+/issues/[0-9]+$"))
+                    and ((.issue_url | sub("^.*/"; "")) == (.issue_number | tostring)) then empty
+                 else "a deferred finding has no valid follow-up Issue reference" end))
             else empty end))
        else empty end),
       ({

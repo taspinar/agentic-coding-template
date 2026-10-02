@@ -123,10 +123,11 @@ that matches the supplied schema."
   status_before="$(git -C "$root" status --porcelain=v1 --untracked-files=all)"
 
   # Invalid output is retried once; a failed agent or a modified tree is not.
+  attempt_prompt="$start_prompt"
   for attempt in 1 2; do
     : >"$decisions_file"
     set +e
-    agent_run read-only "$agent" "$model" "$root" "$start_prompt" "$decisions_file" "$context_file" "$schema_file"
+    agent_run read-only "$agent" "$model" "$root" "$attempt_prompt" "$decisions_file" "$context_file" "$schema_file"
     agent_status=$?
     set -e
 
@@ -140,13 +141,19 @@ that matches the supplied schema."
     fi
     [[ "$agent_status" -eq 0 ]] || fail "triage agent failed with status $agent_status."
 
-    decision_errors="$(triage_decision_errors "$review_path" "$decisions_file")"
+    decision_errors="$(triage_decision_errors "$decisions_file" "$review_path")"
     [[ -n "$decision_errors" ]] || break
 
     echo "The triage agent returned invalid decisions (attempt $attempt of 2):" >&2
     printf '%s\n' "$decision_errors" | sed 's/^/  - /' >&2
     [[ "$attempt" -lt 2 ]] || fail "triage decisions are invalid. No artifact or GitHub Issues were created."
     echo "Retrying once..." >&2
+    attempt_prompt="$start_prompt
+
+Your previous result was rejected for these reasons:
+$decision_errors
+
+Return a corrected result."
   done
 fi
 
@@ -239,9 +246,11 @@ else
   echo '{}' >"$previous_mappings"
 fi
 
-# The artifact is written before the follow-up Issues exist and completed per
-# created Issue. If Issue creation fails, it stays incomplete: apply-triage.sh
-# rejects it, and a new triage round reuses the Issues recorded so far.
+# The triage is completed in a working file and stored only when every
+# deferred finding has its follow-up Issue. If creating an Issue fails, nothing
+# is stored; Issues created so far carry a trace token and are reused by the
+# next triage of this review.
+pending="$tmp_work/triage.json"
 jq -n \
   --slurpfile review "$review_path" \
   --slurpfile decisions "$proposal_file" \
@@ -258,7 +267,7 @@ jq -n \
     triage: {agent: $agent, model: $model},
     approved_at: $approved_at,
     decisions: $decisions[0]
-  }' >"$artifact.json"
+  }' >"$pending"
 
 record_issue() {
   local finding_id="$1"
@@ -270,8 +279,8 @@ record_issue() {
 
   jq --arg id "$finding_id" --arg url "$issue_url" --argjson number "$issue_number" '
     (.decisions[] | select(.finding_id == $id) | .followup) |= (. + {issue_number: $number, issue_url: $url})
-  ' "$artifact.json" >"$artifact.json.tmp"
-  mv "$artifact.json.tmp" "$artifact.json"
+  ' "$pending" >"$pending.tmp"
+  mv "$pending.tmp" "$pending"
 }
 
 while IFS= read -r finding_id; do
@@ -294,7 +303,7 @@ while IFS= read -r finding_id; do
     continue
   fi
 
-  issue_title="$(jq -r --arg id "$finding_id" '.decisions[] | select(.finding_id == $id) | .followup.title' "$artifact.json")"
+  issue_title="$(jq -r --arg id "$finding_id" '.decisions[] | select(.finding_id == $id) | .followup.title' "$pending")"
   issue_body_file="$tmp_work/${finding_id}-issue.md"
   jq -r \
     --slurpfile review "$review_path" \
@@ -315,20 +324,22 @@ while IFS= read -r finding_id; do
       "## Acceptance criteria\n\n" +
       ($d.followup.acceptance_criteria | map("- \(.)\n") | join("")) +
       "- `./scripts/verify.sh` passes."
-  ' "$artifact.json" >"$issue_body_file"
+  ' "$pending" >"$issue_body_file"
 
   echo "Creating follow-up Issue for $finding_id..."
-  issue_url="$(gh issue create --title "$issue_title" --body-file "$issue_body_file" </dev/null | tail -n 1)"
+  issue_url="$(gh issue create --title "$issue_title" --body-file "$issue_body_file" </dev/null | tail -n 1)" ||
+    fail "creating the follow-up Issue for $finding_id failed. No triage artifact was stored; run the triage again, and Issues created so far are reused."
   record_issue "$finding_id" "$issue_url"
-done < <(jq -r '.decisions[] | select(.decision == "DEFER") | .finding_id' "$artifact.json")
+done < <(jq -r '.decisions[] | select(.decision == "DEFER") | .finding_id' "$pending")
 
-artifact_errors="$(triage_artifact_errors "$artifact.json" "$review_path")"
+artifact_errors="$(triage_artifact_errors "$pending" "$review_path")"
 if [[ -n "$artifact_errors" ]]; then
-  echo "Error: the stored triage artifact is invalid:" >&2
+  echo "Error: the triage artifact would be invalid; nothing was stored:" >&2
   printf '%s\n' "$artifact_errors" | sed 's/^/  - /' >&2
   exit 1
 fi
 
+cp "$pending" "$artifact.json"
 triage_render_markdown "$artifact.json" "$(basename "$artifact").json" >"$artifact.md"
 
 echo

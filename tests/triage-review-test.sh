@@ -161,7 +161,7 @@ artifact="$repo/.agents/triage/feature-5-test-review-01-triage"
 grep -Fqx "TITLE: [F02][R01][MIN1] Add boundary-condition coverage" "$repo.gh" || fail "follow-up title lacks provenance"
 grep -Fq "triage-source:$review#MIN1" "$repo.gh" || fail "follow-up Issue lacks its trace token"
 grep -Fqx "Second line." "$repo.gh" || fail "follow-up Issue lacks the multi-line evidence"
-grep -Fq -- "--permission-mode plan --tools Read,Glob,Grep" "$repo.log" || fail "triage agent was not read-only"
+grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Grep" "$repo.log" || fail "triage agent was not read-only"
 grep -Fq -- "--json-schema" "$repo.log" || fail "triage agent was not given the schema"
 grep -Fq "Correctness regression" "$repo.log.stdin" || fail "findings were not supplied to the triage agent"
 
@@ -190,16 +190,14 @@ MOCK_EXISTING_ISSUE="https://github.com/example/project/issues/77" run_triage "$
   fail "an existing remote follow-up Issue was not reused"
 [[ ! -e "$repo.gh" ]] || fail "a duplicate of an existing remote follow-up Issue was created"
 
-# When Issue creation fails, the stored triage is incomplete and is not
-# accepted as an approved triage.
+# When Issue creation fails, no triage artifact is stored.
 repo="$(setup_repo create-fails)"
 if MOCK_GH_CREATE_EXIT=1 run_triage "$repo" y "$review"; then
   fail "a failed follow-up Issue creation returned success"
 fi
-(
-  source "$source_root/scripts/lib/review-data.sh"
-  [[ -n "$(triage_artifact_errors "$repo/.agents/triage/feature-5-test-review-01-triage.json" "$repo/$review")" ]]
-) || fail "a triage without its follow-up Issue was accepted as complete"
+if compgen -G "$repo/.agents/triage/*" >/dev/null; then
+  fail "a triage artifact was stored although a follow-up Issue could not be created"
+fi
 
 # Without a feature ID in the Issue title, the Issue number is the provenance.
 repo="$(setup_repo fallback 7)"
@@ -216,7 +214,7 @@ run_triage "$repo" n "$review" --agent codex --model model-c || fail "declined t
 if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh" ]]; then
   fail "declined triage had side effects"
 fi
-grep -Fq -- "exec --sandbox read-only" "$repo.log" || fail "Codex triage agent was not sandboxed read-only"
+grep -Fq -- "--sandbox read-only" "$repo.log" || fail "Codex triage agent was not sandboxed read-only"
 grep -Fq -- "--output-schema" "$repo.log" || fail "Codex triage agent was not given the schema"
 
 # Invalid decisions are retried once and then rejected before any side effect.
@@ -225,8 +223,27 @@ owned_fields_decisions="$(jq '.decisions[0].severity = "minor"' <<<"$valid_decis
 # A required field is absent rather than null.
 missing_field_decisions="$(jq 'del(.decisions[2].followup)' <<<"$valid_decisions")"
 
-for invalid in "$downgraded_decisions" "$incomplete_decisions" "$owned_fields_decisions" "$missing_field_decisions" "$valid_decisions $valid_decisions" "not json"; do
-  repo="$(setup_repo "invalid-$RANDOM")"
+# One invalid result per rule, each derived from the valid decisions.
+invalid_decisions=(
+  "not json"
+  "$valid_decisions $valid_decisions"
+  "$downgraded_decisions"
+  "$incomplete_decisions"
+  "$owned_fields_decisions"
+  "$missing_field_decisions"
+  "$(jq '.decisions += [.decisions[2]]' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].finding_id = "S9"' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].decision = "LATER"' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].rationale = ""' <<<"$valid_decisions")"
+  "$(jq '.decisions[1].followup = null' <<<"$valid_decisions")"
+  "$(jq '.decisions[1].followup.title = ""' <<<"$valid_decisions")"
+  "$(jq '.decisions[1].followup.recommended_action = ""' <<<"$valid_decisions")"
+  "$(jq '.decisions[1].followup.acceptance_criteria = []' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].followup = .decisions[1].followup' <<<"$valid_decisions")"
+)
+for index in "${!invalid_decisions[@]}"; do
+  invalid="${invalid_decisions[$index]}"
+  repo="$(setup_repo "invalid-$index")"
   MOCK_OUTPUT="$invalid" expect_no_triage "$repo" "the decisions are invalid" "$review"
   [[ "$(grep -c '^AGENT=' "$repo.log")" -eq 2 ]] || fail "invalid decisions were not retried exactly once"
 done
@@ -236,6 +253,7 @@ MOCK_OUTPUT_FIRST="$incomplete_decisions" run_triage "$repo" y "$review" || {
   cat "$repo.out" >&2
   fail "valid decisions after one invalid result were rejected"
 }
+grep -Fq "finding S1 was not classified" "$repo.log" || fail "the retry prompt lacks the rejection reason"
 
 # A triage agent that fails or changes the working tree is rejected.
 repo="$(setup_repo agent-fails)"

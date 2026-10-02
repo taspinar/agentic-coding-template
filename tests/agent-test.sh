@@ -150,10 +150,12 @@ done
 # A read-only run uses the read-only flags of each provider.
 : >"$MOCK_AGENT_LOG"
 agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/report.txt"
-grep -Fq -- "--sandbox read-only" "$MOCK_AGENT_LOG" || fail "codex read-only run was not sandboxed"
+for flag in "--ignore-user-config" "--sandbox read-only" "--disable apps" "--disable computer_use" 'web_search="disabled"'; do
+  grep -Fq -- "$flag" "$MOCK_AGENT_LOG" || fail "isolated Codex read-only session lacks: $flag"
+done
 : >"$MOCK_AGENT_LOG"
 agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/report.txt"
-grep -Fq -- "--permission-mode plan --tools Read,Glob,Grep" "$MOCK_AGENT_LOG" ||
+grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Grep" "$MOCK_AGENT_LOG" ||
   fail "claude read-only run was not restricted to read tools"
 
 # An unknown profile, or a read-only run without an output file, starts no agent.
@@ -170,5 +172,46 @@ fi
 status=0
 MOCK_AGENT_EXIT=7 agent_run write claude model-b "$workdir" "the prompt" >/dev/null || status=$?
 [[ "$status" -eq 7 ]] || fail "agent exit status was not propagated"
+
+# Structured output from Claude arrives in a result envelope. The launcher
+# extracts it, reports errors with a non-zero status, and keeps the session
+# isolated from the user's configuration.
+mkdir -p "$tmp/envelope-bin"
+cat >"$tmp/envelope-bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+echo "ARGS=$*" >>"$MOCK_AGENT_LOG"
+printf '%s\n' "$MOCK_ENVELOPE"
+exit "${MOCK_AGENT_EXIT:-0}"
+FAKE
+chmod +x "$tmp/envelope-bin/claude"
+printf '{"type": "object"}\n' >"$tmp/schema.json"
+
+run_structured() {
+  PATH="$tmp/envelope-bin:$PATH" agent_run read-only claude model-b "$workdir" "the prompt" \
+    "$tmp/structured.json" /dev/null "$tmp/schema.json" 2>/dev/null
+}
+
+: >"$MOCK_AGENT_LOG"
+MOCK_ENVELOPE='{"is_error": false, "structured_output": {"verdict": "PASS"}, "result": "ignored"}' run_structured ||
+  fail "structured output was not accepted"
+[[ "$(jq -c . "$tmp/structured.json")" == '{"verdict":"PASS"}' ]] || fail "structured output was not extracted"
+for flag in "--restricted" "--strict-mcp-config" "--permission-mode dontAsk" "--tools Read,Glob,Grep" "--json-schema"; do
+  grep -Fq -- "$flag" "$MOCK_AGENT_LOG" || fail "isolated Claude read-only session lacks: $flag"
+done
+if grep -Fq -- "--permission-mode plan" "$MOCK_AGENT_LOG"; then
+  fail "Claude read-only session still uses plan mode"
+fi
+
+MOCK_ENVELOPE='{"is_error": false, "result": "{\"verdict\": \"PASS\"}"}' run_structured ||
+  fail "a JSON result without structured_output was not accepted"
+[[ "$(jq -c . "$tmp/structured.json")" == '{"verdict":"PASS"}' ]] || fail "JSON in the result field was not extracted"
+
+status=0
+MOCK_ENVELOPE='{"is_error": true, "result": "API error"}' run_structured || status=$?
+[[ "$status" -ne 0 ]] || fail "an error reported in the envelope returned success"
+
+status=0
+MOCK_AGENT_EXIT=5 MOCK_ENVELOPE='{"is_error": true, "result": "failed"}' run_structured || status=$?
+[[ "$status" -eq 5 ]] || fail "Claude's exit status was not returned (got $status)"
 
 echo "agent tests passed"

@@ -78,9 +78,13 @@ Agents run with one of two permission profiles:
 - `write`: an interactive session that may modify its worktree. Codex runs in
   a workspace-write sandbox without approval prompts; Claude accepts edits
   automatically. Used for planning, implementation, and applying triage.
-- `read-only`: a non-interactive session that cannot modify files. Codex runs
-  in a read-only sandbox; Claude is limited to its read tools. The script
-  stores the agent's final message. Used for review and triage.
+- `read-only`: a non-interactive session that cannot modify files and gets no
+  MCP servers, apps, or other tools from the user's configuration. Codex runs
+  in a read-only sandbox without the user's `config.toml`, with apps, browser
+  use, computer use, and web search disabled. Claude runs restricted: without user, project, or MCP
+  configuration, with only its Read, Glob, and Grep tools, and without asking
+  for any further permission. The script stores the agent's result. Used for
+  review and triage.
 
 A profile that a provider cannot enforce is an error; an agent is never started
 with broader permissions instead.
@@ -261,8 +265,10 @@ write a persistent, uniquely named artifact such as:
 
 That artifact maps the source review findings to their decisions and any
 created Issue numbers. Declining the proposal creates neither an artifact nor
-Issues. The source review remains unchanged. A re-run reuses a follow-up Issue
-that already exists for a finding.
+Issues. The source review remains unchanged. The artifact is stored only after
+every follow-up Issue exists; if creating one fails, nothing is stored and a
+new triage reuses the Issues created so far, which it finds by their trace
+token. A re-run reuses a follow-up Issue that already exists for a finding.
 
 Deferred follow-up Issue titles include deterministic provenance:
 
@@ -321,7 +327,11 @@ does not change the verdict.
 
 The script, not the agent, numbers the findings: `C1` (critical), `M1` (major),
 `MIN1` (minor), and `S1` (suggestion). Triage decisions and follow-up Issues
-refer to those identifiers.
+refer to those identifiers. When a result is invalid, the agent is asked once
+more, with the reasons for the rejection.
+
+Stored artifacts are checked with the same rules as agent results, plus the
+fields the scripts own, so editing a stored artifact cannot weaken a decision.
 
 Documents that people maintain, such as the roadmap, requirements, and
 architecture, keep Markdown as their source.

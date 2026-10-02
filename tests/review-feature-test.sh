@@ -110,7 +110,7 @@ artifact="$repo/.agents/reviews/feature-7-marker-review-01"
   fail "stored review lacks the Issue, round, verdict, or finding identifiers"
 [[ "$(jq -r '.reviewed_tree | length' "$artifact.json")" -eq 40 ]] || fail "stored review lacks the reviewed tree"
 grep -Fq "M1. Marker content is unchecked" "$artifact.md" || fail "generated report lacks a finding"
-grep -Fq -- "--permission-mode plan --tools Read,Glob,Grep" "$repo.log" ||
+grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Grep" "$repo.log" ||
   fail "Claude reviewer was not restricted to read tools"
 grep -Fq -- "--json-schema" "$repo.log" || fail "Claude reviewer was not given the schema"
 grep -Fq -- "--model model-r" "$repo.log" || fail "configured model was not passed to the reviewer"
@@ -127,7 +127,7 @@ run_review "$repo" 7 --agent codex --model model-c || {
 }
 [[ "$(jq '.round' "$repo/.agents/reviews/feature-7-marker-review-02.json")" -eq 2 ]] || fail "re-review was not numbered"
 grep -Fq "feature-7-marker-review-01.json" "$repo.log" || fail "re-review did not reference the previous review"
-grep -Fq -- "exec --sandbox read-only" "$repo.log" || fail "Codex reviewer was not sandboxed read-only"
+grep -Fq -- "--sandbox read-only" "$repo.log" || fail "Codex reviewer was not sandboxed read-only"
 grep -Fq -- "--output-schema" "$repo.log" || fail "Codex reviewer was not given the schema"
 if grep -Fq "Marker content is unchecked" "$repo.log.stdin"; then
   fail "previous review artifact was included in the reviewed diff"
@@ -159,18 +159,37 @@ MOCK_AGENT_EXIT=43 expect_no_review "$repo" "the reviewer failed" 7
 # An invalid result is retried once: it is accepted when the retry is valid
 # and rejected when it is not.
 repo="$(setup_repo retry)"
-MOCK_OUTPUT_FIRST="not json" run_review "$repo" 7 || {
+MOCK_OUTPUT_FIRST="$inconsistent_result" run_review "$repo" 7 || {
   cat "$repo.out" >&2
   fail "a valid result after one invalid result was rejected"
 }
 [[ "$(grep -c '^AGENT=' "$repo.log")" -eq 2 ]] || fail "an invalid result was not retried exactly once"
+[[ "$(grep -c 'previous result was rejected' "$repo.log")" -eq 1 ]] ||
+  fail "the retry did not tell the reviewer why its result was rejected"
+grep -Fq "requires a critical or major finding" "$repo.log" || fail "the retry prompt lacks the rejection reason"
 
 # The reviewer may not supply script-owned fields or more than one result.
 owned_fields_result="$(jq '. + {issue: 999} | .findings[0].id = "agent-id"' <<<"$valid_result")"
 pass_result='{"verdict": "PASS", "limitations": "", "findings": []}'
+minor_only_result="{\"verdict\": \"PASS_WITH_MINOR_FINDINGS\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
 
-for invalid_result in "not json" '{"verdict": "PASS"}' "$inconsistent_result" "$owned_fields_result" "$pass_result $pass_result"; do
-  repo="$(setup_repo "invalid-$RANDOM")"
+# One invalid result per rule, each derived from a valid result.
+invalid_results=(
+  "not json"
+  "$pass_result $pass_result"
+  '{"verdict": "PASS"}'
+  "$owned_fields_result"
+  "$inconsistent_result"
+  "$(jq '.verdict = "APPROVED"' <<<"$valid_result")"
+  "$(jq '.findings[0].severity = "blocker"' <<<"$valid_result")"
+  "$(jq '.findings[1].evidence = " "' <<<"$valid_result")"
+  "$(jq '.verdict = "PASS"' <<<"$minor_only_result")"
+  "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$valid_result")"
+  "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$pass_result")"
+)
+for index in "${!invalid_results[@]}"; do
+  invalid_result="${invalid_results[$index]}"
+  repo="$(setup_repo "invalid-$index")"
   MOCK_OUTPUT="$invalid_result" expect_no_review "$repo" "the result is invalid: $invalid_result" 7
   [[ "$(grep -c '^AGENT=' "$repo.log")" -eq 2 ]] || fail "an invalid result was not retried exactly once"
 done

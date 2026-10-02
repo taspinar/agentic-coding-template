@@ -131,9 +131,9 @@ run_apply "$repo" n "$triage" || fail "declined apply returned an error"
 [[ ! -e "$repo.log" ]] || fail "an agent was started after declining"
 
 repo="$(setup_repo nothing-to-fix)"
-jq '.verdict = "PASS_WITH_MINOR_FINDINGS" | .findings[0].severity = "minor"' "$repo/$review" >"$repo/$review.tmp"
+jq '.verdict = "PASS_WITH_MINOR_FINDINGS" | del(.findings[0])' "$repo/$review" >"$repo/$review.tmp"
 mv "$repo/$review.tmp" "$repo/$review"
-edit_triage "$repo" '.decisions[0].decision = "ACCEPT"'
+edit_triage "$repo" '.review_verdict = "PASS_WITH_MINOR_FINDINGS" | del(.decisions[0])'
 run_apply "$repo" y "$triage" || fail "a triage without FIX_NOW findings returned an error"
 [[ ! -e "$repo.log" ]] || fail "an agent was started without FIX_NOW findings"
 
@@ -160,6 +160,30 @@ repo="$(setup_repo invalid-review)"
 jq '.findings[0].evidence = ""' "$repo/$review" >"$repo/$review.tmp"
 mv "$repo/$review.tmp" "$repo/$review"
 expect_rejected "$repo" "the source review is invalid" "$triage"
+
+# Script-owned fields of stored artifacts are constrained, so they cannot be
+# used as paths or contradict the review.
+repo="$(setup_repo unsafe-id)"
+jq '.findings[2].id = "../S1"' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_rejected "$repo" "a finding id is not a script-assigned identifier" "$triage"
+
+repo="$(setup_repo bad-round)"
+jq '.round = 1.5' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_rejected "$repo" "the review round is not a positive integer" "$triage"
+
+repo="$(setup_repo bad-issue-reference)"
+edit_triage "$repo" '.decisions[1].followup.issue_number = -0.5 | .decisions[1].followup.issue_url = "not an issue"'
+expect_rejected "$repo" "a follow-up Issue reference is invalid" "$triage"
+
+repo="$(setup_repo missing-metadata)"
+edit_triage "$repo" 'del(.triage) | del(.decisions[2].followup)'
+expect_rejected "$repo" "triage metadata and a required field are missing" "$triage"
+
+repo="$(setup_repo copied-title)"
+edit_triage "$repo" '.decisions[0].title = "Something else"'
+expect_rejected "$repo" "the triage misstates a finding of the review" "$triage"
 
 repo="$(setup_repo unknown-finding)"
 edit_triage "$repo" '.decisions[0].finding_id = "C9"'

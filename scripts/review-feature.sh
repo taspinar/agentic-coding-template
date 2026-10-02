@@ -129,7 +129,11 @@ while true; do
     out="$candidate"
     break
   fi
-  previous_review="$candidate.json"
+  # A round without JSON, such as a review from before JSON artifacts, is not
+  # an input for the re-review.
+  if [[ -f "$candidate.json" ]]; then
+    previous_review="$candidate.json"
+  fi
   review_number=$((review_number + 1))
 done
 review_relative=".agents/reviews/$(basename "$out")"
@@ -178,10 +182,11 @@ echo "Starting $agent reviewer ($model) with read-only permissions..."
 echo
 
 # Invalid output is retried once; a failed agent or a modified tree is not.
+attempt_prompt="$START_PROMPT"
 for attempt in 1 2; do
   : >"$report_file"
   set +e
-  agent_run read-only "$agent" "$model" "$root" "$START_PROMPT" "$report_file" "$context_file" "$schema_file"
+  agent_run read-only "$agent" "$model" "$root" "$attempt_prompt" "$report_file" "$context_file" "$schema_file"
   agent_status=$?
   set -e
 
@@ -201,6 +206,12 @@ for attempt in 1 2; do
   printf '%s\n' "$result_errors" | sed 's/^/  - /' >&2
   [[ "$attempt" -lt 2 ]] || fail "the reviewer's result is invalid. No review was stored."
   echo "Retrying once..." >&2
+  attempt_prompt="$START_PROMPT
+
+Your previous result was rejected for these reasons:
+$result_errors
+
+Return a corrected result."
 done
 
 mkdir -p "$reviews_dir"

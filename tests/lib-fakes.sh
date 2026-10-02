@@ -9,8 +9,17 @@
 # the agent's working directory; MOCK_AGENT_EXIT sets the exit status.
 make_fake_agents() {
   local bin="$1"
+  local jq_path
 
   mkdir -p "$bin"
+
+  # Tests restrict PATH to this directory and the system directories, so make
+  # jq available wherever it is installed.
+  jq_path="$(command -v jq)" || {
+    echo "jq is required to run the workflow tests." >&2
+    exit 1
+  }
+  ln -sf "$jq_path" "$bin/jq"
   cat >"$bin/claude" <<'AGENT'
 #!/usr/bin/env bash
 set -euo pipefail
