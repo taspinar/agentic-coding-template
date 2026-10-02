@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Run as on CI: without the user's global or system Git configuration, so a
+# test cannot depend on a local Git identity or setting.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/review-planning-test.XXXXXX")"
 
@@ -46,6 +50,8 @@ setup_repo() {
   git init -q --bare -b main "$remote"
   git -C "$seed" push -q "$remote" main
   git clone -q "$remote" "$repo"
+  git -C "$repo" config user.name "Planning Review Test"
+  git -C "$repo" config user.email "planning-review-test@example.com"
   git -C "$repo" switch -q -c planning/project-bootstrap
 
   printf 'A recipe organizer that works offline.\n' >"$repo/docs/PROJECT_DESCRIPTION.md"

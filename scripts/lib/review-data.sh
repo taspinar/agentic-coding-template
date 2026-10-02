@@ -119,6 +119,36 @@ _review_data_rules='
            else empty end)
         end)
     end;
+
+  # Input: {decisions}. Revision decisions of the project planner about the
+  # findings of a planning review.
+  def revision_decision_rules($severity):
+    if type != "object" or (.decisions | type) != "array" then
+      "the result must be an object with a decisions array"
+    else
+      unexpected(["decisions"]; "the result"),
+      ([.decisions[] | objects | .finding_id] as $decided
+       | ($severity | keys[]) as $id
+       | ($decided | map(select(. == $id)) | length) as $count
+       | if $count == 0 then "finding \($id) has no revision decision"
+         elif $count > 1 then "finding \($id) has more than one revision decision"
+         else empty end),
+      (.decisions | to_entries[] | (.key + 1) as $n | .value as $d |
+        if ($d | type) != "object" then
+          "decision \($n) is not an object"
+        elif ($d.finding_id | type) != "string" or ($severity | has($d.finding_id) | not) then
+          "decision \($n) refers to an unknown finding: \($d.finding_id | tostring)"
+        else
+          ($d | unexpected(["decision", "finding_id", "rationale"]; "decision \($n)")),
+          (if ($d.decision | IN("ADOPT", "REJECT", "DEFER", "ESCALATE")) then empty
+           else "finding \($d.finding_id) has an invalid decision" end),
+          (if ($d.rationale | nonempty) then empty
+           else "finding \($d.finding_id) has no rationale" end),
+          (if ($severity[$d.finding_id] | IN("critical", "major")) and ($d.decision | IN("REJECT", "DEFER")) then
+             "\($severity[$d.finding_id]) finding \($d.finding_id) must be adopted or escalated"
+           else empty end)
+        end)
+    end;
 '
 
 # review_result_errors <result-file>: rules for a reviewer's result.
@@ -317,6 +347,76 @@ triage_artifact_errors() {
         else .decisions end)
       } | triage_decision_rules($review[0].findings | map({key: .id, value: .severity}) | from_entries))
     end
+  ' "$1"
+}
+
+# revision_decision_errors <decisions-file> <review-json>: rules for the
+# project planner's decisions about the findings of a planning review.
+revision_decision_errors() {
+  review_data_is_json "$1" || {
+    echo "the decisions are not exactly one JSON value"
+    return 0
+  }
+
+  jq -r --slurpfile review "$2" "$_review_data_rules"'
+    revision_decision_rules($review[0].findings | map({key: .id, value: .severity}) | from_entries)
+  ' "$1"
+}
+
+# revision_artifact_errors <revision-json> <review-json>: rules for a stored
+# revision, checked against its planning review.
+revision_artifact_errors() {
+  review_data_is_json "$1" || {
+    echo "the revision is not exactly one JSON value"
+    return 0
+  }
+
+  jq -r --slurpfile review "$2" "$_review_data_rules"'
+    if type != "object" or .schema != "revision/v1" then
+      "the file is not a revision/v1 artifact"
+    else
+      unexpected(["approved_at", "branch", "decisions", "planner", "review_round", "reviewed_tree",
+                  "schema", "source_review"]; "the revision"),
+      (if (.approved_at | type) == "string"
+          and (.approved_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) then empty
+       else "the revision has no valid UTC approval timestamp" end),
+      (if .branch == $review[0].branch and .review_round == $review[0].round
+          and .reviewed_tree == $review[0].reviewed_tree then empty
+       else "the revision does not describe its planning review" end),
+      (if (.planner | type) == "object" and (.planner.agent | nonempty) and (.planner.model | nonempty) then empty
+       else "the revision must name its planner agent and model" end),
+      ($review[0].findings | map({key: .id, value: {severity, title}}) | from_entries) as $source
+      | (if (.decisions | type) == "array" then
+           (.decisions[] | objects |
+             unexpected(["decision", "finding_id", "rationale", "severity", "title"]; "the decision for \(.finding_id | tostring)"),
+             (if $source[.finding_id] == null or {severity, title} == $source[.finding_id] then empty
+              else "the decision for \(.finding_id) does not match the severity and title in the review" end))
+         else empty end),
+      ({decisions: (if (.decisions | type) == "array"
+                    then (.decisions | map(if type == "object" then {finding_id, decision, rationale} else . end))
+                    else .decisions end)}
+       | revision_decision_rules($review[0].findings | map({key: .id, value: .severity}) | from_entries))
+    end
+  ' "$1"
+}
+
+# revision_render_markdown <revision-json> <source-name>
+revision_render_markdown() {
+  jq -r --arg source "$2" '
+    def group($decision; $heading):
+      "## \($heading)\n\n" +
+      ([.decisions[] | select(.decision == $decision)] as $items
+       | if ($items | length) == 0 then "None.\n"
+         else ($items | map("### \(.finding_id). \(.title)\n\n- Severity: \(.severity)\n- Rationale: \(.rationale)\n") | join("\n")) end);
+    "<!-- Generated from \($source). Do not edit; this file is never read by the scripts. -->\n\n" +
+    "# Planning Revision — \(.branch), review round \(.review_round)\n\n" +
+    "Source review: `\(.source_review)`\n\n" +
+    "Planner: \(.planner.agent) (\(.planner.model))\n\n" +
+    "Approved at: \(.approved_at)\n\n" +
+    group("ADOPT"; "Adopted") + "\n" +
+    group("REJECT"; "Rejected") + "\n" +
+    group("DEFER"; "Deferred") + "\n" +
+    group("ESCALATE"; "Escalated to the human")
   ' "$1"
 }
 

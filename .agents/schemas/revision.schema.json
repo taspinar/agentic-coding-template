@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decisions"],
+  "properties": {
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "decision", "rationale"],
+        "properties": {
+          "finding_id": { "type": "string" },
+          "decision": {
+            "type": "string",
+            "enum": ["ADOPT", "REJECT", "DEFER", "ESCALATE"]
+          },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Run as on CI: without the user's global or system Git configuration, so a
+# test cannot depend on a local Git identity or setting.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
 root="$(git rev-parse --show-toplevel)"
 script_source="$root/scripts/start-planning.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/start-planning-test.XXXXXX")"
@@ -217,7 +221,7 @@ setup_repo() {
 
   cp "$script_source" "$seed/scripts/start-planning.sh"
   mkdir -p "$seed/scripts/lib"
-  cp "$root/scripts/lib/agent.sh" "$seed/scripts/lib/agent.sh"
+  cp "$root"/scripts/lib/*.sh "$seed/scripts/lib/"
   printf 'project-grill: codex astra\nproject-planner: codex astra\n' >"$seed/.agents/agents.conf"
   cp "$root/.agents/prompts/project-grill.md" "$seed/.agents/prompts/project-grill.md"
   cp "$root/.agents/prompts/project-planner.md" "$seed/.agents/prompts/project-planner.md"
