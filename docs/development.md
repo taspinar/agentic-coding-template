@@ -540,10 +540,7 @@ The helper manages one delimited plan block in the Issue body. Re-running it
 updates that block instead of appending duplicates. It stores only the
 repository-relative plan path; the detailed plan remains in `.agents/plans/`.
 
-## Lifecycle summary
+## Lifecycle
 
-Roadmap item → GitHub Issue → optional implementation plan → isolated feature
-worktree → implementation → verification → independent review when required →
-triage → apply approved `FIX_NOW` findings → verification/re-review when needed
-→ `finish-feature.sh` (checks and commit) → push/PR → CI and gates → merge →
-automatic Issue closure → worktree cleanup.
+The complete lifecycle, with diagrams and a reference table per step, is in
+`docs/workflow.md`.

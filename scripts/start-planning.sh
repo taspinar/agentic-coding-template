@@ -484,14 +484,9 @@ echo
 echo "Project bootstrap planning completed."
 echo "Planning worktree: $worktree"
 echo
-echo "Review the planning artifacts, then run:"
+echo "Next, in the planning worktree, review the planning with an independent agent:"
 echo "  cd \"$worktree\""
-echo "  ./scripts/verify.sh"
-if [[ -n "$description_source" ]]; then
-  echo "  git add $description_relative"
-fi
-echo "  git add docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions"
-echo "  git commit -m \"Plan project bootstrap\""
-echo "  git push -u origin \"$branch\""
+echo "  ./scripts/review-planning.sh"
 echo
-echo "Open a planning PR and merge it before creating feature Issues."
+echo "Revise and review until the review passes, then approve with ./scripts/finish-planning.sh,"
+echo "which prints the commit and push steps for the planning PR."
