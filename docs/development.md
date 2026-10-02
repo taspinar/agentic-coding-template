@@ -10,6 +10,33 @@
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.
 
+## Configuring verification
+
+`./scripts/verify.sh` runs the checks declared in `scripts/verify.conf`, one
+per line:
+
+```text
+<name>: <command>
+```
+
+After adopting the template, replace the template checks with those of the
+project's stack, for example:
+
+```text
+lint: ruff check .
+tests: pytest
+```
+
+Every listed check is required. Each command runs with `bash -eo pipefail`
+from the repository root, so a failing step in a pipeline or command sequence
+fails the check. Its first word is the required tool. Verification fails
+when that tool is missing or not executable, when a command exits non-zero, or
+when the configuration is missing, empty, or malformed. All checks run even
+after a failure, and a summary lists each check as `PASS` or `FAIL`.
+
+There is no automatic stack detection and no optional check: remove a check
+from `scripts/verify.conf` rather than letting it be skipped.
+
 ## Project bootstrap workflow
 
 Run project bootstrap from a clean checkout after recording the initial project
