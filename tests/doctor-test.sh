@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Run as on CI: without the user's global or system Git configuration, so a
+# test cannot depend on a local Git identity or setting.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 script="$source_root/scripts/doctor.sh"
 bash_path="$(command -v bash)"
