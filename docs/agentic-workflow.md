@@ -69,12 +69,17 @@ Recommended sequence:
    - `docs/roadmap.md`
    - required ADRs under `docs/decisions/`
 
-8. Review and verify the bootstrap artifacts.
-9. Commit and push the planning branch.
-10. Open a Pull Request.
-11. Merge the approved bootstrap into `main`.
-12. Convert only ready roadmap items into GitHub Issues.
-13. Start feature clarification and development.
+8. An independent agent reviews the planning (`review-planning.sh`). The
+   planner decides per finding and revises the adopted ones
+   (`revise-planning.sh`). Repeat until the review passes.
+9. Approve the planning with `finish-planning.sh`, which records
+   `docs/PLANNING_APPROVAL.md`.
+10. Verify, commit, and push the planning branch.
+11. Open a Pull Request.
+12. Merge the approved bootstrap into `main`.
+13. Convert only ready roadmap items into GitHub Issues with
+    `create-feature-issue.sh`, which requires a current planning approval.
+14. Start feature clarification and development.
 
 Declining requirements approval or an agent failure preserves the worktree and
 stops later phases. The script does not fall back to another model, implement

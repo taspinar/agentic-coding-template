@@ -150,17 +150,9 @@ Declining requirements approval or an agent failure stops the workflow and
 leaves the planning worktree intact. Inspect or revise it there; the script
 never substitutes another model or removes user work automatically.
 
-After successful planning, review the artifacts and complete the process
-manually:
-
-```bash
-cd ../<repository>-planning-project-bootstrap
-./scripts/verify.sh
-git add docs/PROJECT_DESCRIPTION.md  # only when --description was used
-git add docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions
-git commit -m "Plan project bootstrap"
-git push -u origin planning/project-bootstrap
-```
+After successful planning, continue in the planning worktree with the planning
+review, revision, and approval described below. `finish-planning.sh` prints
+the exact commit and push commands.
 
 ### Planning review
 
@@ -217,6 +209,42 @@ without deciding again.
 
 After a revision the review is stale by design. Run `review-planning.sh` for
 the next round, and repeat until the review passes.
+
+### Planning approval
+
+When the latest review round is resolved, approve the planning:
+
+```bash
+./scripts/finish-planning.sh
+```
+
+The script refuses when a required document is missing, the requirements are
+not approved, there is no planning review, the latest review is stale, the
+latest round has a critical or major finding, a finding of the latest round
+has no revision decision, an adopted finding is not applied yet, or a finding
+of the latest round is escalated. It shows every rejected, deferred, and
+escalated finding of all rounds, also before a refusal. A finding escalated in
+an earlier round is not resolved by a newer review alone: you confirm that it
+was resolved, and the approval records that. The approval covers exactly the
+reviewed planning; a document that changes while the script waits for your
+answer is refused.
+
+The approval is recorded in `docs/PLANNING_APPROVAL.md`, which is committed with
+the planning: the time, the planning branch, the final review round, the
+review rounds, the findings that were not adopted, and the fingerprint of the
+planning documents. Use it for the planning PR description, because review
+and revision files are not committed.
+
+Any later change to a planning document invalidates the approval:
+
+```bash
+./scripts/finish-planning.sh --check
+```
+
+exits 0 when the approval still matches the documents and 1 when it is missing
+or stale. `create-feature-issue.sh <feature-id>` refuses to create a feature
+Issue from a roadmap without a current approval, so a roadmap change after the
+planning PR needs a new review round and approval.
 
 Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,
