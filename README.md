@@ -28,8 +28,14 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    necessary ADRs, and roadmap. The script does not commit or push.
 4. Review the planning worktree, run `./scripts/verify.sh`, commit and push the
    planning branch, then merge it through a PR before feature development.
-5. Create a GitHub Issue only for the next actionable roadmap feature. For
-   non-trivial work, create `.agents/plans/<issue>-<slug>.md` using
+5. Create a GitHub Issue only for the next actionable roadmap feature, from its
+   block in `docs/roadmap.md`:
+
+   ```bash
+   ./scripts/create-feature-issue.sh F01
+   ```
+
+   For non-trivial work, create `.agents/plans/<issue>-<slug>.md` using
    `.agents/prompts/planner.md`.
 6. Start the feature and implementation agent:
 
