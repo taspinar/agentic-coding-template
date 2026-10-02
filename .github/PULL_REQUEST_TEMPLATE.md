@@ -12,6 +12,7 @@ Closes #
 - [ ] `./scripts/verify.sh` passed
 - [ ] Tests added/updated where appropriate
 - [ ] Independent review completed when required
+- [ ] Approved triage published on the feature Issue (link the comment):
 - [ ] Architecture/docs/ADR updated when required
 
 ## Agent involvement

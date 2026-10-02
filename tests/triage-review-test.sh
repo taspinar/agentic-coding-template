@@ -33,6 +33,26 @@ case "${1:-} ${2:-}" in
 Test acceptance criteria.}"
     exit 0
     ;;
+  "issue comment")
+    if [[ -n "${MOCK_GH_COMMENT_EXIT:-}" ]]; then
+      echo "simulated comment failure" >&2
+      exit "$MOCK_GH_COMMENT_EXIT"
+    fi
+    shift 2
+    issue="$1"
+    shift
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "--body-file" ]]; then
+        {
+          echo "COMMENT ON #$issue"
+          cat "$2"
+          echo "END COMMENT"
+        } >>"$MOCK_GH_LOG.comments"
+      fi
+      shift
+    done
+    exit 0
+    ;;
   "issue list")
     if [[ -n "${MOCK_EXISTING_ISSUE:-}" ]]; then
       echo "$MOCK_EXISTING_ISSUE"
@@ -166,6 +186,15 @@ grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Gre
 grep -Fq -- "--json-schema" "$repo.log" || fail "triage agent was not given the schema"
 grep -Fq "Correctness regression" "$repo.log.stdin" || fail "findings were not supplied to the triage agent"
 
+# One comment with both reports is published on the source Issue.
+[[ "$(grep -c '^COMMENT ON #5$' "$repo.gh.comments")" -eq 1 ]] || fail "exactly one comment on Issue #5 was expected"
+grep -Fq "C1. Correctness regression" "$repo.gh.comments" || fail "the comment lacks the review report"
+grep -Fq "## Fix now" "$repo.gh.comments" || fail "the comment lacks the triage report"
+grep -Fq "#123" "$repo.gh.comments" || fail "the comment lacks the follow-up Issue link"
+if grep -Fq "Generated from" "$repo.gh.comments"; then
+  fail "the comment contains the generated-file marker"
+fi
+
 # The complete follow-up proposal is shown before the approval question.
 proposal="$(sed '/Proceed with this triage/,$d' "$repo.out")"
 for shown in "Add focused tests." "The boundary is covered by a test."; do
@@ -191,6 +220,37 @@ MOCK_EXISTING_ISSUE="https://github.com/example/project/issues/77" run_triage "$
   fail "an existing remote follow-up Issue was not reused"
 [[ ! -e "$repo.gh" ]] || fail "a duplicate of an existing remote follow-up Issue was created"
 
+# The published review is rendered from the JSON, not from an edited report,
+# and a record too long for one comment is split rather than shortened.
+repo="$(setup_repo long-report)"
+printf 'Edited report that must not be published.\n' >"$repo/.agents/reviews/feature-5-test-review-01.md"
+long_evidence="$(printf 'evidence line %s\\n' $(seq 1 4000))"
+jq --arg evidence "$long_evidence" '.findings[1].evidence = $evidence' \
+  "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "triage with a long review failed"
+}
+if grep -Fq "Edited report that must not be published." "$repo.gh.comments"; then
+  fail "an edited Markdown report was published instead of the JSON"
+fi
+parts="$(grep -c '^COMMENT ON #5$' "$repo.gh.comments")"
+[[ "$parts" -ge 2 ]] || fail "a record too long for one comment was not split"
+grep -Fq "evidence line 4000" "$repo.gh.comments" || fail "the long review was shortened"
+grep -Fq "## Fix now" "$repo.gh.comments" || fail "the split record lacks the triage report"
+
+# A failed publication keeps the stored triage and tells how to retry.
+repo="$(setup_repo comment-fails)"
+if MOCK_GH_COMMENT_EXIT=1 run_triage "$repo" y "$review"; then
+  fail "a failed publication returned success"
+fi
+[[ -f "$repo/.agents/triage/feature-5-test-review-01-triage.json" ]] ||
+  fail "a failed publication discarded the stored triage"
+grep -Fq "gh issue comment 5 --body-file .agents/triage/feature-5-test-review-01-triage-comment.md" "$repo.out" ||
+  fail "a failed publication did not print the retry command"
+[[ -f "$repo/.agents/triage/feature-5-test-review-01-triage-comment.md" ]] || fail "the comment to retry was not kept"
+
 # When Issue creation fails, no triage artifact is stored.
 repo="$(setup_repo create-fails)"
 if MOCK_GH_CREATE_EXIT=1 run_triage "$repo" y "$review"; then
@@ -212,7 +272,7 @@ grep -Fqx "TITLE: [#5][R07][MIN1] Add boundary-condition coverage" "$repo.gh" ||
 # Declining has no side effects.
 repo="$(setup_repo decline)"
 run_triage "$repo" n "$review" --agent codex --model model-c || fail "declined triage returned an error"
-if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh" ]]; then
+if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh" || -e "$repo.gh.comments" ]]; then
   fail "declined triage had side effects"
 fi
 grep -Fq -- "--sandbox read-only" "$repo.log" || fail "Codex triage agent was not sandboxed read-only"
