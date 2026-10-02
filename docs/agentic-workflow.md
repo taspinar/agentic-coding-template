@@ -1,27 +1,16 @@
 # Agentic Development Workflow
 
-## Project bootstrap
-Template → Project Grill → draft project requirements → human approval →
-architecture/roadmap and necessary ADRs → planning PR → GitHub Issues for
-ready work.
+## Lifecycle
 
-## Feature lifecycle
-Roadmap item → GitHub Issue → feature plan (when warranted) → isolated
-branch/worktree → implementation → local verification → independent review
-when required → review triage → approved fix-now application →
-verification/re-review when needed → `finish-feature.sh` → push/PR → CI → human gate where
-required → merge → automatic Issue closure → cleanup.
+The steps, loops, artifacts, and approvals of project bootstrap and feature
+development are described in `docs/workflow.md`. This document covers the
+principles behind them.
 
 Independent review happens before the implementation commit so it can include
-uncommitted working-tree changes. The reviewer runs read-only and
-non-interactively; `review-feature.sh` supplies the Issue and diff and stores
-the returned report. `triage-review.sh` classifies every finding as
-`FIX_NOW`, `DEFER`, or `ACCEPT` and displays the proposal before side effects.
-Critical and Major findings must be `FIX_NOW`. Human approval is required
-before triage artifacts or provenance-prefixed deferred follow-up Issues are
-created. `apply-triage.sh` requires the approved artifact explicitly and starts
-a write-capable agent for only its `FIX_NOW` scope after a second confirmation.
-See `docs/development.md` for the concrete commands.
+uncommitted working-tree changes. Reviewers run read-only; their results are
+validated JSON, and the reports of each feature review round are published on
+the feature Issue. Critical and major findings must be fixed and confirmed by
+a newer review round before a feature or the planning can be finished.
 
 ## Persistent state
 - GitHub Issue: what/why, acceptance criteria, priority/status.
@@ -41,49 +30,6 @@ See `docs/development.md` for the concrete commands.
 - `.agents/lessons/`: recurring failure lessons awaiting/promoting durable rules.
 - Git history: what actually changed.
 - PR + CI: review discussion and deterministic evidence.
-
-## Project bootstrap workflow
-
-A newly created project should be bootstrapped before feature development
-starts.
-
-Recommended sequence:
-
-1. Create the repository from this template.
-2. Complete `docs/repository-setup.md`.
-3. Set the agent and model per role in `.agents/agents.conf`, then run the
-   bootstrap entrypoint:
-
-   `./scripts/start-planning.sh`
-
-4. The script creates `planning/project-bootstrap` in an isolated sibling
-   worktree from the current `origin/main`.
-5. Project Grill asks material project-level questions and writes:
-
-   - `docs/PROJECT_REQUIREMENTS.md`
-
-6. Review the proposed requirements. The script records approval only after an
-   explicit human confirmation.
-7. A separate project-planner session may then create or update:
-   - `docs/architecture.md`
-   - `docs/roadmap.md`
-   - required ADRs under `docs/decisions/`
-
-8. An independent agent reviews the planning (`review-planning.sh`). The
-   planner decides per finding and revises the adopted ones
-   (`revise-planning.sh`). Repeat until the review passes.
-9. Approve the planning with `finish-planning.sh`, which records
-   `docs/PLANNING_APPROVAL.md`.
-10. Verify, commit, and push the planning branch.
-11. Open a Pull Request.
-12. Merge the approved bootstrap into `main`.
-13. Convert only ready roadmap items into GitHub Issues with
-    `create-feature-issue.sh`, which requires a current planning approval.
-14. Start feature clarification and development.
-
-Declining requirements approval or an agent failure preserves the worktree and
-stops later phases. The script does not fall back to another model, implement
-features, create Issues, commit, push, open or merge a PR, or deploy.
 
 ## Roadmap to GitHub Issues
 
