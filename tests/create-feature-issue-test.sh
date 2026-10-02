@@ -55,9 +55,22 @@ GH
 chmod +x "$tmp/bin/gh"
 
 repo="$tmp/repo"
-mkdir -p "$repo/scripts" "$repo/docs"
+mkdir -p "$repo/scripts/lib" "$repo/docs"
 cp "$source_root/scripts/create-feature-issue.sh" "$repo/scripts/"
+cp "$source_root"/scripts/lib/*.sh "$repo/scripts/lib/"
 git -C "$repo" init -q -b main
+
+# Records a planning approval that matches the current planning documents.
+approve_planning() {
+  local fingerprint
+  fingerprint="$(
+    source "$source_root/scripts/lib/fingerprint.sh"
+    source "$source_root/scripts/lib/planning.sh"
+    fingerprint_files "$repo" "$tmp" "${PLANNING_SCOPE[@]}"
+  )"
+  printf '# Planning Approval\n\nStatus: Approved\nPlanning fingerprint: %s\n' "$fingerprint" \
+    >"$repo/docs/PLANNING_APPROVAL.md"
+}
 
 write_roadmap() {
   cat >"$repo/docs/roadmap.md"
@@ -132,6 +145,15 @@ Pagination comes later.
 
 - Second.
 ROADMAP
+
+# Feature Issues require a planning approval that matches the roadmap.
+expect_nothing_created "the planning is not approved" F02
+grep -Fq "finish-planning.sh" "$tmp/out.log" || fail "a missing planning approval did not point to finish-planning.sh"
+approve_planning
+cp "$repo/docs/roadmap.md" "$tmp/roadmap.saved"
+printf '\n<!-- changed after approval -->\n' >>"$repo/docs/roadmap.md"
+expect_nothing_created "the roadmap changed after the planning approval" F02
+cp "$tmp/roadmap.saved" "$repo/docs/roadmap.md"
 
 # After approval, the Issue is created from exactly the feature's block, with
 # the feature ID first in its title.

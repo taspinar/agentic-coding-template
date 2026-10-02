@@ -224,6 +224,7 @@ adopted="$(jq -r --slurpfile review "$review_path" '
 if [[ -z "$adopted" ]]; then
   echo
   echo "No finding was adopted; no planning document is changed."
+  echo "Next: ./scripts/finish-planning.sh, once no escalated finding remains."
   exit 0
 fi
 

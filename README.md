@@ -26,8 +26,18 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    `docs/PROJECT_REQUIREMENTS.md`. After you explicitly approve those
    requirements, a separate project-planning session creates the architecture,
    necessary ADRs, and roadmap. The script does not commit or push.
-4. Review the planning worktree, run `./scripts/verify.sh`, commit and push the
-   planning branch, then merge it through a PR before feature development.
+4. In the planning worktree, review and revise the planning until the review
+   passes, then approve it:
+
+   ```bash
+   ./scripts/review-planning.sh
+   ./scripts/revise-planning.sh --review .agents/reviews/planning-project-bootstrap-review-01.json
+   ./scripts/review-planning.sh
+   ./scripts/finish-planning.sh
+   ```
+
+   Commit and push the planning branch as `finish-planning.sh` shows, then merge
+   it through a PR before feature development.
 5. Create a GitHub Issue only for the next actionable roadmap feature, from its
    block in `docs/roadmap.md`:
 

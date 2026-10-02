@@ -5,6 +5,10 @@ set -euo pipefail
 # Creates the GitHub Issue for one roadmap feature from its block in
 # docs/roadmap.md, or an Issue from an explicit title and body file.
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/planning.sh"
+
 usage() {
   echo "Usage:"
   echo "  $0 <feature-id>"
@@ -138,6 +142,15 @@ create_from_roadmap() {
   block="$(roadmap_section "$roadmap" "$feature" block)"
   [[ "$block" =~ [^[:space:]] ]] || fail "the roadmap block of $feature is empty."
 
+  # Features start only from a roadmap whose planning is approved as it is now.
+  tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/create-feature-issue.XXXXXX")"
+  trap 'rm -rf "$tmp_work"' EXIT
+  local approval_status=0
+  local approval_reason
+  approval_reason="$(planning_approval_status "$root" "$tmp_work")" || approval_status=$?
+  [[ "$approval_status" -eq 0 ]] ||
+    fail "$approval_reason Approve the planning with ./scripts/finish-planning.sh before creating feature Issues."
+
   require_gh
 
   existing="$(issues_for_feature "$feature")" ||
@@ -148,9 +161,6 @@ create_from_roadmap() {
     exit 1
   fi
 
-  # Global, so the exit trap can still remove it after this function returns.
-  tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/create-feature-issue.XXXXXX")"
-  trap 'rm -rf "$tmp_work"' EXIT
   {
     printf '%s\n' "$block" | awk 'NF { found = 1 } found' | awk '{ lines[NR] = $0 } END { last = NR; while (last > 0 && lines[last] !~ /[^[:space:]]/) last--; for (i = 1; i <= last; i++) print lines[i] }'
     echo

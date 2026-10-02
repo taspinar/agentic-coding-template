@@ -7,6 +7,7 @@ source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/review-run.sh"
+source "$script_dir/lib/planning.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -46,11 +47,8 @@ agent_resolve "$root" planning-reviewer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
-# The reviewed scope: the planning documents, and nothing else. It names the
-# optional description and the decisions directory even when they are absent
-# or empty, so adding, changing, or deleting any planning document makes the
-# review stale.
-scope=(docs/PROJECT_DESCRIPTION.md docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions)
+# The reviewed scope: the planning documents, and nothing else.
+scope=("${PLANNING_SCOPE[@]}")
 
 # The documents whose contents the reviewer receives.
 paths=()
@@ -180,5 +178,5 @@ echo
 if [[ "$(jq '.findings | length' "$out.json")" -gt 0 ]]; then
   echo "Next: ./scripts/revise-planning.sh --review $review_relative.json"
 else
-  echo "Next: commit the planning and open the planning PR as described in docs/development.md."
+  echo "Next: ./scripts/finish-planning.sh"
 fi
