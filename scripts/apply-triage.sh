@@ -466,7 +466,7 @@ echo "Starting $agent implementation agent..."
 echo
 
 set +e
-agent_run_interactive "$agent" "$model" "$root" "$start_prompt"
+agent_run write "$agent" "$model" "$root" "$start_prompt"
 agent_status=$?
 set -e
 

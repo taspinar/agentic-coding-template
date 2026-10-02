@@ -92,4 +92,4 @@ Do not push, merge, or deploy unless explicitly instructed."
 echo "Starting $agent ($model)..."
 echo
 
-agent_run_interactive "$agent" "$model" "$worktree" "$START_PROMPT"
+agent_run write "$agent" "$model" "$worktree" "$START_PROMPT"

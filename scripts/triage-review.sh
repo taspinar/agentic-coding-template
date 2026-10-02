@@ -284,7 +284,7 @@ echo "  Agent:  $agent"
 echo "  Model:  $model"
 echo
 
-agent_run_report "$agent" "$model" "$root" "$start_prompt" "$decisions_file"
+agent_run read-only "$agent" "$model" "$root" "$start_prompt" "$decisions_file"
 
 review_hash_after="$(git hash-object "$review_path")"
 status_after="$(git status --porcelain=v1 --untracked-files=all)"

@@ -245,7 +245,7 @@ run_agent() {
   echo
 
   set +e
-  agent_run_interactive "$agent" "$model" "$worktree" "$prompt"
+  agent_run write "$agent" "$model" "$worktree" "$prompt"
   status=$?
   set -e
 

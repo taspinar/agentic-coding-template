@@ -13,7 +13,9 @@ verification/re-review when needed → commit → push/PR → CI → human gate 
 required → merge → automatic Issue closure → cleanup.
 
 Independent review happens before the implementation commit so it can include
-uncommitted working-tree changes. `triage-review.sh` classifies every finding as
+uncommitted working-tree changes. The reviewer runs read-only and
+non-interactively; `review-feature.sh` supplies the Issue and diff and stores
+the returned report. `triage-review.sh` classifies every finding as
 `FIX_NOW`, `DEFER`, or `ACCEPT` and displays the proposal before side effects.
 Critical and Major findings must be `FIX_NOW`. Human approval is required
 before triage artifacts or provenance-prefixed deferred follow-up Issues are

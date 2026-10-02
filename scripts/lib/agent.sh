@@ -133,16 +133,36 @@ agent_resolve() {
   AGENT_MODEL="$model"
 }
 
-# agent_run_interactive <provider> <model> <workdir> <prompt>
-# Starts an interactive, write-capable session. Returns the agent's status.
-agent_run_interactive() {
-  local provider="$1"
-  local model="$2"
-  local workdir="$3"
-  local prompt="$4"
+# agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file]
+#
+# Profiles:
+#   write      Interactive session that may modify the work directory.
+#   read-only  Non-interactive session that cannot modify files. The agent's
+#              final message is stored in <output-file>. <context-file>, when
+#              given, is supplied to the agent on standard input.
+#
+# A profile that the provider cannot enforce is an error; the agent is never
+# started with broader permissions instead. Returns the agent's status.
+agent_run() {
+  local profile="$1"
+  local provider="$2"
+  local model="$3"
+  local workdir="$4"
+  local prompt="$5"
+  local output_file="${6:-}"
+  local context_file="${7:-/dev/null}"
 
-  case "$provider" in
-    codex)
+  case "$profile" in
+    write | read-only) ;;
+    *) agent_fail "unknown permission profile '$profile'. Known profiles: write, read-only." ;;
+  esac
+
+  if [[ "$profile" == "read-only" && -z "$output_file" ]]; then
+    agent_fail "permission profile 'read-only' requires an output file."
+  fi
+
+  case "$provider:$profile" in
+    codex:write)
       (
         cd "$workdir"
         codex \
@@ -153,7 +173,7 @@ agent_run_interactive() {
           "$prompt"
       )
       ;;
-    claude)
+    claude:write)
       (
         cd "$workdir"
         claude \
@@ -162,22 +182,7 @@ agent_run_interactive() {
           "$prompt"
       )
       ;;
-    *) agent_fail "unsupported agent '$provider'. Supported agents: codex, claude." ;;
-  esac
-}
-
-# agent_run_report <provider> <model> <workdir> <prompt> <output-file>
-# Runs a non-interactive, read-only session and stores the agent's final
-# message in the output file. Returns the agent's status.
-agent_run_report() {
-  local provider="$1"
-  local model="$2"
-  local workdir="$3"
-  local prompt="$4"
-  local output_file="$5"
-
-  case "$provider" in
-    codex)
+    codex:read-only)
       codex exec \
         --sandbox read-only \
         --ephemeral \
@@ -185,9 +190,9 @@ agent_run_report() {
         --cd "$workdir" \
         --output-last-message "$output_file" \
         --model "$model" \
-        "$prompt" >/dev/null
+        "$prompt" <"$context_file" >/dev/null
       ;;
-    claude)
+    claude:read-only)
       (
         cd "$workdir"
         claude \
@@ -197,8 +202,10 @@ agent_run_report() {
           --no-session-persistence \
           --model "$model" \
           "$prompt"
-      ) >"$output_file"
+      ) <"$context_file" >"$output_file"
       ;;
-    *) agent_fail "unsupported agent '$provider'. Supported agents: codex, claude." ;;
+    *)
+      agent_fail "agent '$provider' cannot enforce permission profile '$profile'."
+      ;;
   esac
 }

@@ -73,8 +73,17 @@ as Codex, and is never replaced: an unknown provider, missing CLI, missing
 model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
-Interactive write-capable sessions start Codex with a workspace-write sandbox
-and no approval prompts, and Claude with automatic acceptance of edits.
+Agents run with one of two permission profiles:
+
+- `write`: an interactive session that may modify its worktree. Codex runs in
+  a workspace-write sandbox without approval prompts; Claude accepts edits
+  automatically. Used for planning, implementation, and applying triage.
+- `read-only`: a non-interactive session that cannot modify files. Codex runs
+  in a read-only sandbox; Claude is limited to its read tools. The script
+  stores the agent's final message. Used for review and triage.
+
+A profile that a provider cannot enforce is an error; an agent is never started
+with broader permissions instead.
 
 ## Project bootstrap workflow
 
@@ -179,8 +188,17 @@ The full interface is:
 ./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>]
 ```
 
-It uses role `reviewer`. The review script must run from the matching feature worktree. It writes
-numbered artifacts without overwriting earlier reviews:
+It uses role `reviewer` with the `read-only` profile. The review is
+non-interactive: the reviewer cannot modify files and has no network access, so
+the script supplies the GitHub Issue and the complete diff against the base
+branch, including uncommitted and untracked changes. The reviewer returns its
+report and the script stores it. A report without the required sections or a
+valid verdict is rejected, and a reviewer that changed the working tree or
+created a commit is reported as an error; in both cases no review is stored.
+
+The review script must run from the matching feature worktree and needs an
+authenticated GitHub CLI. It writes numbered artifacts without overwriting
+earlier reviews:
 
 ```text
 .agents/reviews/feature-12-player-movement-review-01.md

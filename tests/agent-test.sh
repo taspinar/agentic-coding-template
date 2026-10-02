@@ -135,21 +135,40 @@ fi
 workdir="$(cd "$tmp/work" && pwd -P)"
 for provider in codex claude; do
   : >"$MOCK_AGENT_LOG"
-  agent_run_interactive "$provider" "model-$provider" "$workdir" "the prompt" >/dev/null
+  agent_run write "$provider" "model-$provider" "$workdir" "the prompt" >/dev/null
   grep -Fq -- "--model model-$provider" "$MOCK_AGENT_LOG" ||
     fail "$provider did not receive the model in an interactive run"
   grep -Fqx "PWD=$workdir" "$MOCK_AGENT_LOG" || fail "$provider did not run in the work directory"
 
   : >"$MOCK_AGENT_LOG"
-  agent_run_report "$provider" "model-$provider" "$workdir" "the prompt" "$tmp/report.txt"
+  agent_run read-only "$provider" "model-$provider" "$workdir" "the prompt" "$tmp/report.txt"
   grep -Fq -- "--model model-$provider" "$MOCK_AGENT_LOG" ||
     fail "$provider did not receive the model in a report run"
   grep -Fqx "$provider report" "$tmp/report.txt" || fail "$provider report was not stored"
 done
 
+# A read-only run uses the read-only flags of each provider.
+: >"$MOCK_AGENT_LOG"
+agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/report.txt"
+grep -Fq -- "--sandbox read-only" "$MOCK_AGENT_LOG" || fail "codex read-only run was not sandboxed"
+: >"$MOCK_AGENT_LOG"
+agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/report.txt"
+grep -Fq -- "--permission-mode plan --tools Read,Glob,Grep" "$MOCK_AGENT_LOG" ||
+  fail "claude read-only run was not restricted to read tools"
+
+# An unknown profile, or a read-only run without an output file, starts no agent.
+: >"$MOCK_AGENT_LOG"
+if (agent_run admin claude model-b "$workdir" "the prompt") 2>/dev/null; then
+  fail "unknown permission profile was accepted"
+fi
+if (agent_run read-only claude model-b "$workdir" "the prompt") 2>/dev/null; then
+  fail "read-only run without an output file was accepted"
+fi
+[[ ! -s "$MOCK_AGENT_LOG" ]] || fail "an agent was started with an unsupported profile"
+
 # The agent's exit status reaches the caller.
 status=0
-MOCK_AGENT_EXIT=7 agent_run_interactive claude model-b "$workdir" "the prompt" >/dev/null || status=$?
+MOCK_AGENT_EXIT=7 agent_run write claude model-b "$workdir" "the prompt" >/dev/null || status=$?
 [[ "$status" -eq 7 ]] || fail "agent exit status was not propagated"
 
 echo "agent tests passed"
