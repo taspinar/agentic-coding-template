@@ -44,14 +44,14 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    ./scripts/verify.sh
    ./scripts/review-feature.sh 12
    ./scripts/triage-review.sh \
-     .agents/reviews/feature-12-player-movement-review-01.md
+     .agents/reviews/feature-12-player-movement-review-01.json
    ```
 
 8. Approve the proposed triage and apply its `FIX_NOW` scope:
 
    ```bash
    ./scripts/apply-triage.sh \
-     .agents/triage/feature-12-player-movement-review-01-triage.md
+     .agents/triage/feature-12-player-movement-review-01-triage.json
    ```
 
    The script starts a write-capable agent only after confirmation and verifies

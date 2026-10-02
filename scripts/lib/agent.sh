@@ -133,13 +133,16 @@ agent_resolve() {
   AGENT_MODEL="$model"
 }
 
-# agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file]
+# agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file] [schema-file]
 #
 # Profiles:
 #   write      Interactive session that may modify the work directory.
 #   read-only  Non-interactive session that cannot modify files. The agent's
 #              final message is stored in <output-file>. <context-file>, when
-#              given, is supplied to the agent on standard input.
+#              given, is supplied to the agent on standard input. With a
+#              <schema-file> (JSON Schema), the provider is asked for
+#              structured output and <output-file> holds that JSON; the
+#              caller must still validate it.
 #
 # A profile that the provider cannot enforce is an error; the agent is never
 # started with broader permissions instead. Returns the agent's status.
@@ -151,6 +154,9 @@ agent_run() {
   local prompt="$5"
   local output_file="${6:-}"
   local context_file="${7:-/dev/null}"
+  local schema_file="${8:-}"
+  local codex_schema=()
+  local envelope
 
   case "$profile" in
     write | read-only) ;;
@@ -183,6 +189,9 @@ agent_run() {
       )
       ;;
     codex:read-only)
+      if [[ -n "$schema_file" ]]; then
+        codex_schema=(--output-schema "$schema_file")
+      fi
       codex exec \
         --sandbox read-only \
         --ephemeral \
@@ -190,9 +199,39 @@ agent_run() {
         --cd "$workdir" \
         --output-last-message "$output_file" \
         --model "$model" \
+        ${codex_schema[@]+"${codex_schema[@]}"} \
         "$prompt" <"$context_file" >/dev/null
       ;;
     claude:read-only)
+      if [[ -n "$schema_file" ]]; then
+        # Claude returns structured output inside a JSON result envelope.
+        envelope="$output_file.envelope"
+        (
+          cd "$workdir"
+          claude \
+            --print \
+            --permission-mode plan \
+            --tools "Read,Glob,Grep" \
+            --no-session-persistence \
+            --model "$model" \
+            --output-format json \
+            --json-schema "$(<"$schema_file")" \
+            "$prompt"
+        ) <"$context_file" >"$envelope" || {
+          jq -r '.result // empty' "$envelope" >&2 2>/dev/null || cat "$envelope" >&2
+          return 1
+        }
+        if jq -e '.is_error == true' "$envelope" >/dev/null 2>&1; then
+          jq -r '.result // empty' "$envelope" >&2
+          return 1
+        fi
+        # Without structured output, hand the raw result to the caller's
+        # validation, which rejects it.
+        jq -e '.structured_output // (.result | fromjson?)' "$envelope" >"$output_file" 2>/dev/null ||
+          jq -r '.result // empty' "$envelope" >"$output_file" 2>/dev/null ||
+          cp "$envelope" "$output_file"
+        return 0
+      fi
       (
         cd "$workdir"
         claude \

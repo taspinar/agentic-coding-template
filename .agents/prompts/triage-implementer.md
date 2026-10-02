@@ -10,8 +10,8 @@ Read:
 - `AGENTS.md`
 - the originating GitHub Issue
 - the matching active feature plan, when one exists
-- the source independent-review artifact
-- the approved triage artifact
+- the source independent-review artifact (JSON)
+- the approved triage artifact (JSON)
 - relevant architecture documentation and accepted ADRs
 - the current working-tree diff
 

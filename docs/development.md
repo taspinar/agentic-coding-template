@@ -208,31 +208,33 @@ It uses role `reviewer` with the `read-only` profile. The review is
 non-interactive: the reviewer cannot modify files and has no network access, so
 the script supplies the GitHub Issue and the complete diff against the base
 branch, including uncommitted and untracked changes. The reviewer returns its
-report and the script stores it. A report without the required sections or a
-valid verdict is rejected, and a reviewer that changed the working tree or
+result as JSON and the script validates and stores it. An invalid result is
+retried once and then rejected, and a reviewer that changed the working tree or
 created a commit is reported as an error; in both cases no review is stored.
 
 The review script must run from the matching feature worktree and needs an
-authenticated GitHub CLI. It writes numbered artifacts without overwriting
-earlier reviews:
+authenticated GitHub CLI. Each round writes a numbered pair of files without
+overwriting earlier reviews:
 
 ```text
+.agents/reviews/feature-12-player-movement-review-01.json
 .agents/reviews/feature-12-player-movement-review-01.md
-.agents/reviews/feature-12-player-movement-review-02.md
 ```
+
+See "Review and triage data" below for the two files.
 
 Triage an explicit review artifact with an agent independent from the
 implementation:
 
 ```bash
 ./scripts/triage-review.sh \
-  .agents/reviews/feature-12-player-movement-review-01.md
+  .agents/reviews/feature-12-player-movement-review-01.json
 ```
 
 The full interface is:
 
 ```text
-./scripts/triage-review.sh <review-file> [--agent <agent>] [--model <model>]
+./scripts/triage-review.sh <review-json> [--agent <agent>] [--model <model>]
 ```
 
 The triage agent (role `triage`) classifies every finding as:
@@ -242,44 +244,51 @@ The triage agent (role `triage`) classifies every finding as:
 - `DEFER`: valid non-blocking work proposed as a separate follow-up Issue.
 - `ACCEPT`: consciously take no action, with an explicit rationale.
 
+The script validates the decisions before showing them: every finding is
+decided exactly once, Critical and Major findings are `FIX_NOW`, and a deferred
+finding has a follow-up title, action, and acceptance criteria. Invalid
+decisions are retried once and then rejected. A review without findings needs
+no triage agent.
+
 The script displays the complete proposal before side effects. Only after
 interactive approval does it create one GitHub Issue per `DEFER` finding and
 write a persistent, uniquely named artifact such as:
 
 ```text
+.agents/triage/feature-12-player-movement-review-01-triage.json
 .agents/triage/feature-12-player-movement-review-01-triage.md
 ```
 
 That artifact maps the source review findings to their decisions and any
 created Issue numbers. Declining the proposal creates neither an artifact nor
-Issues. The source review remains unchanged. A separate `create-followups.sh`
-is therefore not needed.
+Issues. The source review remains unchanged. A re-run reuses a follow-up Issue
+that already exists for a finding.
 
 Deferred follow-up Issue titles include deterministic provenance:
 
 ```text
-[F02][R01][S9] Concise follow-up title
+[F02][R01][S2] Concise follow-up title
 ```
 
-The script obtains the feature ID from the source Issue title, the review round
-from the review filename, and the finding ID from the review. When no feature
-ID is available, it falls back to the source Issue number:
+The script obtains the feature ID from the source Issue title and the review
+round and finding ID from the review. When no feature ID is available, it falls
+back to the source Issue number:
 
 ```text
-[#12][R01][S9] Concise follow-up title
+[#12][R01][S2] Concise follow-up title
 ```
 
 Apply the approved `FIX_NOW` set from the same feature worktree:
 
 ```bash
 ./scripts/apply-triage.sh \
-  .agents/triage/feature-12-player-movement-review-01-triage.md
+  .agents/triage/feature-12-player-movement-review-01-triage.json
 ```
 
 The full interface is:
 
 ```text
-./scripts/apply-triage.sh <triage-file> [--agent <agent>] [--model <model>]
+./scripts/apply-triage.sh <triage-json> [--agent <agent>] [--model <model>]
 ```
 
 The helper uses role `triage-implementer`. It validates the approved artifact and source review, shows the exact
@@ -291,6 +300,31 @@ runs `./scripts/verify.sh`.
 The helper does not commit, push, merge, deploy, or create/close Issues. Inspect
 the resulting diff and run another independent review and triage when fixes
 require confirmation.
+
+### Review and triage data
+
+Results that an agent writes and a script consumes are JSON. Each review and
+each triage is stored as two files with the same name:
+
+- `.json` is the source of truth. The scripts read only this file.
+- `.md` is a report generated from the JSON for reading. It is never parsed;
+  editing it has no effect.
+
+The agent's result must match a schema in `.agents/schemas/`
+(`review.schema.json`, `triage.schema.json`). The schema is passed to the
+provider CLI and the script checks the result again with `jq`, including rules
+a schema cannot express. For a review, the verdict must follow from the
+findings: `PASS` without findings, `PASS_WITH_MINOR_FINDINGS` with only minor
+or suggestion findings, and `CHANGES_REQUIRED` with at least one critical or
+major finding. What a reviewer could not verify belongs in `limitations` and
+does not change the verdict.
+
+The script, not the agent, numbers the findings: `C1` (critical), `M1` (major),
+`MIN1` (minor), and `S1` (suggestion). Triage decisions and follow-up Issues
+refer to those identifiers.
+
+Documents that people maintain, such as the roadmap, requirements, and
+architecture, keep Markdown as their source.
 
 Verify again after review fixes, then commit and push:
 

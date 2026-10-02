@@ -30,8 +30,11 @@ See `docs/development.md` for the concrete commands.
 - ADRs: why significant architecture decisions were made.
 - `.agents/plans/`: active implementation state for complex work.
 - `.agents/handoffs/`: compressed continuation context.
-- `.agents/reviews/`: temporary independent-review artifacts.
-- `.agents/triage/`: approved finding decisions and deferred-Issue traceability.
+- `.agents/reviews/`: independent-review results as validated JSON, each with a
+  generated Markdown report.
+- `.agents/triage/`: approved finding decisions and deferred-Issue traceability
+  as validated JSON, each with a generated Markdown report.
+- `.agents/schemas/`: the schemas of those results.
 - `.agents/lessons/`: recurring failure lessons awaiting/promoting durable rules.
 - Git history: what actually changed.
 - PR + CI: review discussion and deterministic evidence.
