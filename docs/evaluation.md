@@ -11,6 +11,25 @@ Substantial changes are evaluated against:
 
 Review depth should follow `.agents/policies/autonomy.md`.
 
+## Meaningful tests
+
+Tests exist to catch behavior that must not regress. Add or keep a test when it
+protects:
+
+- an approval or confirmation gate;
+- a scope or permission boundary;
+- the ordering of workflow phases;
+- propagation of a failure to the caller;
+- an acceptance criterion of the Issue.
+
+Do not add tests that only pin message wording, formatting, or layout. Assert
+on output text only as far as needed to tell one failure class from another.
+A test that would still pass after the behavior it names is broken is not
+meaningful; fix or remove it.
+
+Reviewers apply the same principle: report missing coverage of the behaviors
+above, and report tests that only fix wording as unnecessary.
+
 ## Review findings
 
 When independent review is required, run it against the complete implementation
