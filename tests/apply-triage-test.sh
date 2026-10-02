@@ -74,6 +74,7 @@ setup_repo() {
   git -C "$repo" add .
   git -C "$repo" commit -qm "Seed project"
   git -C "$repo" switch -q -c feature/13-apply-test
+  record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
 
   printf '%s\n' "$repo"
 }
@@ -211,6 +212,12 @@ expect_rejected "$repo" "the input is the generated report" ".agents/triage/repo
 expect_rejected "$repo" "the triage does not exist" ".agents/triage/missing.json"
 expect_rejected "$repo" "the agent is unsupported" "$triage" --agent copilot --model model-x
 
+# Fixes apply only to the reviewed content; a stale review is refused.
+repo="$(setup_repo stale)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+expect_rejected "$repo" "the review is stale" "$triage"
+grep -Fq "stale" "$repo.out" || fail "a stale review was not reported as stale"
+
 # A failing agent is reported after verification still ran.
 repo="$(setup_repo agent-fails)"
 if MOCK_AGENT_EXIT=7 run_apply "$repo" y "$triage"; then
@@ -235,6 +242,7 @@ fi
 repo="$(setup_repo verification-fails)"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"
 git -C "$repo" commit -qam "Break verification"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
 if run_apply "$repo" y "$triage"; then
   fail "a failed verification returned success"
 fi

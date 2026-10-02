@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
+source "$script_dir/lib/fingerprint.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -76,25 +77,13 @@ issue_context="$(gh issue view "$issue" \
   --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')" ||
   fail "could not read GitHub Issue #$issue."
 
-# Tree of the complete working tree, including uncommitted and untracked
-# files, built in a temporary index so the real index is not touched.
-snapshot_tree() {
-  local index="$tmp_work/index.$1"
-  local real_index
-
-  # Start from the real index so tracked files that match an ignore rule stay
-  # in the snapshot. The path may be relative to the repository root.
-  real_index="$(cd "$root" && git rev-parse --git-path index)"
-  if (cd "$root" && [[ -f "$real_index" ]]); then
-    (cd "$root" && cp "$real_index" "$index") ||
-      fail "could not copy the Git index for the review snapshot."
-  fi
-  GIT_INDEX_FILE="$index" git -C "$root" add -A >/dev/null
-  GIT_INDEX_FILE="$index" git -C "$root" write-tree
-}
-
 head_before="$(git -C "$root" rev-parse HEAD)"
-tree_before="$(snapshot_tree before)"
+# The fingerprint of the reviewed content, including uncommitted and untracked
+# files; the diff below is built from the same snapshot.
+tree_before="$(fingerprint_worktree "$root" "$tmp_work")" ||
+  fail "could not compute the fingerprint of the working tree."
+cp "$tmp_work/fingerprint.index" "$tmp_work/index.before"
+artifacts_before="$(fingerprint_artifacts "$root")"
 
 review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage")
 context_file="$tmp_work/context.md"
@@ -190,7 +179,8 @@ for attempt in 1 2; do
   agent_status=$?
   set -e
 
-  if [[ "$(git -C "$root" rev-parse HEAD)" != "$head_before" || "$(snapshot_tree "after-$attempt")" != "$tree_before" ]]; then
+  if [[ "$(git -C "$root" rev-parse HEAD)" != "$head_before" || "$(fingerprint_worktree "$root" "$tmp_work")" != "$tree_before" ||
+        "$(fingerprint_artifacts "$root")" != "$artifacts_before" ]]; then
     echo "Error: the reviewer modified the working tree or created a commit. No review was stored." >&2
     git -C "$root" status --short >&2
     exit 1
@@ -235,6 +225,7 @@ review_result_with_ids "$report_file" | jq \
     merge_base: $merge_base,
     head: $head,
     reviewed_tree: $tree,
+    reviewed_paths: null,
     reviewer: {agent: $agent, model: $model},
     created_at: $created_at,
     verdict: .verdict,

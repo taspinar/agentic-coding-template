@@ -100,6 +100,7 @@ setup_repo() {
   git -C "$repo" config user.email "triage-test@example.com"
   git -C "$repo" add .
   git -C "$repo" commit -qm "Seed project"
+  record_reviewed_tree "$repo" "$repo/.agents/reviews/feature-5-test-review-$(printf '%02d' "$round").json"
 
   printf '%s\n' "$repo"
 }
@@ -261,6 +262,13 @@ MOCK_AGENT_EXIT=9 expect_no_triage "$repo" "the triage agent failed" "$review"
 
 repo="$(setup_repo modifies)"
 MOCK_AGENT_ACTION="printf 'x\n' >'$repo/note.txt'" expect_no_triage "$repo" "the triage agent changed the working tree" "$review"
+
+# A review of content that changed since is stale and is not triaged.
+repo="$(setup_repo stale)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+expect_no_triage "$repo" "the review is stale" "$review"
+grep -Fq "stale" "$repo.out" || fail "a stale review was not reported as stale"
+[[ ! -e "$repo.log" ]] || fail "a triage agent was started for a stale review"
 
 # A review without findings needs no agent and still records an approved triage.
 repo="$(setup_repo none 1 none)"

@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
+source "$script_dir/lib/fingerprint.sh"
 
 usage() {
   echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>]"
@@ -81,6 +82,24 @@ review_errors="$(review_artifact_errors "$source_review_path")"
 
 triage_errors="$(triage_artifact_errors "$triage_path" "$source_review_path")"
 [[ -z "$triage_errors" ]] || report_errors "invalid or unapproved triage artifact:" "$triage_errors"
+
+tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/apply-triage.XXXXXX")"
+trap 'rm -rf "$tmp_work"' EXIT
+review_path="$source_review_path"
+review_relative="$source_review_relative"
+fail() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+# Triage and fixes apply only to the content that was reviewed.
+stale_status=0
+review_is_current "$root" "$tmp_work" "$review_path" || stale_status=$?
+case "$stale_status" in
+  0) ;;
+  1) fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review." ;;
+  *) fail "could not compute the current fingerprint of the working tree." ;;
+esac
 
 source_issue="$(jq -r '.issue' "$triage_path")"
 

@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
+source "$script_dir/lib/fingerprint.sh"
 
 usage() {
   echo "Usage: $0 <review-json> [--agent <agent>] [--model <model>]"
@@ -85,6 +86,15 @@ provenance+="[$review_ref]"
 tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/triage-review.XXXXXX")"
 trap 'rm -rf "$tmp_work"' EXIT
 
+# Triage and fixes apply only to the content that was reviewed.
+stale_status=0
+review_is_current "$root" "$tmp_work" "$review_path" || stale_status=$?
+case "$stale_status" in
+  0) ;;
+  1) fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review." ;;
+  *) fail "could not compute the current fingerprint of the working tree." ;;
+esac
+
 decisions_file="$tmp_work/decisions.json"
 context_file="$tmp_work/context.md"
 
@@ -120,6 +130,7 @@ every finding exactly once, using its 'id' as 'finding_id', and return JSON
 that matches the supplied schema."
 
   review_hash_before="$(git hash-object "$review_path")"
+  artifacts_before="$(fingerprint_artifacts "$root")"
   status_before="$(git -C "$root" status --porcelain=v1 --untracked-files=all)"
 
   # Invalid output is retried once; a failed agent or a modified tree is not.
@@ -134,7 +145,8 @@ that matches the supplied schema."
     if [[ "$(git hash-object "$review_path")" != "$review_hash_before" ]]; then
       fail "triage agent modified the source review artifact."
     fi
-    if [[ "$(git -C "$root" status --porcelain=v1 --untracked-files=all)" != "$status_before" ]]; then
+    if [[ "$(git -C "$root" status --porcelain=v1 --untracked-files=all)" != "$status_before" ||
+          "$(fingerprint_artifacts "$root")" != "$artifacts_before" ]]; then
       echo "Error: triage agent modified the working tree." >&2
       git -C "$root" status --short >&2
       exit 1
