@@ -249,7 +249,7 @@ Never implement directly on `main`.
 Bootstrap a new project first with:
 
 ``` text
-./scripts/start-planning.sh codex astra
+./scripts/start-planning.sh
 ```
 
 This creates `planning/project-bootstrap` in an isolated sibling worktree,

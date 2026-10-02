@@ -2,22 +2,26 @@
 
 set -euo pipefail
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+
 usage() {
-  echo "Usage: $0 <review-file> <agent> [model]"
+  echo "Usage: $0 <review-file> [--agent <agent>] [--model <model>]"
+  echo
+  echo "The agent and model come from role 'triage' in .agents/agents.conf"
+  echo "unless --agent and --model are given."
   echo
   echo "Examples:"
-  echo "  $0 .agents/reviews/feature-5-rendering-review-01.md claude"
-  echo "  $0 .agents/reviews/feature-5-rendering-review-01.md codex gpt-5.6"
+  echo "  $0 .agents/reviews/feature-5-rendering-review-01.md"
+  echo "  $0 .agents/reviews/feature-5-rendering-review-01.md --agent claude --model fable"
   exit 1
 }
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
+agent_parse_args "$@"
+if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
   usage
 fi
 
-review_input="$1"
-agent="$2"
-model="${3:-}"
+review_input="${AGENT_POSITIONAL[0]}"
 
 root="$(git rev-parse --show-toplevel)"
 prompt_file="$root/.agents/prompts/triage-reviewer.md"
@@ -42,19 +46,9 @@ if [[ ! -f "$prompt_file" ]]; then
   exit 1
 fi
 
-case "$agent" in
-  codex | claude) ;;
-  *)
-    echo "Error: unsupported agent '$agent'"
-    echo "Supported agents: codex, claude"
-    exit 1
-    ;;
-esac
-
-if ! command -v "$agent" >/dev/null 2>&1; then
-  echo "Error: '$agent' command not found."
-  exit 1
-fi
+agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+agent="$AGENT_PROVIDER"
+model="$AGENT_MODEL"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI 'gh' is not installed."
@@ -287,44 +281,10 @@ status_before="$(git status --porcelain=v1 --untracked-files=all)"
 echo "Starting independent review triage:"
 echo "  Review: $review_relative"
 echo "  Agent:  $agent"
-if [[ -n "$model" ]]; then
-  echo "  Model:  $model"
-else
-  echo "  Model:  default"
-fi
+echo "  Model:  $model"
 echo
 
-case "$agent" in
-  codex)
-    codex_args=(
-      exec
-      --sandbox read-only
-      --ephemeral
-      --color never
-      --cd "$root"
-      --output-last-message "$decisions_file"
-    )
-    if [[ -n "$model" ]]; then
-      codex_args+=(--model "$model")
-    fi
-    codex "${codex_args[@]}" "$start_prompt" >/dev/null
-    ;;
-  claude)
-    claude_args=(
-      --print
-      --permission-mode plan
-      --tools "Read,Glob,Grep"
-      --no-session-persistence
-    )
-    if [[ -n "$model" ]]; then
-      claude_args+=(--model "$model")
-    fi
-    (
-      cd "$root"
-      claude "${claude_args[@]}" "$start_prompt"
-    ) >"$decisions_file"
-    ;;
-esac
+agent_run_report "$agent" "$model" "$root" "$start_prompt" "$decisions_file"
 
 review_hash_after="$(git hash-object "$review_path")"
 status_after="$(git status --porcelain=v1 --untracked-files=all)"
@@ -533,10 +493,8 @@ artifact_relative="${artifact#"$root"/}"
   echo "Reviewer verdict: $reviewer_verdict"
   echo
   echo "Triage agent: $agent"
-  if [[ -n "$model" ]]; then
-    echo
-    echo "Triage model: $model"
-  fi
+  echo
+  echo "Triage model: $model"
   echo
   echo "Approved at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   echo

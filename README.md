@@ -10,13 +10,13 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    ./scripts/doctor.sh
    ```
 2. Record the initial project idea in `README.md`, complete
-   `docs/repository-setup.md`, and configure the new remote.
-3. Start the two-phase project bootstrap with an explicit agent and model:
+   `docs/repository-setup.md`, and configure the new remote. Set the agent and
+   model of each workflow role in `.agents/agents.conf` to ones your accounts
+   support.
+3. Start the two-phase project bootstrap:
 
    ```bash
-   ./scripts/start-planning.sh codex astra
-   # or
-   ./scripts/start-planning.sh claude fable
+   ./scripts/start-planning.sh
    ```
 
    The script creates `planning/project-bootstrap` in a sibling worktree. The
@@ -32,26 +32,24 @@ A lightweight, model-agnostic repository template for agentic software engineeri
 6. Start the feature and implementation agent:
 
    ```bash
-   ./scripts/start-feature.sh 12 player-movement codex
+   ./scripts/start-feature.sh 12 player-movement
    ```
 
-   This creates `feature/12-player-movement` in an isolated worktree and starts the selected `codex` or `claude` agent there.
+   This creates `feature/12-player-movement` in an isolated worktree and starts the configured implementation agent there.
 7. In the feature worktree, verify and run an independent review when required by `.agents/policies/autonomy.md`:
 
    ```bash
    ./scripts/verify.sh
-   ./scripts/review-feature.sh 12 claude
+   ./scripts/review-feature.sh 12
    ./scripts/triage-review.sh \
-     .agents/reviews/feature-12-player-movement-review-01.md \
-     codex
+     .agents/reviews/feature-12-player-movement-review-01.md
    ```
 
 8. Approve the proposed triage and apply its `FIX_NOW` scope:
 
    ```bash
    ./scripts/apply-triage.sh \
-     .agents/triage/feature-12-player-movement-review-01-triage.md \
-     codex
+     .agents/triage/feature-12-player-movement-review-01-triage.md
    ```
 
    The script starts a write-capable agent only after confirmation and verifies

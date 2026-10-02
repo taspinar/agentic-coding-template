@@ -43,13 +43,10 @@ Recommended sequence:
 
 1. Create the repository from this template.
 2. Complete `docs/repository-setup.md`.
-3. Run the bootstrap entrypoint with an explicit agent and model:
+3. Set the agent and model per role in `.agents/agents.conf`, then run the
+   bootstrap entrypoint:
 
-   `./scripts/start-planning.sh codex astra`
-
-   or:
-
-   `./scripts/start-planning.sh claude fable`
+   `./scripts/start-planning.sh`
 
 4. The script creates `planning/project-bootstrap` in an isolated sibling
    worktree from the current `origin/main`.

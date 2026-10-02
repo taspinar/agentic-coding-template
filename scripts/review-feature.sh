@@ -2,20 +2,24 @@
 
 set -euo pipefail
 
-if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <issue-number> <agent> [base-branch] [model]"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+
+agent_parse_args "$@"
+if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; then
+  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>]"
+  echo
+  echo "The agent and model come from role 'reviewer' in .agents/agents.conf"
+  echo "unless --agent and --model are given."
   echo
   echo "Examples:"
-  echo "  $0 2 claude"
-  echo "  $0 2 codex"
-  echo "  $0 2 codex main astra"
+  echo "  $0 2"
+  echo "  $0 2 develop"
+  echo "  $0 2 --agent codex --model gpt-6-astra"
   exit 1
 fi
 
-issue="$1"
-agent="$2"
-base="${3:-main}"
-model="${4:-}"
+issue="${AGENT_POSITIONAL[0]}"
+base="${AGENT_POSITIONAL[1]:-main}"
 
 root="$(git rev-parse --show-toplevel)"
 branch="$(git branch --show-current)"
@@ -31,11 +35,9 @@ if [[ "$branch" != feature/${issue}-* ]]; then
   exit 1
 fi
 
-# Ensure selected reviewer CLI exists.
-if ! command -v "$agent" >/dev/null 2>&1; then
-  echo "Error: '$agent' command not found."
-  exit 1
-fi
+agent_resolve "$root" reviewer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+agent="$AGENT_PROVIDER"
+model="$AGENT_MODEL"
 
 # Ensure reviewer contract exists.
 if [[ ! -f "$prompt_file" ]]; then
@@ -68,13 +70,7 @@ echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
 echo "  Base:     $base"
 echo "  Agent:    $agent"
-
-if [[ -n "$model" ]]; then
-  echo "  Model:    $model"
-else
-  echo "  Model:    default"
-fi
-
+echo "  Model:    $model"
 echo "  Output:   $out"
 
 if [[ -n "$previous_review" ]]; then
@@ -145,39 +141,10 @@ START_PROMPT+="
 Do not modify implementation files.
 Do not commit, push, merge, or deploy."
 
-echo "Starting $agent reviewer..."
+echo "Starting $agent reviewer ($model)..."
 echo
 
-case "$agent" in
-  codex)
-    codex_args=(
-      --sandbox workspace-write
-      --ask-for-approval never
-    )
-
-    if [[ -n "$model" ]]; then
-      codex_args+=(--model "$model")
-    fi
-
-    (
-      cd "$root"
-      codex "${codex_args[@]}" "$START_PROMPT"
-    )
-    ;;
-
-  claude)
-    (
-      cd "$root"
-      claude "$START_PROMPT"
-    )
-    ;;
-
-  *)
-    echo "Error: unsupported agent '$agent'"
-    echo "Supported agents: codex, claude"
-    exit 1
-    ;;
-esac
+agent_run_interactive "$agent" "$model" "$root" "$START_PROMPT"
 
 echo
 echo "Review completed:"

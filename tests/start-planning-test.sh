@@ -220,6 +220,9 @@ setup_repo() {
     "$seed/docs/decisions"
 
   cp "$script_source" "$seed/scripts/start-planning.sh"
+  mkdir -p "$seed/scripts/lib"
+  cp "$root/scripts/lib/agent.sh" "$seed/scripts/lib/agent.sh"
+  printf 'project-grill: codex astra\nproject-planner: codex astra\n' >"$seed/.agents/agents.conf"
   cp "$root/.agents/prompts/project-grill.md" "$seed/.agents/prompts/project-grill.md"
   cp "$root/.agents/prompts/project-planner.md" "$seed/.agents/prompts/project-planner.md"
   cp "$root/docs/PROJECT_REQUIREMENTS.md" "$seed/docs/PROJECT_REQUIREMENTS.md"
@@ -253,7 +256,7 @@ codex_output="$(
   printf 'y\n' |
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$codex_log" \
-    ../scripts/start-planning.sh codex astra 2>"$tmp/codex-success.err"
+    ../scripts/start-planning.sh --agent codex --model astra 2>"$tmp/codex-success.err"
 )"
 codex_worktree="$tmp/codex-repo-planning-project-bootstrap"
 
@@ -287,7 +290,7 @@ claude_log="$tmp/claude.log"
   printf 'yes\n' |
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$claude_log" \
-    ./scripts/start-planning.sh claude fable architecture-refresh \
+    ./scripts/start-planning.sh --agent claude --model fable architecture-refresh \
     >/dev/null 2>"$tmp/claude-success.err"
 )
 claude_worktree="$tmp/claude-repo-planning-architecture-refresh"
@@ -312,7 +315,7 @@ if (
   printf 'n\n' |
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$decline_log" \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "declined requirements returned success"
 fi
@@ -331,7 +334,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$malformed_log" \
     MOCK_GRILL_MODE=malformed \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "malformed requirements returned success"
 fi
@@ -346,7 +349,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$empty_section_log" \
     MOCK_GRILL_MODE=empty-section \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "empty required section returned success"
 fi
@@ -361,7 +364,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$duplicate_section_log" \
     MOCK_GRILL_MODE=duplicate-section \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "duplicate required section returned success"
 fi
@@ -376,7 +379,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$grill_scope_log" \
     MOCK_GRILL_MODE=extra \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "out-of-scope Project Grill change returned success"
 fi
@@ -391,7 +394,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$grill_ignored_log" \
     MOCK_GRILL_MODE=ignored \
-    ./scripts/start-planning.sh codex astra >"$tmp/grill-ignored.out" 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >"$tmp/grill-ignored.out" 2>&1
 ); then
   fail "ignored Project Grill file returned success"
 fi
@@ -408,7 +411,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$grill_weird_log" \
     MOCK_GRILL_MODE=weird-paths \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "tab/newline Project Grill paths returned success"
 fi
@@ -421,7 +424,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$grill_commit_log" \
     MOCK_GRILL_MODE=commit-extra \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "Project Grill commit returned success"
 fi
@@ -436,7 +439,7 @@ set +e
   PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$grill_fail_log" \
     MOCK_GRILL_MODE=fail \
-    ./scripts/start-planning.sh claude fable >"$tmp/grill-fail.out" 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >"$tmp/grill-fail.out" 2>&1
 )
 grill_status=$?
 set -e
@@ -458,7 +461,7 @@ set +e
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$planner_fail_log" \
     MOCK_PLANNER_MODE=fail \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 )
 planner_status=$?
 set -e
@@ -475,7 +478,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$planner_scope_log" \
     MOCK_PLANNER_MODE=extra \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "out-of-scope project-planner change returned success"
 fi
@@ -490,7 +493,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$planner_ignored_log" \
     MOCK_PLANNER_MODE=ignored \
-    ./scripts/start-planning.sh claude fable >"$tmp/planner-ignored.out" 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >"$tmp/planner-ignored.out" 2>&1
 ); then
   fail "ignored project-planner file returned success"
 fi
@@ -505,7 +508,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$planner_weird_log" \
     MOCK_PLANNER_MODE=weird-paths \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "tab/newline project-planner paths returned success"
 fi
@@ -518,7 +521,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$planner_commit_log" \
     MOCK_PLANNER_MODE=commit-extra \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "project-planner commit returned success"
 fi
@@ -531,7 +534,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$requirements_mode_log" \
     MOCK_PLANNER_MODE=requirements-mode \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "requirements mode change returned success"
 fi
@@ -544,7 +547,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$architecture_directory_log" \
     MOCK_PLANNER_MODE=architecture-directory \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "architecture directory returned success"
 fi
@@ -557,7 +560,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$roadmap_symlink_log" \
     MOCK_PLANNER_MODE=roadmap-symlink \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "roadmap symlink returned success"
 fi
@@ -570,7 +573,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$adr_non_markdown_log" \
     MOCK_PLANNER_MODE=adr-non-markdown \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "non-Markdown ADR artifact returned success"
 fi
@@ -583,7 +586,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$adr_nested_log" \
     MOCK_PLANNER_MODE=adr-nested \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "nested ADR artifact returned success"
 fi
@@ -596,7 +599,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$only_roadmap_log" \
     MOCK_PLANNER_MODE=only-roadmap \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "unchanged architecture returned success"
 fi
@@ -609,7 +612,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$only_architecture_log" \
     MOCK_PLANNER_MODE=only-architecture \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "unchanged roadmap returned success"
 fi
@@ -627,7 +630,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$mode_only_log" \
     MOCK_PLANNER_MODE=mode-only \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "mode-only architecture and roadmap changes returned success"
 fi
@@ -640,7 +643,7 @@ if (
     PATH="$tmp/bin:/usr/bin:/bin" \
     MOCK_AGENT_LOG="$executable_docs_log" \
     MOCK_PLANNER_MODE=executable-docs \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "executable planning documents returned success"
 fi
@@ -649,7 +652,7 @@ invalid_repo="$(setup_repo invalid)"
 if (
   cd "$invalid_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model fable >/dev/null 2>&1
 ); then
   fail "known incompatible agent/model combination returned success"
 fi
@@ -660,7 +663,7 @@ unknown_agent_repo="$(setup_repo unknown-agent)"
 if (
   cd "$unknown_agent_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh other model >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent other --model model >/dev/null 2>&1
 ); then
   fail "unknown agent returned success"
 fi
@@ -669,7 +672,7 @@ invalid_name_repo="$(setup_repo invalid-name)"
 if (
   cd "$invalid_name_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra ../unsafe >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra ../unsafe >/dev/null 2>&1
 ); then
   fail "unsafe planning name returned success"
 fi
@@ -678,7 +681,7 @@ invalid_model_repo="$(setup_repo invalid-model)"
 if (
   cd "$invalid_model_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex "bad model" >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model "bad model" >/dev/null 2>&1
 ); then
   fail "unsafe model syntax returned success"
 fi
@@ -687,7 +690,7 @@ option_model_repo="$(setup_repo option-model)"
 if (
   cd "$option_model_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex --fallback >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model --fallback >/dev/null 2>&1
 ); then
   fail "option-like model returned success"
 fi
@@ -696,7 +699,7 @@ missing_cli_repo="$(setup_repo missing-cli)"
 if (
   cd "$missing_cli_repo"
   PATH="/usr/bin:/bin" \
-    ./scripts/start-planning.sh claude fable >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent claude --model fable >/dev/null 2>&1
 ); then
   fail "missing selected agent CLI returned success"
 fi
@@ -708,7 +711,7 @@ git -C "$remote_repo" branch -D planning/project-bootstrap >/dev/null
 if (
   cd "$remote_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "existing remote planning branch returned success"
 fi
@@ -720,7 +723,7 @@ git -C "$local_repo" branch planning/project-bootstrap
 if (
   cd "$local_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >"$tmp/local-duplicate.out" 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >"$tmp/local-duplicate.out" 2>&1
 ); then
   fail "existing local planning branch returned success"
 fi
@@ -734,7 +737,7 @@ mkdir "$tmp/path-duplicate-repo-planning-project-bootstrap"
 if (
   cd "$path_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "existing worktree path returned success"
 fi
@@ -747,7 +750,7 @@ ln -s "$tmp/missing-worktree-target" "$tmp/dangling-path-repo-planning-project-b
 if (
   cd "$dangling_path_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >"$tmp/dangling-path.out" 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >"$tmp/dangling-path.out" 2>&1
 ); then
   fail "dangling worktree symlink returned success"
 fi
@@ -762,7 +765,7 @@ rm "$missing_prompt_repo/.agents/prompts/project-planner.md"
 if (
   cd "$missing_prompt_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "missing project-planner prompt returned success"
 fi
@@ -772,7 +775,7 @@ git -C "$missing_base_repo" remote set-url origin "$tmp/does-not-exist.git"
 if (
   cd "$missing_base_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >"$tmp/missing-base.out" 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >"$tmp/missing-base.out" 2>&1
 ); then
   fail "unavailable origin/main returned success"
 fi
@@ -784,7 +787,7 @@ printf '\nDirty.\n' >>"$dirty_repo/AGENTS.md"
 if (
   cd "$dirty_repo"
   PATH="$tmp/bin:/usr/bin:/bin" \
-    ./scripts/start-planning.sh codex astra >/dev/null 2>&1
+    ./scripts/start-planning.sh --agent codex --model astra >/dev/null 2>&1
 ); then
   fail "dirty repository returned success"
 fi

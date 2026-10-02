@@ -10,8 +10,9 @@
 
 Run `./scripts/doctor.sh` to check these prerequisites. It reports each check
 as `OK`, `WARNING`, or `FAILED` with a fix hint, exits non-zero when a required
-prerequisite is missing, and never modifies anything. A missing agent CLI is a
-warning as long as at least one of `codex` and `claude` is installed.
+prerequisite is missing, and never modifies anything. A missing agent CLI
+fails when `.agents/agents.conf` assigns it to a role and is a warning
+otherwise.
 
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.
@@ -43,32 +44,59 @@ after a failure, and a summary lists each check as `PASS` or `FAIL`.
 There is no automatic stack detection and no optional check: remove a check
 from `scripts/verify.conf` rather than letting it be skipped.
 
+## Configuring agents
+
+`.agents/agents.conf` assigns a provider and model to each workflow role, one
+per line:
+
+```text
+<role>: <provider> <model>
+```
+
+| Role | Used by |
+|---|---|
+| `project-grill`, `project-planner` | `start-planning.sh` |
+| `planning-reviewer` | reserved for planning review |
+| `implementer` | `start-feature.sh` |
+| `reviewer` | `review-feature.sh` |
+| `triage` | `triage-review.sh` |
+| `triage-implementer` | `apply-triage.sh` |
+
+Supported providers are `codex` and `claude`. Set each model to one your
+account supports, and use a different provider for a reviewing role than for
+the role whose work it reviews.
+
+Every workflow script accepts `--agent <agent>` and `--model <model>` to
+override the configuration for one run. Overriding the provider requires a
+model as well. The model is always passed to the provider, for Claude as well
+as Codex, and is never replaced: an unknown provider, missing CLI, missing
+model, or malformed configuration fails before the script creates a branch,
+worktree, or file, and a model the provider rejects fails the run.
+
+Interactive write-capable sessions start Codex with a workspace-write sandbox
+and no approval prompts, and Claude with automatic acceptance of edits.
+
 ## Project bootstrap workflow
 
 Run project bootstrap from a clean checkout after recording the initial project
 idea and completing `docs/repository-setup.md`:
 
 ```bash
-./scripts/start-planning.sh codex astra
-```
-
-Or use Claude:
-
-```bash
-./scripts/start-planning.sh claude fable
+./scripts/start-planning.sh
 ```
 
 The full interface is:
 
 ```text
-./scripts/start-planning.sh <agent> <model> [name]
+./scripts/start-planning.sh [name] [--agent <agent>] [--model <model>]
 ```
 
-The optional name defaults to `project-bootstrap`. A custom planning cycle such
-as:
+Project Grill uses role `project-grill` and the planning session uses role
+`project-planner`; `--agent` and `--model` override both. The optional name
+defaults to `project-bootstrap`. A custom planning cycle such as:
 
 ```bash
-./scripts/start-planning.sh codex astra architecture-refresh
+./scripts/start-planning.sh architecture-refresh
 ```
 
 creates `planning/architecture-refresh` in a sibling worktree named
@@ -118,24 +146,18 @@ From a clean primary checkout, create the feature worktree and start the
 implementation agent:
 
 ```bash
-./scripts/start-feature.sh 12 player-movement codex
+./scripts/start-feature.sh 12 player-movement
 ```
 
 The full interface is:
 
 ```text
-./scripts/start-feature.sh <issue> <slug> <agent> [base-branch] [model]
+./scripts/start-feature.sh <issue> <slug> [base-branch] [--agent <agent>] [--model <model>]
 ```
 
-Supported agents are `codex` and `claude`. The script fetches the selected
-remote base, creates `feature/<issue>-<slug>` in a sibling worktree, and starts
-the agent inside that worktree. For Codex, it uses workspace-write mode and
-disables interactive approval prompts. The optional model argument is currently
-forwarded only to Codex:
-
-```bash
-./scripts/start-feature.sh 12 player-movement codex main gpt-5.6
-```
+The script fetches the selected remote base, creates `feature/<issue>-<slug>`
+in a sibling worktree, and starts the agent of role `implementer` inside that
+worktree.
 
 After the implementation agent exits, enter the feature worktree and verify:
 
@@ -148,16 +170,16 @@ When independent review is required by `.agents/policies/autonomy.md`, run it
 before committing so the reviewer includes the complete working-tree changes:
 
 ```bash
-./scripts/review-feature.sh 12 claude
+./scripts/review-feature.sh 12
 ```
 
 The full interface is:
 
 ```text
-./scripts/review-feature.sh <issue> <agent> [base-branch] [model]
+./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>]
 ```
 
-The review script must run from the matching feature worktree. It writes
+It uses role `reviewer`. The review script must run from the matching feature worktree. It writes
 numbered artifacts without overwriting earlier reviews:
 
 ```text
@@ -170,17 +192,16 @@ implementation:
 
 ```bash
 ./scripts/triage-review.sh \
-  .agents/reviews/feature-12-player-movement-review-01.md \
-  codex
+  .agents/reviews/feature-12-player-movement-review-01.md
 ```
 
 The full interface is:
 
 ```text
-./scripts/triage-review.sh <review-file> <agent> [model]
+./scripts/triage-review.sh <review-file> [--agent <agent>] [--model <model>]
 ```
 
-The triage agent classifies every finding as:
+The triage agent (role `triage`) classifies every finding as:
 
 - `FIX_NOW`: resolve before the feature proceeds. Critical and Major findings
   always use this category.
@@ -218,17 +239,16 @@ Apply the approved `FIX_NOW` set from the same feature worktree:
 
 ```bash
 ./scripts/apply-triage.sh \
-  .agents/triage/feature-12-player-movement-review-01-triage.md \
-  codex
+  .agents/triage/feature-12-player-movement-review-01-triage.md
 ```
 
 The full interface is:
 
 ```text
-./scripts/apply-triage.sh <triage-file> <agent> [model]
+./scripts/apply-triage.sh <triage-file> [--agent <agent>] [--model <model>]
 ```
 
-The helper validates the approved artifact and source review, shows the exact
+The helper uses role `triage-implementer`. It validates the approved artifact and source review, shows the exact
 `FIX_NOW` scope, and asks for confirmation before starting a write-capable
 agent. It never passes `DEFER` or `ACCEPT` findings to that agent. After the
 agent exits, it verifies that the review and triage artifacts are unchanged and

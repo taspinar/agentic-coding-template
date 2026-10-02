@@ -2,21 +2,25 @@
 
 set -euo pipefail
 
-if [[ $# -lt 3 ]]; then
-  echo "Usage: $0 <issue-number> <slug> <agent> [base-branch] [model]"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+
+agent_parse_args "$@"
+if [[ "${#AGENT_POSITIONAL[@]}" -lt 2 || "${#AGENT_POSITIONAL[@]}" -gt 3 ]]; then
+  echo "Usage: $0 <issue-number> <slug> [base-branch] [--agent <agent>] [--model <model>]"
+  echo
+  echo "The agent and model come from role 'implementer' in .agents/agents.conf"
+  echo "unless --agent and --model are given."
   echo
   echo "Examples:"
-  echo "  $0 1 project-scaffold codex"
-  echo "  $0 3 floorplan claude"
-  echo "  $0 4 multiplayer codex main gpt-5.6"
+  echo "  $0 1 project-scaffold"
+  echo "  $0 3 floorplan develop"
+  echo "  $0 4 multiplayer --agent claude --model fable"
   exit 1
 fi
 
-issue="$1"
-slug="$2"
-agent="$3"
-base="${4:-main}"
-model="${5:-}"
+issue="${AGENT_POSITIONAL[0]}"
+slug="${AGENT_POSITIONAL[1]}"
+base="${AGENT_POSITIONAL[2]:-main}"
 
 branch="feature/${issue}-${slug}"
 
@@ -24,29 +28,22 @@ repo_root="$(git rev-parse --show-toplevel)"
 repo_name="$(basename "$repo_root")"
 worktree="$(dirname "$repo_root")/${repo_name}-${issue}-${slug}"
 
+agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+agent="$AGENT_PROVIDER"
+model="$AGENT_MODEL"
+
 echo "Preparing feature:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
 echo "  Worktree: $worktree"
 echo "  Agent:    $agent"
-
-if [[ -n "$model" ]]; then
-  echo "  Model:    $model"
-else
-  echo "  Model:    default"
-fi
+echo "  Model:    $model"
 echo
 
 # Ensure current working tree is clean.
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "Error: current working tree is not clean."
   echo "Commit or stash changes before starting a feature."
-  exit 1
-fi
-
-# Ensure the selected agent CLI exists.
-if ! command -v "$agent" >/dev/null 2>&1; then
-  echo "Error: '$agent' command not found."
   exit 1
 fi
 
@@ -92,37 +89,7 @@ Work only on this issue.
 
 Do not push, merge, or deploy unless explicitly instructed."
 
-echo "Starting $agent..."
+echo "Starting $agent ($model)..."
 echo
 
-case "$agent" in
-  codex)
-    (
-      cd "$worktree"
-
-      codex_args=(
-        --sandbox workspace-write
-        --ask-for-approval never
-      )
-
-      if [[ -n "$model" ]]; then
-        codex_args+=(--model "$model")
-      fi
-
-      codex "${codex_args[@]}" "$START_PROMPT"
-    )
-    ;;
-
-  claude)
-    (
-      cd "$worktree"
-      claude "$START_PROMPT"
-    )
-    ;;
-
-  *)
-    echo "Error: unsupported agent '$agent'"
-    echo "Supported agents: codex, claude"
-    exit 1
-    ;;
-esac
+agent_run_interactive "$agent" "$model" "$worktree" "$START_PROMPT"
