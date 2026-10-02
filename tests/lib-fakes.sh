@@ -52,6 +52,15 @@ done
 if [[ -n "${MOCK_AGENT_ACTION:-}" ]]; then
   eval "$MOCK_AGENT_ACTION"
 fi
+# MOCK_WRITE_ACTION and MOCK_WRITE_EXIT apply only to write-capable sessions.
+if [[ "$*" == *"--sandbox workspace-write"* || "$*" == *"--permission-mode acceptEdits"* ]]; then
+  if [[ -n "${MOCK_WRITE_ACTION:-}" ]]; then
+    eval "$MOCK_WRITE_ACTION"
+  fi
+  if [[ -n "${MOCK_WRITE_EXIT:-}" ]]; then
+    exit "$MOCK_WRITE_EXIT"
+  fi
+fi
 
 if [[ "$agent" == "codex" ]]; then
   if [[ -n "$output_file" ]]; then
@@ -90,8 +99,9 @@ copy_workflow() {
 }
 
 # record_reviewed_tree <repo> <review-json> [triage-json]
-# Stores the current fingerprint of the repository as the reviewed tree of a
-# fixture review, and copies it into a triage fixture, so the review is current.
+# Stores the current fingerprint of what a fixture review covers (its
+# reviewed_paths, or the whole repository) as its reviewed tree, and copies it
+# into a triage fixture, so the review is current.
 record_reviewed_tree() {
   local repo="$1"
   local review="$2"
@@ -102,7 +112,7 @@ record_reviewed_tree() {
   scratch="$(mktemp -d "${TMPDIR:-/tmp}/fingerprint.XXXXXX")"
   tree="$(
     source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/scripts/lib/fingerprint.sh"
-    fingerprint_worktree "$repo" "$scratch"
+    fingerprint_review "$repo" "$scratch" "$review"
   )"
   rm -rf "$scratch"
 

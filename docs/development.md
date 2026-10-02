@@ -182,8 +182,41 @@ Each round is stored as `.agents/reviews/planning-<name>-review-NN.json` with
 a generated report, in the same format as feature reviews but without an Issue.
 The review covers only the planning documents, so it becomes stale when one of
 them is added, changed, or deleted, and stays current otherwise
-(`./scripts/check-review.sh`). A planning review is not triaged: revise the
-planning documents for the findings you accept and run the review again.
+(`./scripts/check-review.sh`). A planning review is not triaged; it is
+revised.
+
+### Planning revision
+
+Let the original project planner handle the findings of a current planning
+review:
+
+```bash
+./scripts/revise-planning.sh --review .agents/reviews/planning-project-bootstrap-review-01.json
+```
+
+It uses role `project-planner` in two phases:
+
+1. **Decide.** Read-only, the planner returns one decision per finding with a
+   rationale: `ADOPT`, `REJECT`, `DEFER` (belongs to a later feature), or
+   `ESCALATE` (needs a human product decision or a change to the approved
+   requirements). Critical and major findings may only be adopted or
+   escalated. The decisions are validated like review results, shown to you,
+   and recorded only after your approval, as
+   `.agents/reviews/<review>-revision.json` with a generated report.
+2. **Revise.** A write session resolves exactly the adopted findings. It may
+   change only `docs/architecture.md`, `docs/roadmap.md`, and direct Markdown
+   ADRs. Any other change, including to the requirements, the description, or
+   a review artifact, and any commit fails the run and keeps the worktree for
+   inspection.
+
+Escalated findings are listed with the next step: change the requirements
+through Project Grill and approve them again, or decide that the finding does
+not apply. When the write session fails, the approved decisions stay recorded;
+while the review is still current, running the script again applies them
+without deciding again.
+
+After a revision the review is stale by design. Run `review-planning.sh` for
+the next round, and repeat until the review passes.
 
 Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,

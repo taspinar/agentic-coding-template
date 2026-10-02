@@ -4,11 +4,12 @@
 # review-feature.sh and review-planning.sh.
 # Source this file after agent.sh, review-data.sh, and fingerprint.sh.
 
-# review_run_reviewer <agent> <model> <root> <prompt> <context-file> <schema-file> <result-file> <scratch-dir>
-# Runs the reviewer read-only. An invalid result is retried once, with the
-# reasons for the rejection. Exits the calling script when the reviewer fails,
-# changes the working tree or the review artifacts, creates a commit, or
-# returns an invalid result twice.
+# review_run_reviewer <agent> <model> <root> <prompt> <context-file> <schema-file> <result-file> <scratch-dir> [validator]
+# Runs a read-only agent that returns structured output. The validator prints
+# the rule violations of a result file and defaults to review_result_errors.
+# An invalid result is retried once, with the reasons for the rejection. Exits
+# the calling script when the agent fails, changes the working tree or the
+# review artifacts, creates a commit, or returns an invalid result twice.
 review_run_reviewer() {
   local agent="$1"
   local model="$2"
@@ -18,6 +19,7 @@ review_run_reviewer() {
   local schema_file="$6"
   local result_file="$7"
   local scratch="$8/review-run"
+  local validator="${9:-review_result_errors}"
   local head_before
   local tree_before
   local artifacts_before
@@ -53,7 +55,7 @@ review_run_reviewer() {
       exit 1
     fi
 
-    result_errors="$(review_result_errors "$result_file")"
+    result_errors="$("$validator" "$result_file")"
     [[ -n "$result_errors" ]] || return 0
 
     echo "The reviewer returned an invalid result (attempt $attempt of 2):" >&2

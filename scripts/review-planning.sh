@@ -177,6 +177,8 @@ review_store "$result_file" "$out" "$metadata"
 echo "  $review_relative.json  (source of truth)"
 echo "  $review_relative.md    (generated report)"
 echo
-echo "Next: revise the planning documents in this worktree for the findings you"
-echo "accept, then run ./scripts/review-planning.sh again. When the review passes,"
-echo "commit the planning and open the planning PR as described in docs/development.md."
+if [[ "$(jq '.findings | length' "$out.json")" -gt 0 ]]; then
+  echo "Next: ./scripts/revise-planning.sh --review $review_relative.json"
+else
+  echo "Next: commit the planning and open the planning PR as described in docs/development.md."
+fi

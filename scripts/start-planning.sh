@@ -3,6 +3,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scope.sh"
 
 usage() {
   cat <<EOF
@@ -171,65 +172,22 @@ require_unchanged_head() {
 }
 
 file_mode() {
-  local path="$1"
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    stat -f '%Lp' "$path"
-  else
-    stat -c '%a' "$path"
-  fi
+  scope_file_mode "$1"
 }
 
-is_planner_allowed_path() {
-  local path="$1"
-  local decision_name
+# Project Grill may change only the requirements. The planner may change the
+# requirements path too, but its content, type, and mode are checked
+# separately against the approved signature.
+grill_allowed() {
+  [[ "$1" == "docs/PROJECT_REQUIREMENTS.md" ]]
+}
 
-  case "$path" in
-    docs/PROJECT_REQUIREMENTS.md | docs/architecture.md | docs/roadmap.md)
-      return 0
-      ;;
-    docs/decisions/*.md)
-      decision_name="${path#docs/decisions/}"
-      [[ "$decision_name" != */* ]]
-      return
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+planner_allowed() {
+  [[ "$1" == "docs/PROJECT_REQUIREMENTS.md" ]] || scope_planner_allowed "$1"
 }
 
 snapshot_forbidden_paths() {
-  local scope="$1"
-  local target="$2"
-
-  (
-    cd "$worktree"
-    find . -mindepth 1 ! -path './.git' -print0 |
-      while IFS= read -r -d '' relative; do
-        path="${relative#./}"
-
-        if [[ "$scope" == "grill" && "$path" == "docs/PROJECT_REQUIREMENTS.md" ]]; then
-          continue
-        fi
-        if [[ "$scope" == "planner" ]] && is_planner_allowed_path "$path"; then
-          continue
-        fi
-
-        if [[ -L "$path" ]]; then
-          signature="symlink:$(file_mode "$path"):$(readlink "$path")"
-        elif [[ -f "$path" ]]; then
-          signature="regular:$(file_mode "$path"):$(git hash-object -- "$path")"
-        elif [[ -d "$path" ]]; then
-          signature="directory:$(file_mode "$path")"
-        else
-          signature="other:$(file_mode "$path")"
-        fi
-
-        path_key="$(printf '%s' "$path" | git hash-object --stdin)"
-        printf '%s\t%q\t%s\n' "$path_key" "$path" "$signature"
-      done
-  ) | LC_ALL=C sort >"$target"
+  scope_snapshot "$worktree" "${1}_allowed" "$2"
 }
 
 require_scope_unchanged() {
@@ -239,11 +197,8 @@ require_scope_unchanged() {
   local current_snapshot="$state_dir/${scope}-current.tsv"
 
   snapshot_forbidden_paths "$scope" "$current_snapshot"
-  if ! cmp -s "$baseline" "$current_snapshot"; then
-    echo "Detected out-of-scope filesystem changes (escaped paths shown):" >&2
-    diff -u "$baseline" "$current_snapshot" >&2 || true
+  scope_unchanged "$baseline" "$current_snapshot" ||
     post_creation_fail "$phase exceeded its allowed file scope."
-  fi
 }
 
 requirements_signature() {

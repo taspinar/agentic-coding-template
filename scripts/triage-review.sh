@@ -49,7 +49,7 @@ fi
 review_data_require_jq
 
 if [[ "$(jq -r '.kind // "feature"' "$review_path" 2>/dev/null)" == "planning" ]]; then
-  fail "this is a planning review; it is not triaged. Revise the planning documents and run ./scripts/review-planning.sh again."
+  fail "this is a planning review; it is not triaged. Handle it with ./scripts/revise-planning.sh and review again with ./scripts/review-planning.sh."
 fi
 
 agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
