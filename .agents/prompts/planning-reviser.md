@@ -23,7 +23,8 @@ its `id` as `finding_id`:
 - `DEFER`: the finding is valid, but belongs to a later roadmap feature or a
   just-in-time feature plan, not to the project planning.
 - `ESCALATE`: resolving the finding needs a human product decision or a change
-  to the approved requirements.
+  to the approved requirements. State the decision that is needed, so the
+  human can make it directly.
 
 Critical and major findings may only be adopted or escalated. Every decision
 needs a rationale.

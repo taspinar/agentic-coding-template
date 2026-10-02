@@ -211,9 +211,9 @@ if [[ -n "$escalated" ]]; then
   echo
   echo "Escalated findings need your decision:"
   printf '%s\n' "$escalated"
-  echo "Resolve each by changing the requirements through Project Grill and approving"
-  echo "them again, or by deciding that the finding does not apply. The planning"
-  echo "cannot be finished while an escalated finding is unresolved."
+  echo "Decide each one: record your decision in docs/PROJECT_REQUIREMENTS.md and run"
+  echo "./scripts/review-planning.sh again, or decide that the finding does not apply."
+  echo "The planning cannot be finished while an escalated finding is unresolved."
 fi
 
 adopted="$(jq -r --slurpfile review "$review_path" '

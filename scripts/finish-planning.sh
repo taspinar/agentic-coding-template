@@ -116,7 +116,7 @@ fi
 
 escalated_now="$(jq --argjson round "$round" '[.[] | select(.round == $round and .decision == "ESCALATE")] | length' "$decisions_file")"
 [[ "$escalated_now" -eq 0 ]] ||
-  fail "round $round has $escalated_now escalated finding(s). Resolve them through Project Grill and a new review round, or decide that they do not apply."
+  fail "round $round has $escalated_now escalated finding(s). Record your decision in docs/PROJECT_REQUIREMENTS.md and review again, or decide that they do not apply."
 
 # 4. Escalations of earlier rounds need an explicit resolution by the human;
 #    a newer review alone does not resolve them.
@@ -126,7 +126,7 @@ earlier_escalations="$(jq -r --argjson round "$round" '
 if [[ -n "$earlier_escalations" ]]; then
   echo "Escalated in earlier rounds:"
   printf '%s\n' "$earlier_escalations"
-  printf "Was each of these resolved, by changing the requirements through Project Grill or by deciding that it does not apply? [y/N] "
+  printf "Was each of these resolved, by a decision in the requirements or by deciding that it does not apply? [y/N] "
   resolved=""
   read -r resolved || true
   case "$resolved" in

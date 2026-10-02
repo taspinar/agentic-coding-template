@@ -63,16 +63,17 @@ flowchart TD
   review becomes stale and the next step is a new review round.
 - When the planner rejects or defers every finding, nothing changes and you
   can finish directly.
-- A finding that the planner escalates needs your decision: either it does not
-  apply, or the approved requirements must change. There is no script yet that
-  runs Project Grill again in an existing planning worktree, and
-  `start-planning.sh` always starts a fresh planning branch. To change the
-  requirements, edit `docs/PROJECT_REQUIREMENTS.md` in the planning worktree,
-  or start a Project Grill session there by hand with
-  `.agents/prompts/project-grill.md`, and run a new review round. The planning
-  review covers the requirements, and `finish-planning.sh` records your
-  approval of exactly the reviewed documents. It refuses while an escalation
-  of the latest round is unresolved and asks you to confirm earlier ones.
+- Changes to the plan itself never need Project Grill again: the planner
+  adopts them in `revise-planning.sh`. Project Grill clarifies the project
+  once, at the start.
+- A finding that the planner escalates concerns the approved requirements and
+  needs one product decision from you, not a new interview. Either the
+  finding does not apply, or you record your decision in
+  `docs/PROJECT_REQUIREMENTS.md` in the planning worktree and run a new review
+  round. The planning review covers the requirements, and `finish-planning.sh`
+  records your approval of exactly the reviewed documents, including the
+  changed requirements. It refuses while an escalation of the latest round is
+  unresolved and asks you to confirm earlier ones.
 
 ### Feature phase
 

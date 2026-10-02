@@ -201,11 +201,12 @@ It uses role `project-planner` in two phases:
    a review artifact, and any commit fails the run and keeps the worktree for
    inspection.
 
-Escalated findings are listed with the next step: change the requirements
-through Project Grill and approve them again, or decide that the finding does
-not apply. When the write session fails, the approved decisions stay recorded;
-while the review is still current, running the script again applies them
-without deciding again.
+Escalated findings are listed with the next step: record your decision in
+`docs/PROJECT_REQUIREMENTS.md` and review again, or decide that the finding
+does not apply. An escalation needs one product decision, not a new Project
+Grill session. When the write session fails, the approved decisions stay
+recorded; while the review is still current, running the script again applies
+them without deciding again.
 
 After a revision the review is stale by design. Run `review-planning.sh` for
 the next round, and repeat until the review passes.
