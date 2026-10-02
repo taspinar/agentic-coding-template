@@ -111,7 +111,9 @@ GitHub Issues:
 #2 F02 — optional next
 ```
 
-Before starting F03, review the roadmap again and only then create its Issue.
+Before starting F03, review the roadmap again and only then create its Issue
+with `./scripts/create-feature-issue.sh F03`, which copies the F03 block from
+the roadmap into the Issue after your approval.
 
 GitHub Issues are the actionable source of truth once created.
 The roadmap remains the higher-level planning document.

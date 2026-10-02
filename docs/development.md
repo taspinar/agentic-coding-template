@@ -166,6 +166,35 @@ Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,
 pushes, opens or merges a PR, or deploys.
 
+## Creating a feature Issue from the roadmap
+
+When a roadmap feature becomes active, create its Issue from its block in
+`docs/roadmap.md`:
+
+```bash
+./scripts/create-feature-issue.sh F03
+```
+
+The script finds the heading that starts with the feature ID, such as
+`### F03 — Sharing`, and uses everything up to the next heading of the same or
+a higher level as the Issue body, unchanged. The heading becomes the title, so
+the feature ID stays visible and review triage can use it for follow-up
+provenance. The script shows the proposed Issue and creates it only after your
+approval.
+
+It refuses a feature ID that is missing, used for more than one heading, or
+has an empty block, and it does not create a second Issue for a feature that
+already has one, open or closed. When the block refers to another feature
+whose Issue is still open, it warns before asking.
+
+Create Issues one feature at a time, only for work that is about to start. An
+Issue that is not a roadmap feature can still be created from a title and a
+body file:
+
+```bash
+./scripts/create-feature-issue.sh "Issue title" path/to/body.md [label]
+```
+
 ## Canonical feature workflow
 
 Start with an actionable GitHub Issue. Create a detailed implementation plan
