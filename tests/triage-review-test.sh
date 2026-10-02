@@ -190,7 +190,9 @@ grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Gre
 grep -Fq -- "--json-schema" "$repo.log" || fail "triage agent was not given the schema"
 grep -Fq "Correctness regression" "$repo.log.stdin" || fail "findings were not supplied to the triage agent"
 
-# One comment with both reports is published on the source Issue.
+# One comment with both reports is published on the source Issue, and the
+# publication is recorded in the triage.
+grep -Eq '"published_at": "[0-9]{4}-' "$artifact.json" || fail "the publication was not recorded in the triage"
 [[ "$(grep -c '^COMMENT ON #5$' "$repo.gh.comments")" -eq 1 ]] || fail "exactly one comment on Issue #5 was expected"
 grep -Fq "C1. Correctness regression" "$repo.gh.comments" || fail "the comment lacks the review report"
 grep -Fq "## Fix now" "$repo.gh.comments" || fail "the comment lacks the triage report"
@@ -251,9 +253,19 @@ if MOCK_GH_COMMENT_EXIT=1 run_triage "$repo" y "$review"; then
 fi
 [[ -f "$repo/.agents/triage/feature-5-test-review-01-triage.json" ]] ||
   fail "a failed publication discarded the stored triage"
-grep -Fq "gh issue comment 5 --body-file .agents/triage/feature-5-test-review-01-triage-comment.md" "$repo.out" ||
+triage_file="$repo/.agents/triage/feature-5-test-review-01-triage.json"
+[[ "$(jq -r '.published_at // "none"' "$triage_file")" == "none" ]] || fail "a failed publication was recorded as published"
+grep -Fq "./scripts/triage-review.sh --publish .agents/triage/feature-5-test-review-01-triage.json" "$repo.out" ||
   fail "a failed publication did not print the retry command"
-[[ -f "$repo/.agents/triage/feature-5-test-review-01-triage-comment.md" ]] || fail "the comment to retry was not kept"
+(
+  cd "$repo"
+  PATH="$tmp/bin:/usr/bin:/bin" MOCK_GH_LOG="$repo.gh" ./scripts/triage-review.sh --publish .agents/triage/feature-5-test-review-01-triage.json
+) >"$repo.retry.out" 2>&1 || {
+  cat "$repo.retry.out" >&2
+  fail "retrying the publication failed"
+}
+[[ "$(grep -c '^COMMENT ON #5$' "$repo.gh.comments")" -eq 1 ]] || fail "the retry did not publish the reports"
+grep -Eq '"published_at": "[0-9]{4}-' "$triage_file" || fail "the retried publication was not recorded"
 
 # When Issue creation fails, no triage artifact is stored.
 repo="$(setup_repo create-fails)"

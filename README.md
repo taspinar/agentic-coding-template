@@ -74,6 +74,12 @@ A lightweight, model-agnostic repository template for agentic software engineeri
    the resulting implementation.
    Approved `DEFER` findings become linked follow-up Issues; `ACCEPT` findings
    retain their rationale in the triage artifact.
-9. Commit, push, and open a PR containing `Closes #12`. After CI and required gates pass, merge the PR and clean up the worktree.
+9. After a new review round confirms the fixes, commit with the closing checks:
+
+   ```bash
+   ./scripts/finish-feature.sh 12 "Implement player movement"
+   ```
+
+   Then push and open a PR containing `Closes #12`. After CI and required gates pass, merge the PR and clean up the worktree.
 
 See `docs/development.md` for commands, `docs/agentic-workflow.md` for the lifecycle, and `.agents/policies/` for boundaries.

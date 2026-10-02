@@ -481,12 +481,42 @@ Check a review yourself with:
 
 It exits 0 when the review is current, 1 when it is stale, and 2 on an error.
 
-Verify again after review fixes, then commit and push:
+### Finishing a feature
+
+When the latest review round is resolved, finish the feature from its
+worktree:
 
 ```bash
-./scripts/verify.sh
-git add .
-git commit -m "Implement player movement"
+./scripts/finish-feature.sh 12 "Implement player movement"
+```
+
+The script refuses another branch than `feature/12-*` or a tree without
+changes, runs `./scripts/verify.sh`, and checks the latest review of the
+feature: it must be current and have no critical or major finding. Every
+review round with findings needs an approved triage that was published on the
+Issue (the newest triage of that round counts), and the latest round may have
+no `FIX_NOW` findings left to apply. After fixes, run a new review round first;
+a passed newer round confirms the fixes of earlier rounds. A failed
+publication can be repeated with `./scripts/triage-review.sh --publish
+<triage-json>`.
+
+It then stages all changes (review and triage files are ignored) and opens a
+structured commit message in your editor: the summary, the Issue, a list of
+changes to fill in, the verification, the review round and verdict, and
+`Refs #12`. Emptying the message aborts the commit and leaves the changes
+staged. The script never pushes, opens a PR, or merges.
+
+A change that `.agents/policies/autonomy.md` classifies as low risk may be
+finished without an independent review; the reason is recorded in the commit
+message:
+
+```bash
+./scripts/finish-feature.sh 12 "Fix a typo in the README" --no-review "documentation only"
+```
+
+Then push and open the pull request:
+
+```bash
 git push -u origin feature/12-player-movement
 ```
 
@@ -515,8 +545,5 @@ repository-relative plan path; the detailed plan remains in `.agents/plans/`.
 Roadmap item → GitHub Issue → optional implementation plan → isolated feature
 worktree → implementation → verification → independent review when required →
 triage → apply approved `FIX_NOW` findings → verification/re-review when needed
-→ commit → push/PR → CI and gates → merge → automatic Issue closure → worktree
-cleanup.
-
-Do not use `scripts/finish-feature.sh` as part of this flow until it has been
-redesigned or deprecated; its interface predates the current review script.
+→ `finish-feature.sh` (checks and commit) → push/PR → CI and gates → merge →
+automatic Issue closure → worktree cleanup.

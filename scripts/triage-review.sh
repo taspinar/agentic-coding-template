@@ -9,6 +9,7 @@ source "$script_dir/lib/fingerprint.sh"
 
 usage() {
   echo "Usage: $0 <review-json> [--agent <agent>] [--model <model>]"
+  echo "       $0 --publish <triage-json> [--mark-only]"
   echo
   echo "The agent and model come from role 'triage' in .agents/agents.conf"
   echo "unless --agent and --model are given."
@@ -24,7 +25,123 @@ fail() {
   exit 1
 }
 
+# publish_triage: publishes the stored triage <artifact>.json and its source
+# review as a comment on the source Issue and records the publication.
+# The reports are published on the Issue instead of being committed, rendered
+# from the validated JSON. A comment holds at most 65,536 characters: when both
+# reports do not fit in one comment, they are published in numbered parts, so
+# the record is never shortened.
+publish_triage() {
+  round="$(jq -r '.round' "$review_path")"
+  comment_base="$artifact-comment"
+  rm -f "$comment_base"*.md
+  heading="## Independent review and triage — round $round"
+  {
+    echo "Reviewer verdict: $(jq -r '.verdict | gsub("_"; " ")' "$review_path")"
+    echo
+    echo "<details>"
+    echo "<summary>Review report</summary>"
+    echo
+    review_render_markdown "$review_path" "$review_stem.json" | sed '1{/^<!-- Generated/d;}'
+    echo
+    echo "</details>"
+    echo
+    sed '1{/^<!-- Generated/d;}' "$artifact.md"
+  } >"$tmp_work/comment-body.md"
+
+  comment_limit=60000
+  if [[ "$(wc -c <"$tmp_work/comment-body.md")" -le "$comment_limit" ]]; then
+    { echo "$heading"; echo; cat "$tmp_work/comment-body.md"; } >"$comment_base.md"
+  else
+    # Split on line boundaries; a part never ends inside a line.
+    awk -v limit="$comment_limit" -v base="$tmp_work/part-" '
+      BEGIN { part = 1; size = 0 }
+      {
+        line_size = length($0) + 1
+        if (size > 0 && size + line_size > limit) { part++; size = 0 }
+        print > (base part ".md")
+        size += line_size
+      }
+    ' "$tmp_work/comment-body.md"
+    parts="$(find "$tmp_work" -name 'part-*.md' | wc -l | tr -d ' ')"
+    for ((part = 1; part <= parts; part++)); do
+      {
+        echo "$heading (part $part of $parts)"
+        echo
+        cat "$tmp_work/part-$part.md"
+      } >"$comment_base-$part.md"
+    done
+  fi
+
+  comment_files=()
+  if [[ -f "$comment_base.md" ]]; then
+    comment_files=("$comment_base.md")
+  else
+    for ((part = 1; part <= parts; part++)); do
+      comment_files+=("$comment_base-$part.md")
+    done
+  fi
+
+  echo
+  for index in "${!comment_files[@]}"; do
+    if ! gh issue comment "$source_issue" --body-file "${comment_files[$index]}" </dev/null >/dev/null; then
+      echo "Error: publishing the reports on Issue #$source_issue failed. The triage is stored." >&2
+      if [[ "$index" -gt 0 ]]; then
+        echo "Parts 1 to $index of ${#comment_files[@]} were published; publish the rest in this order with:" >&2
+        for ((retry = index; retry < ${#comment_files[@]}; retry++)); do
+          echo "  gh issue comment $source_issue --body-file ${comment_files[$retry]#"$root"/}" >&2
+        done
+        echo "and then record the publication with: ./scripts/triage-review.sh --publish ${artifact#"$root"/}.json --mark-only" >&2
+      else
+        echo "Retry with: ./scripts/triage-review.sh --publish ${artifact#"$root"/}.json" >&2
+      fi
+      exit 1
+    fi
+  done
+  mark_published
+  echo "Published the review and triage reports on Issue #$source_issue (${#comment_files[@]} comment(s))."
+}
+
+# mark_published: records in <artifact>.json when its reports were published.
+mark_published() {
+  jq --arg at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '. + {published_at: $at}' "$artifact.json" >"$artifact.json.tmp"
+  mv "$artifact.json.tmp" "$artifact.json"
+}
+
 agent_parse_args "$@"
+
+# --publish <triage-json> [--mark-only]: publish a stored triage again, or only
+# record that it was published by hand.
+if [[ "${AGENT_POSITIONAL[0]:-}" == "--publish" ]]; then
+  [[ "${#AGENT_POSITIONAL[@]}" -eq 2 || ( "${#AGENT_POSITIONAL[@]}" -eq 3 && "${AGENT_POSITIONAL[2]}" == "--mark-only" ) ]] || usage
+  root="$(git rev-parse --show-toplevel)"
+  review_data_require_jq
+  [[ -f "${AGENT_POSITIONAL[1]}" ]] || fail "triage artifact not found: ${AGENT_POSITIONAL[1]}"
+  triage_path="$(cd "$(dirname "${AGENT_POSITIONAL[1]}")" && pwd -P)/$(basename "${AGENT_POSITIONAL[1]}")"
+  [[ "$triage_path" == "$root/.agents/triage/"*.json ]] || fail "triage artifact must match .agents/triage/*.json"
+  source_review_relative="$(triage_source_review "$triage_path")"
+  [[ "$source_review_relative" =~ ^\.agents/reviews/[^/]+\.json$ && -f "$root/$source_review_relative" ]] ||
+    fail "the source review of the triage is missing: $source_review_relative"
+  review_path="$root/$source_review_relative"
+  errors="$(review_artifact_errors "$review_path"; triage_artifact_errors "$triage_path" "$review_path")"
+  [[ -z "$errors" ]] || fail "invalid triage or review: ${errors//$'\n'/; }"
+  artifact="${triage_path%.json}"
+  review_stem="$(basename "$review_path" .json)"
+  source_issue="$(jq -r '.issue' "$triage_path")"
+  if [[ "${AGENT_POSITIONAL[2]:-}" == "--mark-only" ]]; then
+    mark_published
+    echo "Recorded the publication of ${artifact#"$root"/}.json."
+    exit 0
+  fi
+  command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
+  gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated. Run: gh auth login"
+  tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/triage-review.XXXXXX")"
+  trap 'rm -rf "$tmp_work"' EXIT
+  [[ -f "$artifact.md" ]] || triage_render_markdown "$artifact.json" "$(basename "$artifact").json" >"$artifact.md"
+  publish_triage
+  exit 0
+fi
+
 if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
   usage
 fi
@@ -367,69 +484,4 @@ echo
 jq '.decisions' "$artifact.json" >"$tmp_work/final.json"
 render_proposal "$tmp_work/final.json"
 
-# The reports are published on the Issue instead of being committed, rendered
-# from the validated JSON. A comment holds at most 65,536 characters: when both
-# reports do not fit in one comment, they are published in numbered parts, so
-# the record is never shortened.
-round="$(jq -r '.round' "$review_path")"
-comment_base="$artifact-comment"
-rm -f "$comment_base"*.md
-heading="## Independent review and triage — round $round"
-{
-  echo "Reviewer verdict: $(jq -r '.verdict | gsub("_"; " ")' "$review_path")"
-  echo
-  echo "<details>"
-  echo "<summary>Review report</summary>"
-  echo
-  review_render_markdown "$review_path" "$review_stem.json" | sed '1{/^<!-- Generated/d;}'
-  echo
-  echo "</details>"
-  echo
-  sed '1{/^<!-- Generated/d;}' "$artifact.md"
-} >"$tmp_work/comment-body.md"
-
-comment_limit=60000
-if [[ "$(wc -c <"$tmp_work/comment-body.md")" -le "$comment_limit" ]]; then
-  { echo "$heading"; echo; cat "$tmp_work/comment-body.md"; } >"$comment_base.md"
-else
-  # Split on line boundaries; a part never ends inside a line.
-  awk -v limit="$comment_limit" -v base="$tmp_work/part-" '
-    BEGIN { part = 1; size = 0 }
-    {
-      line_size = length($0) + 1
-      if (size > 0 && size + line_size > limit) { part++; size = 0 }
-      print > (base part ".md")
-      size += line_size
-    }
-  ' "$tmp_work/comment-body.md"
-  parts="$(find "$tmp_work" -name 'part-*.md' | wc -l | tr -d ' ')"
-  for ((part = 1; part <= parts; part++)); do
-    {
-      echo "$heading (part $part of $parts)"
-      echo
-      cat "$tmp_work/part-$part.md"
-    } >"$comment_base-$part.md"
-  done
-fi
-
-comment_files=()
-if [[ -f "$comment_base.md" ]]; then
-  comment_files=("$comment_base.md")
-else
-  for ((part = 1; part <= parts; part++)); do
-    comment_files+=("$comment_base-$part.md")
-  done
-fi
-
-echo
-for index in "${!comment_files[@]}"; do
-  if ! gh issue comment "$source_issue" --body-file "${comment_files[$index]}" </dev/null >/dev/null; then
-    echo "Error: publishing the reports on Issue #$source_issue failed. The triage is stored." >&2
-    echo "Retry the unpublished part(s) in this order with:" >&2
-    for ((retry = index; retry < ${#comment_files[@]}; retry++)); do
-      echo "  gh issue comment $source_issue --body-file ${comment_files[$retry]#"$root"/}" >&2
-    done
-    exit 1
-  fi
-done
-echo "Published the review and triage reports on Issue #$source_issue (${#comment_files[@]} comment(s))."
+publish_triage
