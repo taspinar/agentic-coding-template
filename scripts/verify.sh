@@ -1,43 +1,84 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
-echo "== Agentic project verification =="
-# Keep this script as the stable interface. Replace/extend detection for your stack.
-if [[ -f package.json ]]; then
-  command -v npm >/dev/null || { echo "npm is required"; exit 1; }
-  [[ -d node_modules ]] || npm ci
-  npm run lint --if-present
-  npm run type-check --if-present
-  npm test --if-present
-  npm run build --if-present
-elif [[ -f pyproject.toml ]]; then
-  command -v python >/dev/null || { echo "python is required"; exit 1; }
-  command -v ruff >/dev/null && ruff check . || true
-  command -v pytest >/dev/null && pytest || true
-else
-  echo "No stack-specific verifier configured yet; checking template structure."
-  test -f AGENTS.md
-  test -f docs/architecture.md
-  test -f .agents/prompts/reviewer.md
-fi
+# Stable verification entry point for humans, agents, and CI.
+# The required checks are declared in scripts/verify.conf.
 
-echo "Checking shell scripts."
-shell_files=(scripts/*.sh tests/*.sh)
-for shell_file in "${shell_files[@]}"; do
-  [[ -f "$shell_file" ]] || continue
-  bash -n "$shell_file"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+config="$root/scripts/verify.conf"
+
+comment_pattern='^[[:space:]]*(#.*)?$'
+check_pattern='^([a-z0-9][a-z0-9-]*):[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
+
+config_fail() {
+  echo "Error: $*" >&2
+  echo "Declare required checks in scripts/verify.conf as '<name>: <command>'." >&2
+  exit 1
+}
+
+echo "== Agentic project verification =="
+
+[[ -f "$config" ]] || config_fail "verification config not found: $config"
+
+names=()
+commands=()
+line_number=0
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line_number=$((line_number + 1))
+  [[ "$line" =~ $comment_pattern ]] && continue
+  [[ "$line" =~ $check_pattern ]] ||
+    config_fail "malformed check on line $line_number of scripts/verify.conf: $line"
+
+  name="${BASH_REMATCH[1]}"
+  for existing in ${names[@]+"${names[@]}"}; do
+    [[ "$existing" != "$name" ]] ||
+      config_fail "duplicate check name on line $line_number of scripts/verify.conf: $name"
+  done
+  names+=("$name")
+  commands+=("${BASH_REMATCH[2]}")
+done <"$config"
+
+[[ "${#names[@]}" -gt 0 ]] || config_fail "scripts/verify.conf declares no checks."
+
+results=()
+failed=0
+for index in "${!names[@]}"; do
+  name="${names[$index]}"
+  command="${commands[$index]}"
+  read -r tool _ <<<"$command"
+
+  echo
+  echo "-- $name: $command"
+
+  if ! (cd "$root" && command -v "$tool" >/dev/null 2>&1); then
+    echo "Error: required check '$name' cannot run; '$tool' is missing or not executable." >&2
+    results+=("FAIL  $name (missing tool: $tool)")
+    failed=1
+    continue
+  fi
+
+  set +e
+  (cd "$root" && bash -eo pipefail -c "$command")
+  status=$?
+  set -e
+
+  if [[ "$status" -eq 0 ]]; then
+    results+=("PASS  $name")
+  else
+    echo "Error: required check '$name' failed with status $status." >&2
+    results+=("FAIL  $name (exit $status)")
+    failed=1
+  fi
 done
 
-if [[ -x tests/triage-review-test.sh ]]; then
-  ./tests/triage-review-test.sh
+echo
+echo "== Verification summary =="
+printf '%s\n' "${results[@]}"
+
+if [[ "$failed" -ne 0 ]]; then
+  echo "Verification failed." >&2
+  exit 1
 fi
 
-if [[ -x tests/apply-triage-test.sh && "${APPLY_TRIAGE_TEST_ACTIVE:-0}" != "1" ]]; then
-  ./tests/apply-triage-test.sh
-fi
-
-if [[ -x tests/start-planning-test.sh && "${APPLY_TRIAGE_TEST_ACTIVE:-0}" != "1" ]]; then
-  ./tests/start-planning-test.sh
-fi
-
-echo "Verification completed. Customize scripts/verify.sh for this project's stack."
+echo "Verification passed."

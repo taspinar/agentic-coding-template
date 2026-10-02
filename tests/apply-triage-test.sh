@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# apply-triage.sh runs ./scripts/verify.sh; do not recurse into this suite.
+if [[ "${APPLY_TRIAGE_TEST_ACTIVE:-0}" == "1" ]]; then
+  echo "apply-triage tests skipped inside a nested verification run"
+  exit 0
+fi
+
 root="$(git rev-parse --show-toplevel)"
 script="$root/scripts/apply-triage.sh"
 review_dir="$root/.agents/reviews"
