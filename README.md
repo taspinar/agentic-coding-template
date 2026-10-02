@@ -37,7 +37,7 @@ flowchart LR
 
    Commit, push, and merge the planning PR as `finish-planning.sh` shows, then
    remove the planning worktree with
-   `./scripts/cleanup-worktree.sh ../<repository>-planning-project-bootstrap`.
+   `./scripts/cleanup-worktree.sh planning/project-bootstrap`.
 4. For each roadmap feature, from the primary checkout and then the feature
    worktree:
 
@@ -54,6 +54,7 @@ flowchart LR
 
    Push, open a PR containing `Closes #12`, merge it after CI, and remove the
    worktree from the primary checkout with
-   `./scripts/cleanup-worktree.sh ../<repository>-12-recipes`.
+   `./scripts/cleanup-worktree.sh 12`, or all merged worktrees at once with
+   `./scripts/cleanup-worktree.sh --merged`.
 
 Rules for agents are in `AGENTS.md`; boundaries are in `.agents/policies/`.

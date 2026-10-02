@@ -161,3 +161,4 @@ echo
 echo "Next steps:"
 echo "  git push -u origin $branch"
 echo "  Open a pull request whose description contains: Closes #$issue"
+echo "After the merge, from the primary checkout: ./scripts/cleanup-worktree.sh $issue"

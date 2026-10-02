@@ -51,7 +51,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/finish-feature.sh` | Checks the feature and creates the commit |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
-| `scripts/cleanup-worktree.sh` | Removes a worktree after its merge |
+| `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
 
 ## Script libraries
 
