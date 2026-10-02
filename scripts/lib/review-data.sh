@@ -168,12 +168,19 @@ review_artifact_errors() {
     if type != "object" or .schema != "review/v1" then
       "the file is not a review/v1 artifact"
     else
-      unexpected(["base", "branch", "created_at", "findings", "head", "issue", "limitations",
+      unexpected(["base", "branch", "created_at", "findings", "head", "issue", "kind", "limitations",
                   "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "verdict"]; "the review"),
       (if .reviewed_paths == null
           or ((.reviewed_paths | type) == "array" and (.reviewed_paths | length) > 0 and (.reviewed_paths | all(nonempty))) then empty
        else "reviewed_paths must be null or a non-empty list of paths" end),
-      (if (.issue | positive_integer) then empty else "issue must be a positive integer" end),
+      (if (.kind // "feature" | IN("feature", "planning")) then empty else "kind must be feature or planning" end),
+      (if (.kind // "feature") == "planning" then
+         (if .issue == null then empty else "a planning review has no issue" end),
+         (if (.branch | type) == "string" and (.branch | startswith("planning/")) then empty
+          else "a planning review must name its planning branch" end),
+         (if (.reviewed_paths | type) == "array" then empty else "a planning review must list its reviewed paths" end)
+       elif (.issue | positive_integer) then empty
+       else "issue must be a positive integer" end),
       (if (.round | positive_integer) then empty else "round must be a positive integer" end),
       (("branch", "base", "merge_base", "head", "reviewed_tree", "created_at") as $field |
         if (.[$field] | nonempty) then empty else "\($field) is missing" end),
@@ -212,8 +219,9 @@ review_render_markdown() {
            "**Recommended action:** \(.recommendation)\n"
          ) | join("\n")) end);
     "<!-- Generated from \($source). Do not edit; this file is never read by the scripts. -->\n\n" +
-    "# Independent Review — \(.branch)\n\n" +
-    "Issue: #\(.issue)\n\n" +
+    "# Independent \(if .kind == "planning" then "Planning " else "" end)Review — \(.branch)\n\n" +
+    (if .issue != null then "Issue: #\(.issue)\n\n" else "" end) +
+    (if (.reviewed_paths | type) == "array" then "Reviewed files: \(.reviewed_paths | map("`\(.)`") | join(", "))\n\n" else "" end) +
     "Round: \(.round)\n\n" +
     "Base: \(.base) (\(.merge_base))\n\n" +
     "HEAD at review start: \(.head)\n\n" +
