@@ -4,8 +4,14 @@
 
 - Git
 - GitHub CLI (`gh`), installed and authenticated
+- `jq`
 - Codex or Claude CLI when that agent is selected
 - Project-specific tools documented in this file after the template is adopted
+
+Run `./scripts/doctor.sh` to check these prerequisites. It reports each check
+as `OK`, `WARNING`, or `FAILED` with a fix hint, exits non-zero when a required
+prerequisite is missing, and never modifies anything. A missing agent CLI is a
+warning as long as at least one of `codex` and `claude` is installed.
 
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.

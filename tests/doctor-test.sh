@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+script="$source_root/scripts/doctor.sh"
+bash_path="$(command -v bash)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/doctor-test.XXXXXX")"
+
+cleanup() {
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+fail() {
+  echo "doctor test failed: $*" >&2
+  exit 1
+}
+
+# Builds a bin directory that contains only the named fake tools, so that
+# PATH can be restricted to it and a missing tool is really missing.
+make_bin() {
+  local bin="$tmp/$1"
+  shift
+
+  mkdir -p "$bin"
+  for tool in "$@"; do
+    case "$tool" in
+      git)
+        cat >"$bin/git" <<FAKE
+#!$bash_path
+case "\$*" in
+  "rev-parse --show-toplevel") exit "\${MOCK_REPO_EXIT:-0}" ;;
+  "remote get-url origin") exit "\${MOCK_ORIGIN_EXIT:-0}" ;;
+  "ls-remote --exit-code --heads origin main") exit "\${MOCK_MAIN_EXIT:-0}" ;;
+esac
+echo "unexpected git call: \$*" >&2
+exit 97
+FAKE
+        ;;
+      gh)
+        cat >"$bin/gh" <<FAKE
+#!$bash_path
+[[ "\$*" == "auth status" ]] && exit "\${MOCK_GH_AUTH_EXIT:-0}"
+echo "unexpected gh call: \$*" >&2
+exit 97
+FAKE
+        ;;
+      *)
+        printf '#!%s\nexit 0\n' "$bash_path" >"$bin/$tool"
+        ;;
+    esac
+    chmod +x "$bin/$tool"
+  done
+  printf '%s\n' "$bin"
+}
+
+run_doctor() {
+  PATH="$1" "$bash_path" "$script" >"$tmp/out.log" 2>&1
+}
+
+# Requires a non-zero exit with exactly one FAILED line, matching the pattern,
+# so a run that fails for another reason does not pass.
+expect_failure() {
+  local bin="$1"
+  local pattern="$2"
+
+  if run_doctor "$bin"; then
+    cat "$tmp/out.log" >&2
+    fail "expected a failure matching: $pattern"
+  fi
+  if [[ "$(grep -c '^FAILED' "$tmp/out.log")" -ne 1 ]] ||
+    ! grep -Eq "^FAILED +.*$pattern" "$tmp/out.log"; then
+    cat "$tmp/out.log" >&2
+    fail "expected exactly one FAILED line matching: $pattern"
+  fi
+}
+
+# Everything available.
+bin="$(make_bin all git gh jq codex claude)"
+run_doctor "$bin" || {
+  cat "$tmp/out.log" >&2
+  fail "complete environment was reported as a failure"
+}
+if grep -Eq '^(FAILED|WARNING)' "$tmp/out.log"; then
+  fail "complete environment reported a problem"
+fi
+
+# Each missing required tool fails and is identified.
+bin="$(make_bin no-jq git gh codex claude)"
+expect_failure "$bin" "jq is not installed"
+
+bin="$(make_bin no-gh git jq codex claude)"
+expect_failure "$bin" "gh\\) is not installed"
+
+bin="$(make_bin no-git gh jq codex claude)"
+expect_failure "$bin" "git is not installed"
+
+# An unauthenticated GitHub CLI fails.
+bin="$(make_bin all-unauthenticated git gh jq codex claude)"
+MOCK_GH_AUTH_EXIT=1 expect_failure "$bin" "not authenticated"
+
+# Running outside a repository, a missing origin, and an unreachable main fail.
+MOCK_REPO_EXIT=128 expect_failure "$bin" "not inside a Git repository"
+MOCK_ORIGIN_EXIT=2 expect_failure "$bin" "'origin' is not configured"
+MOCK_MAIN_EXIT=2 expect_failure "$bin" "'main' is not reachable"
+
+# One missing agent CLI is only a warning; no agent CLI at all fails.
+bin="$(make_bin one-agent git gh jq claude)"
+run_doctor "$bin" || {
+  cat "$tmp/out.log" >&2
+  fail "a single installed agent CLI must be sufficient"
+}
+grep -Eq '^WARNING +codex' "$tmp/out.log" || fail "missing optional agent was not reported as a warning"
+
+bin="$(make_bin no-agent git gh jq)"
+expect_failure "$bin" "no agent CLI"
+
+echo "doctor tests passed"

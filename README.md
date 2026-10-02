@@ -4,6 +4,11 @@ A lightweight, model-agnostic repository template for agentic software engineeri
 
 ## Start a new project
 1. Create a repository from this GitHub template (or clone it and point it at a new remote).
+   Then check that your machine has the required tools:
+
+   ```bash
+   ./scripts/doctor.sh
+   ```
 2. Record the initial project idea in `README.md`, complete
    `docs/repository-setup.md`, and configure the new remote.
 3. Start the two-phase project bootstrap with an explicit agent and model:
