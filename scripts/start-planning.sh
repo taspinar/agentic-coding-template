@@ -394,6 +394,7 @@ if [[ -n "$description_source" ]]; then
   chmod 644 "$description_target" ||
     post_creation_fail "could not set permissions on $description_relative."
   echo "Copied project description to: $description_relative"
+  echo "The original stays where it is; cleanup-worktree.sh removes an identical copy in this checkout after the planning is merged."
 fi
 
 grill_baseline="$state_dir/grill-baseline.tsv"

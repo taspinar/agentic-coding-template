@@ -44,6 +44,12 @@ Roadmap features must use stable IDs such as F01, F02, and F03 and include:
 - risk;
 - whether just-in-time detailed implementation planning is expected.
 
+The repository starts as a copy of the workflow template. The first roadmap
+feature must include replacing what is still template text or a placeholder:
+`README.md`, the template section of `CONTRIBUTING.md`, `.github/CODEOWNERS`,
+and any other placeholder you find, with an acceptance criterion that none
+remains. You may not change those files yourself.
+
 Prefer independently deliverable vertical slices when they fit the product.
 Do not create detailed implementation plans for every future feature.
 

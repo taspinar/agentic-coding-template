@@ -8,7 +8,7 @@ You are implementing only the approved `FIX_NOW` findings supplied by
 Read:
 
 - `AGENTS.md`
-- the originating GitHub Issue
+- the originating GitHub Issue, which the calling script supplies in your prompt
 - the matching active feature plan, when one exists
 - the source independent-review artifact (JSON)
 - the approved triage artifact (JSON)

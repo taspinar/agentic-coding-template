@@ -130,10 +130,20 @@ if [[ "$resolved_issue" != "$source_issue" ]]; then
   echo "Error: could not validate source Issue #$source_issue."
   exit 1
 fi
+# The implementer may run without network access, so the script supplies the
+# Issue.
+issue_context="$(gh issue view "$source_issue" \
+  --json title,body \
+  --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')" || {
+  echo "Error: could not read source Issue #$source_issue."
+  exit 1
+}
 
 fix_count="$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage_path")"
 if [[ "$fix_count" -eq 0 ]]; then
   echo "No FIX_NOW findings found; no implementation agent was started."
+  echo "Next: finish the feature:"
+  echo "  ./scripts/finish-feature.sh $source_issue \"<commit summary>\""
   exit 0
 fi
 
@@ -175,7 +185,14 @@ Resolve exactly these approved FIX_NOW findings:
 ${fix_scope}
 
 Do not implement any DEFER or ACCEPT finding.
-Do not commit, push, merge, deploy, or create/close Issues."
+Do not commit, push, merge, deploy, or create/close Issues.
+
+The source Issue follows below, so you do not need the GitHub CLI or network
+access to read it.
+
+--- GitHub Issue #${source_issue} ---
+${issue_context}
+--- end of Issue #${source_issue} ---"
 
 file_signature() {
   local path="$1"
@@ -255,4 +272,5 @@ fi
 
 echo
 echo "FIX_NOW implementation completed and verification passed."
-echo "Inspect the diff, then run a new independent review and triage when needed."
+echo "The code changed, so the review is stale. Next: review again to confirm the fixes:"
+echo "  ./scripts/review-feature.sh $source_issue"

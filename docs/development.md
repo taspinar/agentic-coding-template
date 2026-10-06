@@ -8,7 +8,8 @@
 - Codex or Claude CLI when that agent is selected
 - Project-specific tools documented in this file after the template is adopted
 
-Run `./scripts/doctor.sh` to check these prerequisites. It reports each check
+Run `./scripts/doctor.sh` to check these prerequisites, including that you can
+push to `origin` with the Git identity in use. It reports each check
 as `OK`, `WARNING`, or `FAILED` with a fix hint, exits non-zero when a required
 prerequisite is missing, and never modifies anything. A missing agent CLI
 fails when `.agents/agents.conf` assigns it to a role and is a warning
@@ -75,9 +76,12 @@ worktree, or file, and a model the provider rejects fails the run.
 
 Agents run with one of two permission profiles:
 
-- `write`: an interactive session that may modify its worktree. Codex runs in
-  a workspace-write sandbox without approval prompts; Claude accepts edits
-  automatically. Used for planning, implementation, and applying triage.
+- `write`: an interactive session that may modify its worktree and use the
+  network, for example to install dependencies and run builds. Codex runs in
+  a workspace-write sandbox with network access and without approval prompts,
+  so it can write only inside the worktree. Claude accepts edits automatically
+  and asks you before it runs a shell command. Used for planning,
+  implementation, and applying triage.
 - `read-only`: a non-interactive session that cannot modify files and gets no
   MCP servers, apps, or other tools from the user's configuration. Codex runs
   in a read-only sandbox without the user's `config.toml`, with apps, browser
@@ -294,12 +298,17 @@ implementation agent:
 The full interface is:
 
 ```text
-./scripts/start-feature.sh <issue> <slug> [base-branch] [--agent <agent>] [--model <model>]
+./scripts/start-feature.sh <issue> [slug] [base-branch] [--agent <agent>] [--model <model>]
 ```
 
-The script fetches the selected remote base, creates `feature/<issue>-<slug>`
-in a sibling worktree, and starts the agent of role `implementer` inside that
-worktree.
+The slug names the branch and the worktree. Without one, the script derives it
+from the Issue title: the title without its feature ID, in lowercase, as at
+most four words joined by hyphens. The script fetches the selected remote base,
+creates `feature/<issue>-<slug>` in a sibling worktree, and starts the agent
+of role `implementer` inside that worktree. Untracked files in the checkout do
+not matter; modified tracked files do, because they would not be part of the
+new worktree. After the session it prints the worktree path and the next
+commands.
 
 After the implementation agent exits, enter the feature worktree and verify:
 
@@ -532,8 +541,10 @@ The script asks GitHub whether the branch's pull request is merged, so it also
 works after a squash merge. It refuses an unmerged worktree, a branch with
 commits after its merged pull request, and a worktree with uncommitted changes;
 ignored review and triage files do not count. After removing the worktree and
-the local branch it fast-forwards `main` when the primary checkout is a clean
-checkout of `main`. A planning worktree is cleaned with
+the local branch it fast-forwards `main` when the primary checkout is on `main`
+without modified tracked files; untracked files do not prevent that. After a
+merged planning it also removes an untracked file in the primary checkout that
+is identical to `docs/PROJECT_DESCRIPTION.md`, such as the original idea file. A planning worktree is cleaned with
 `./scripts/cleanup-worktree.sh planning/<name>`, every merged worktree at once
 with `--merged`, and an abandoned, unmerged one with `--discard` after
 confirmation.

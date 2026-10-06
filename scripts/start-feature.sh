@@ -5,22 +5,41 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
 
 agent_parse_args "$@"
-if [[ "${#AGENT_POSITIONAL[@]}" -lt 2 || "${#AGENT_POSITIONAL[@]}" -gt 3 ]]; then
-  echo "Usage: $0 <issue-number> <slug> [base-branch] [--agent <agent>] [--model <model>]"
+if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 3 ]]; then
+  echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>]"
   echo
-  echo "The agent and model come from role 'implementer' in .agents/agents.conf"
-  echo "unless --agent and --model are given."
+  echo "The slug names the branch (feature/<issue>-<slug>) and the worktree. Without"
+  echo "one, it is derived from the Issue title. The agent and model come from role"
+  echo "'implementer' in .agents/agents.conf unless --agent and --model are given."
   echo
   echo "Examples:"
-  echo "  $0 1 project-scaffold"
-  echo "  $0 3 floorplan develop"
+  echo "  $0 3"
+  echo "  $0 3 site-skeleton"
+  echo "  $0 3 site-skeleton develop"
   echo "  $0 4 multiplayer --agent claude --model fable"
   exit 1
 fi
 
 issue="${AGENT_POSITIONAL[0]}"
-slug="${AGENT_POSITIONAL[1]}"
+slug="${AGENT_POSITIONAL[1]:-}"
 base="${AGENT_POSITIONAL[2]:-main}"
+
+[[ "$issue" =~ ^[0-9]+$ ]] || agent_fail "issue number must be numeric: $issue"
+
+if [[ -z "$slug" ]]; then
+  # Derive the slug from the Issue title: without a leading feature ID, in
+  # lowercase, as at most four words joined by hyphens.
+  command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is needed to derive the slug; pass a slug instead."
+  issue_title="$(gh issue view "$issue" --json title --jq '.title' </dev/null)" ||
+    agent_fail "could not read the title of Issue #$issue; pass a slug instead."
+  slug="$(printf '%s' "$issue_title" |
+    sed -E 's/^[[:space:]]*F[0-9]+[^[:alnum:]]*//' |
+    tr '[:upper:]' '[:lower:]' |
+    sed -E 's/[^a-z0-9]+/ /g' |
+    awk '{ n = (NF < 4 ? NF : 4); for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? "-" : ""), $i }')"
+  [[ -n "$slug" ]] || agent_fail "could not derive a slug from the title of Issue #$issue; pass a slug instead."
+fi
+[[ "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]] || agent_fail "slug must match [a-z0-9][a-z0-9-]*: $slug"
 
 branch="feature/${issue}-${slug}"
 
@@ -32,6 +51,14 @@ agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
+# The implementer may run without network access, so the script supplies the
+# Issue.
+command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is not installed."
+issue_context="$(gh issue view "$issue" \
+  --json title,body \
+  --template 'Title: {{.title}}{{"\n\n"}}{{.body}}' </dev/null)" ||
+  agent_fail "could not read GitHub Issue #$issue."
+
 echo "Preparing feature:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
@@ -40,10 +67,11 @@ echo "  Agent:    $agent"
 echo "  Model:    $model"
 echo
 
-# Ensure current working tree is clean.
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "Error: current working tree is not clean."
-  echo "Commit or stash changes before starting a feature."
+# Modified tracked files would not be part of the feature worktree, which is
+# created from the remote base. Untracked files do not matter.
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "Error: this checkout has uncommitted changes to tracked files."
+  echo "Commit or stash them before starting a feature."
   exit 1
 fi
 
@@ -79,15 +107,18 @@ echo
 
 START_PROMPT="Read and follow .agents/prompts/implementer.md.
 
-Your assigned work item is GitHub Issue #${issue}.
-
-Read GitHub Issue #${issue} using the GitHub CLI.
+Your assigned work item is GitHub Issue #${issue}. Its title and body follow
+below, so you do not need the GitHub CLI or network access to read it.
 
 Read the matching .agents/plans/${issue}-*.md if one exists.
 
 Work only on this issue.
 
-Do not push, merge, or deploy unless explicitly instructed."
+Do not commit, push, merge, or deploy.
+
+--- GitHub Issue #${issue} ---
+${issue_context}
+--- end of Issue #${issue} ---"
 
 echo "Starting $agent ($model)..."
 echo
