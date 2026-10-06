@@ -43,7 +43,7 @@ flowchart LR
 
    ```bash
    ./scripts/create-feature-issue.sh F01
-   ./scripts/start-feature.sh 12 recipes
+   ./scripts/start-feature.sh 12 recipes    # the name is optional
    cd ../<repository>-12-recipes
    ./scripts/review-feature.sh 12
    ./scripts/triage-review.sh .agents/reviews/feature-12-recipes-review-01.json

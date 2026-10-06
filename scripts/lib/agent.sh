@@ -145,7 +145,8 @@ agent_session_notice() {
       echo "- When the agent says it is done, type /exit. This script then continues."
       ;;
     codex)
-      echo "- Codex works without asking for permission, inside its workspace sandbox."
+      echo "- Codex works without asking for permission. It can write only inside this"
+      echo "  worktree and has network access, for example to install dependencies."
       echo "- When the agent says it is done, type /quit. This script then continues."
       ;;
   esac
@@ -155,7 +156,9 @@ agent_session_notice() {
 # agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file] [schema-file]
 #
 # Profiles:
-#   write      Interactive session that may modify the work directory.
+#   write      Interactive session that may modify the work directory and
+#              use the network. Codex writes only inside the work directory;
+#              Claude asks the user before it runs a shell command.
 #   read-only  Non-interactive session that cannot modify files. The agent's
 #              final message is stored in <output-file>. <context-file>, when
 #              given, is supplied to the agent on standard input. With a
@@ -211,7 +214,11 @@ agent_run() {
     codex:write)
       (
         cd "$workdir"
+        # Writing stays confined to the work directory. Network access is on,
+        # as in a Claude write session, so the agent can install dependencies
+        # and run builds; Codex's workspace sandbox blocks it by default.
         codex \
+          -c sandbox_workspace_write.network_access=true \
           --sandbox workspace-write \
           --ask-for-approval never \
           --model "$model" \

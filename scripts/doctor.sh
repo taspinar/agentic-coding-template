@@ -111,6 +111,17 @@ if have git; then
         GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=10 \
         git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
         ok "branch 'main' is reachable on origin"
+        # Reading a public repository works with any identity; pushing does
+        # not. A dry run asks the remote for permission without changing it.
+        if GIT_TERMINAL_PROMPT=0 \
+          GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=10" \
+          GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=10 \
+          git push --dry-run --quiet origin HEAD:refs/heads/doctor-push-check >/dev/null 2>&1; then
+          ok "you can push to origin"
+        else
+          missing "you cannot push to origin" \
+            "Check that the remote URL uses the GitHub account that owns the repository: git remote get-url origin; ssh -T git@github.com"
+        fi
       else
         missing "branch 'main' is not reachable on origin" \
           "Check network access and that origin has a 'main' branch: git ls-remote --heads origin main"

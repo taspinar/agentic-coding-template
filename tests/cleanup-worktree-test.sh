@@ -119,15 +119,37 @@ run_cleanup "$repo" 12 || {
 ! branch_exists "$repo" feature/12-recipes || fail "the merged branch was not deleted"
 [[ -f "$repo/work.txt" ]] || fail "main was not updated with the merged work"
 
-# A planning worktree is found by its branch name, and a path still works.
+# A planning worktree is found by its branch name. Untracked files in the
+# primary checkout do not prevent updating main, and after the merge an
+# untracked copy of the project description is removed while other files stay.
 repo="$(setup_repo planning)"
-add_worktree "$repo" planning/project-bootstrap planning-wt
-merge "$repo" planning/project-bootstrap planning-wt
+git -C "$repo" worktree add -q "$tmp/planning-wt" -b planning/project-bootstrap origin/main
+mkdir -p "$tmp/planning-wt/docs"
+printf 'The project idea.\n' >"$tmp/planning-wt/docs/PROJECT_DESCRIPTION.md"
+git -C "$tmp/planning-wt" add docs/PROJECT_DESCRIPTION.md
+git -C "$tmp/planning-wt" commit -qm "Plan project bootstrap"
+other="$tmp/merge-planning"
+git clone -q "$(git -C "$repo" remote get-url origin)" "$other"
+git -C "$other" config user.name "Cleanup Test"
+git -C "$other" config user.email "cleanup-test@example.com"
+mkdir -p "$other/docs"
+cp "$tmp/planning-wt/docs/PROJECT_DESCRIPTION.md" "$other/docs/PROJECT_DESCRIPTION.md"
+git -C "$other" add -A
+git -C "$other" commit -qm "Squash merge planning"
+git -C "$other" push -q origin main
+printf 'planning/project-bootstrap %s\n' "$(git -C "$tmp/planning-wt" rev-parse HEAD)" >>"$repo.merged"
+printf 'The project idea.\n' >"$repo/idea.md"
+printf 'Something else.\n' >"$repo/notes.md"
 run_cleanup "$repo" planning/project-bootstrap || {
   cat "$repo.out" >&2
   fail "cleaning a merged planning worktree failed"
 }
 [[ ! -e "$tmp/planning-wt" ]] || fail "the merged planning worktree was not removed"
+[[ -f "$repo/docs/PROJECT_DESCRIPTION.md" ]] || fail "main was not updated although only untracked files were present"
+[[ ! -e "$repo/idea.md" ]] || fail "the identical copy of the project description was not removed"
+[[ -f "$repo/notes.md" ]] || fail "an unrelated untracked file was removed"
+grep -Fq "create-feature-issue.sh" "$repo.out" || fail "the next step after a planning cleanup was not printed"
+
 
 repo="$(setup_repo by-path)"
 add_worktree "$repo" feature/13-plan by-path-13
@@ -183,6 +205,22 @@ add_worktree "$repo" feature/40-abandoned discard-40
   fail "--discard with confirmation failed"
 }
 [[ ! -e "$tmp/discard-40" ]] && ! branch_exists "$repo" feature/40-abandoned || fail "--discard did not remove the worktree and branch"
+
+# Discarding an unmerged planning never removes a description copy: only a
+# merged planning has put the description into the repository.
+repo="$(setup_repo discard-planning)"
+mkdir -p "$repo/docs"
+printf 'The project idea.\n' >"$repo/docs/PROJECT_DESCRIPTION.md"
+git -C "$repo" add docs/PROJECT_DESCRIPTION.md
+git -C "$repo" commit -qm "Earlier planning"
+git -C "$repo" push -q origin main
+add_worktree "$repo" planning/change-request discard-planning-wt
+printf 'The project idea.\n' >"$repo/idea.md"
+( cd "$repo" && printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" MOCK_MERGED_FILE="$repo.merged" ./scripts/cleanup-worktree.sh planning/change-request --discard ) >"$repo.out" 2>&1 || {
+  cat "$repo.out" >&2
+  fail "discarding an unmerged planning failed"
+}
+[[ -f "$repo/idea.md" ]] || fail "discarding an unmerged planning removed a description copy"
 
 # The script runs only from the primary checkout, so it never removes the
 # worktree it runs in or one next to it.

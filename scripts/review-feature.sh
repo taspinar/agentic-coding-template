@@ -200,3 +200,11 @@ metadata="$(jq -n \
 review_store "$report_file" "$out" "$metadata"
 echo "  $review_relative.json  (source of truth)"
 echo "  $review_relative.md    (generated report)"
+echo
+if [[ "$(jq '.findings | length' "$out.json")" -gt 0 ]]; then
+  echo "Next: triage the findings:"
+  echo "  ./scripts/triage-review.sh $review_relative.json"
+else
+  echo "Next: the review has no findings; finish the feature:"
+  echo "  ./scripts/finish-feature.sh $issue \"<commit summary>\""
+fi

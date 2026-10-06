@@ -37,6 +37,7 @@ case "\$*" in
   "rev-parse --show-toplevel") exit "\${MOCK_REPO_EXIT:-0}" ;;
   "remote get-url origin") exit "\${MOCK_ORIGIN_EXIT:-0}" ;;
   "ls-remote --exit-code --heads origin main") exit "\${MOCK_MAIN_EXIT:-0}" ;;
+  "push --dry-run --quiet origin HEAD:refs/heads/doctor-push-check") exit "\${MOCK_PUSH_EXIT:-0}" ;;
 esac
 echo "unexpected git call: \$*" >&2
 exit 97
@@ -117,6 +118,7 @@ MOCK_GH_AUTH_EXIT=1 expect_failure "$bin" "not authenticated"
 MOCK_REPO_EXIT=128 expect_failure "$bin" "not inside a Git repository"
 MOCK_ORIGIN_EXIT=2 expect_failure "$bin" "'origin' is not configured"
 MOCK_MAIN_EXIT=2 expect_failure "$bin" "'main' is not reachable"
+MOCK_PUSH_EXIT=128 expect_failure "$bin" "cannot push to origin"
 
 # A missing agent CLI fails when a role uses it and is a warning otherwise.
 bin="$(make_bin one-agent git gh jq claude)"

@@ -102,6 +102,18 @@ publish_triage() {
   echo "Published the review and triage reports on Issue #$source_issue (${#comment_files[@]} comment(s))."
 }
 
+# print_next_step: says what to run after a stored and published triage.
+print_next_step() {
+  echo
+  if [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$artifact.json")" -gt 0 ]]; then
+    echo "Next: let the implementer resolve the FIX_NOW findings:"
+    echo "  ./scripts/apply-triage.sh ${artifact#"$root"/}.json"
+  else
+    echo "Next: nothing to fix now; finish the feature:"
+    echo "  ./scripts/finish-feature.sh $source_issue \"<commit summary>\""
+  fi
+}
+
 # mark_published: records in <artifact>.json when its reports were published.
 mark_published() {
   jq --arg at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '. + {published_at: $at}' "$artifact.json" >"$artifact.json.tmp"
@@ -131,6 +143,7 @@ if [[ "${AGENT_POSITIONAL[0]:-}" == "--publish" ]]; then
   if [[ "${AGENT_POSITIONAL[2]:-}" == "--mark-only" ]]; then
     mark_published
     echo "Recorded the publication of ${artifact#"$root"/}.json."
+    print_next_step
     exit 0
   fi
   command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
@@ -139,6 +152,7 @@ if [[ "${AGENT_POSITIONAL[0]:-}" == "--publish" ]]; then
   trap 'rm -rf "$tmp_work"' EXIT
   [[ -f "$artifact.md" ]] || triage_render_markdown "$artifact.json" "$(basename "$artifact").json" >"$artifact.md"
   publish_triage
+  print_next_step
   exit 0
 fi
 
@@ -485,3 +499,5 @@ jq '.decisions' "$artifact.json" >"$tmp_work/final.json"
 render_proposal "$tmp_work/final.json"
 
 publish_triage
+
+print_next_step

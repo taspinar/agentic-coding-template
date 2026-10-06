@@ -134,6 +134,8 @@ fi
 fix_count="$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage_path")"
 if [[ "$fix_count" -eq 0 ]]; then
   echo "No FIX_NOW findings found; no implementation agent was started."
+  echo "Next: finish the feature:"
+  echo "  ./scripts/finish-feature.sh $source_issue \"<commit summary>\""
   exit 0
 fi
 
@@ -255,4 +257,5 @@ fi
 
 echo
 echo "FIX_NOW implementation completed and verification passed."
-echo "Inspect the diff, then run a new independent review and triage when needed."
+echo "The code changed, so the review is stale. Next: review again to confirm the fixes:"
+echo "  ./scripts/review-feature.sh $source_issue"

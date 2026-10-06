@@ -58,6 +58,9 @@ create_from_file() {
   echo
   echo "Issue created:"
   echo "$issue_url"
+  echo
+  echo "Next: start the work in its own worktree:"
+  echo "  ./scripts/start-feature.sh ${issue_url##*/}"
 }
 
 # Prints the Issues whose title names the feature ID as "<number>\t<state>\t<title>".
@@ -208,6 +211,9 @@ create_from_roadmap() {
   echo
   echo "Issue created for $feature:"
   echo "$issue_url"
+  echo
+  echo "Next: start the feature in its own worktree:"
+  echo "  ./scripts/start-feature.sh ${issue_url##*/}"
 }
 
 case "$#" in

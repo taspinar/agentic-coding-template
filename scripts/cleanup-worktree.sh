@@ -132,10 +132,15 @@ cleanup() {
     return 2
   fi
   echo "Removed $branch and its worktree $path."
+  if [[ "$branch" == planning/* && -n "$head" && "$head" == "$tip" ]]; then
+    removed_planning=1
+  fi
   return 0
 }
 
 removed=0
+removed_planning=0
+main_updated=0
 errors=0
 if [[ "$merged_mode" -eq 1 ]]; then
   while IFS=$'\t' read -r path branch; do
@@ -177,17 +182,37 @@ fi
 git worktree prune
 
 if [[ "$removed" -gt 0 ]]; then
-  # Bring main up to date with the merged work.
-  if [[ "$(git -C "$primary" branch --show-current)" == "main" && -z "$(git -C "$primary" status --porcelain)" ]]; then
+  # Bring main up to date with the merged work. Untracked files do not prevent
+  # a fast-forward; modified tracked files do.
+  if [[ "$(git -C "$primary" branch --show-current)" == "main" &&
+        -z "$(git -C "$primary" status --porcelain --untracked-files=no)" ]]; then
     if git -C "$primary" pull -q --ff-only origin main; then
       echo "Updated main in $primary."
+      main_updated=1
     else
-      echo "Warning: could not fast-forward main in $primary; update it by hand."
+      echo "Warning: could not fast-forward main in $primary; update it by hand with: git pull --ff-only origin main"
     fi
   else
     git -C "$primary" fetch -q origin main || true
-    echo "Fetched origin/main; $primary is not a clean checkout of main, so it was not updated."
+    echo "Fetched origin/main, but did not update $primary: it is not on main or has uncommitted changes to tracked files."
+    echo "Update it by hand with: git pull --ff-only origin main"
   fi
+
+  # After a merged planning, the description that start-planning.sh copied is
+  # in the repository. Remove an untracked original that is byte-identical.
+  description="$primary/docs/PROJECT_DESCRIPTION.md"
+  if [[ "$removed_planning" -eq 1 && "$main_updated" -eq 1 && -f "$description" ]]; then
+    while IFS= read -r -d '' candidate; do
+      if [[ -f "$primary/$candidate" && ! -L "$primary/$candidate" ]] && cmp -s "$primary/$candidate" "$description"; then
+        rm "$primary/$candidate"
+        echo "Removed $candidate: it is identical to docs/PROJECT_DESCRIPTION.md, which is now in the repository."
+      fi
+    done < <(git -C "$primary" ls-files --others --exclude-standard -z)
+  fi
+
+  echo
+  echo "Next: create the Issue of the next roadmap feature, using its ID from docs/roadmap.md:"
+  echo "  ./scripts/create-feature-issue.sh <feature-id>    # for example F01"
 fi
 
 [[ "$errors" -eq 0 ]] || exit 1
