@@ -45,6 +45,29 @@ after a failure, and a summary lists each check as `PASS` or `FAIL`.
 There is no automatic stack detection and no optional check: remove a check
 from `scripts/verify.conf` rather than letting it be skipped.
 
+### Workflow self-tests
+
+The tests of the workflow scripts (`tests/*-test.sh`) are declared separately,
+in `scripts/verify-workflow.conf`. They test the workflow, not the project, so
+a feature can break them only by changing a workflow file. That file names
+those files in its `paths:` entry, as Git pathspecs.
+
+`./scripts/verify.sh` runs the self-tests only when one of those files differs
+from the base branch (`origin/main`, or `main`), counting uncommitted and
+untracked files, or when it cannot tell, for example outside a Git repository.
+Otherwise the summary reports them as `SKIP`. `./scripts/verify.sh --all`
+always runs them, and CI uses it, so every pull request runs the self-tests.
+
+Narrow `paths:` when the project keeps its own files in one of the listed
+places, such as project scripts in `scripts/`; a broader list only makes the
+self-tests run more often. Delete `scripts/verify-workflow.conf` when the
+project removes the workflow scripts.
+
+The self-tests start `jq`, `git`, and `bash` thousands of times. On an Apple
+Silicon Mac an x86_64 `jq`, such as the one Anaconda installs, runs under
+Rosetta and roughly doubles their duration; `file "$(command -v jq)"` shows
+which one is first on your `PATH`.
+
 ## Configuring agents
 
 `.agents/agents.conf` assigns a provider and model to each workflow role, one

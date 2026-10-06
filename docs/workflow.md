@@ -210,7 +210,7 @@ tools.
 | Script | When to use it |
 |---|---|
 | `doctor.sh` | Once after creating a repository from the template, and whenever a tool may be missing |
-| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `apply-triage.sh`, `finish-feature.sh`, and CI |
+| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `apply-triage.sh`, `finish-feature.sh`, and CI. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |

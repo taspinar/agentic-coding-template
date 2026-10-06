@@ -10,4 +10,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify template/project
-        run: ./scripts/verify.sh
+        run: ./scripts/verify.sh --all
