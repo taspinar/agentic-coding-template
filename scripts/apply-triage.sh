@@ -130,14 +130,6 @@ if [[ "$resolved_issue" != "$source_issue" ]]; then
   echo "Error: could not validate source Issue #$source_issue."
   exit 1
 fi
-# The implementer may run without network access, so the script supplies the
-# Issue.
-issue_context="$(gh issue view "$source_issue" \
-  --json title,body \
-  --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')" || {
-  echo "Error: could not read source Issue #$source_issue."
-  exit 1
-}
 
 fix_count="$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage_path")"
 if [[ "$fix_count" -eq 0 ]]; then
@@ -185,14 +177,7 @@ Resolve exactly these approved FIX_NOW findings:
 ${fix_scope}
 
 Do not implement any DEFER or ACCEPT finding.
-Do not commit, push, merge, deploy, or create/close Issues.
-
-The source Issue follows below, so you do not need the GitHub CLI or network
-access to read it.
-
---- GitHub Issue #${source_issue} ---
-${issue_context}
---- end of Issue #${source_issue} ---"
+Do not commit, push, merge, deploy, or create/close Issues."
 
 file_signature() {
   local path="$1"

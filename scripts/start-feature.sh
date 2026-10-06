@@ -51,14 +51,6 @@ agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
-# The implementer may run without network access, so the script supplies the
-# Issue.
-command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is not installed."
-issue_context="$(gh issue view "$issue" \
-  --json title,body \
-  --template 'Title: {{.title}}{{"\n\n"}}{{.body}}' </dev/null)" ||
-  agent_fail "could not read GitHub Issue #$issue."
-
 echo "Preparing feature:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
@@ -107,18 +99,15 @@ echo
 
 START_PROMPT="Read and follow .agents/prompts/implementer.md.
 
-Your assigned work item is GitHub Issue #${issue}. Its title and body follow
-below, so you do not need the GitHub CLI or network access to read it.
+Your assigned work item is GitHub Issue #${issue}.
+
+Read GitHub Issue #${issue} using the GitHub CLI.
 
 Read the matching .agents/plans/${issue}-*.md if one exists.
 
 Work only on this issue.
 
-Do not commit, push, merge, or deploy.
-
---- GitHub Issue #${issue} ---
-${issue_context}
---- end of Issue #${issue} ---"
+Do not commit, push, merge, or deploy."
 
 echo "Starting $agent ($model)..."
 echo

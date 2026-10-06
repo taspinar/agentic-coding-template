@@ -82,11 +82,7 @@ worktree="$tmp/derived-3-published-site-skeleton-with"
 grep -Fq -- "--sandbox workspace-write" "$repo.log" || fail "the implementer was not started write-capable"
 grep -Fq -- "--model model-i" "$repo.log" || fail "the configured model was not passed"
 grep -Fq "./scripts/review-feature.sh 3" "$repo.out" || fail "the next steps were not printed"
-grep -Fq "Published site skeleton with the full verification pipeline" "$repo.log" ||
-  fail "the Issue was not supplied to the implementer"
-if grep -Fq "using the GitHub CLI" "$repo.log"; then
-  fail "the implementer is still told to fetch the Issue itself"
-fi
+grep -Fq "GitHub Issue #3" "$repo.log" || fail "the implementer was not given its Issue"
 
 # An explicit slug is used as given, and untracked files in the checkout do
 # not prevent starting.

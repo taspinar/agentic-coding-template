@@ -5,7 +5,7 @@
 Before making changes, read:
 
 - `AGENTS.md`
-- the assigned GitHub Issue, which the calling script supplies in your prompt
+- the assigned GitHub Issue
 - the active feature plan, if one exists
 - `docs/architecture.md`
 - relevant ADRs under `docs/decisions/`
