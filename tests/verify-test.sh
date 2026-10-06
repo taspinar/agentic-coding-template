@@ -41,7 +41,7 @@ run_verify() {
   local project="$1"
 
   PATH="$tmp/bin:/usr/bin:/bin" MOCK_TOOL_LOG="$project/tools.log" \
-    "$project/scripts/verify.sh" >"$project/out.log" 2>&1
+    "$project/scripts/verify.sh" ${2+"$2"} >"$project/out.log" 2>&1
 }
 
 expect_failure() {
@@ -110,5 +110,119 @@ expect_failure "$project" "malformed check line must fail"
 
 project="$(setup_project duplicate "lint: ruff check ." "lint: pytest")"
 expect_failure "$project" "duplicate check name must fail"
+
+# The workflow self-tests live in their own file and run only when a workflow
+# file differs from the base branch.
+setup_workflow_project() {
+  local project
+
+  project="$(setup_project "$1" "lint: ruff check .")"
+  mkdir -p "$project/tools" "$project/src"
+  printf 'paths: tools .gitignore scripts/verify-workflow.conf\nself-test: pytest\n' \
+    >"$project/scripts/verify-workflow.conf"
+  printf 'one\n' >"$project/tools/tool.sh"
+  printf 'one\n' >"$project/src/app.txt"
+  git -C "$project" init -q -b main
+  git -C "$project" config user.name "Test User"
+  git -C "$project" config user.email "test@example.com"
+  git -C "$project" add -A
+  git -C "$project" commit -qm "Initial commit"
+  git -C "$project" checkout -q -b feature/1-change
+  printf '%s\n' "$project"
+}
+
+self_tests_ran() {
+  grep -Fq "pytest" "$1/tools.log"
+}
+
+expect_skipped() {
+  local project="$1"
+  local description="$2"
+
+  rm -f "$project/tools.log"
+  run_verify "$project" || {
+    cat "$project/out.log" >&2
+    fail "verification failed: $description"
+  }
+  grep -Fq "ruff" "$project/tools.log" || fail "the project checks did not run: $description"
+  if self_tests_ran "$project"; then fail "the self-tests ran although $description"; fi
+  grep -Eq "^SKIP +workflow self-tests \(1 checks\)" "$project/out.log" ||
+    fail "the skipped self-tests were not reported: $description"
+}
+
+expect_ran() {
+  local project="$1"
+  local description="$2"
+
+  rm -f "$project/tools.log"
+  run_verify "$project" ${3+"$3"} || {
+    cat "$project/out.log" >&2
+    fail "verification failed: $description"
+  }
+  self_tests_ran "$project" || fail "the self-tests did not run although $description"
+  if grep -Fq "SKIP" "$project/out.log"; then fail "a skip was reported although $description"; fi
+}
+
+project="$(setup_workflow_project workflow-unchanged)"
+expect_skipped "$project" "nothing changed"
+printf 'two\n' >>"$project/src/app.txt"
+printf 'new\n' >"$project/src/new.txt"
+expect_skipped "$project" "only project files changed"
+git -C "$project" add -A
+git -C "$project" commit -qm "Change the project"
+expect_skipped "$project" "only project files were committed"
+expect_ran "$project" "--all was given" --all
+
+project="$(setup_workflow_project workflow-uncommitted)"
+printf 'two\n' >>"$project/tools/tool.sh"
+expect_ran "$project" "a workflow file has an uncommitted change"
+
+project="$(setup_workflow_project workflow-untracked)"
+printf 'new\n' >"$project/tools/new.sh"
+expect_ran "$project" "a workflow file is new and untracked"
+
+# A path entry can name a single file in the repository root.
+project="$(setup_workflow_project workflow-root-file)"
+printf 'build/\n' >"$project/.gitignore"
+expect_ran "$project" "a guarded file in the repository root is new"
+
+project="$(setup_workflow_project workflow-committed)"
+git -C "$project" rm -q tools/tool.sh
+git -C "$project" commit -qm "Remove a workflow file"
+expect_ran "$project" "a workflow file was removed in a commit"
+
+# Without a base branch the change cannot be determined, so the self-tests run.
+project="$(setup_workflow_project workflow-no-base)"
+git -C "$project" branch -q -D main
+expect_ran "$project" "there is no base branch"
+
+project="$(setup_project workflow-no-repository "lint: ruff check .")"
+printf 'paths: tools\nself-test: pytest\n' >"$project/scripts/verify-workflow.conf"
+expect_ran "$project" "the project is not a Git repository"
+
+# A failing self-test fails verification, and a self-test file without paths
+# or without checks is rejected.
+project="$(setup_workflow_project workflow-fails)"
+printf 'two\n' >>"$project/tools/tool.sh"
+MOCK_PYTEST_EXIT=1 expect_failure "$project" "a failing self-test must propagate"
+grep -Eq "FAIL +self-test" "$project/out.log" || fail "the failed self-test was not identified"
+
+project="$(setup_workflow_project workflow-no-paths)"
+printf 'self-test: pytest\n' >"$project/scripts/verify-workflow.conf"
+expect_failure "$project" "self-tests without paths must fail"
+
+project="$(setup_workflow_project workflow-no-checks)"
+printf 'paths: tools\n' >"$project/scripts/verify-workflow.conf"
+expect_failure "$project" "a self-test file without checks must fail"
+
+project="$(setup_workflow_project workflow-duplicate)"
+printf 'paths: tools\nlint: pytest\n' >"$project/scripts/verify-workflow.conf"
+expect_failure "$project" "a check name used in both files must fail"
+
+project="$(setup_project unknown-option "lint: ruff check .")"
+if PATH="$tmp/bin:/usr/bin:/bin" "$project/scripts/verify.sh" --everything >"$project/out.log" 2>&1; then
+  fail "an unknown option was accepted"
+fi
+[[ ! -e "$project/tools.log" ]] || fail "checks ran despite an unknown option"
 
 echo "verify tests passed"

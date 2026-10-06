@@ -11,6 +11,7 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/agents.conf` | Provider and model per workflow role |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
 | `scripts/verify.conf` | The required verification checks of the project |
+| `scripts/verify-workflow.conf` | The self-tests of the workflow scripts and the workflow files they guard |
 | `.github/` | CI workflow, Issue templates, PR template, and code owners |
 | `CONTRIBUTING.md`, `SECURITY.md` | How to contribute and how to handle security-sensitive findings |
 
@@ -38,7 +39,7 @@ What each part of the template is for. The workflow that connects them is in
 | Script | Purpose |
 |---|---|
 | `scripts/doctor.sh` | Checks the local prerequisites |
-| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`; used by humans, agents, and CI |
+| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; used by humans, agents, and CI |
 | `scripts/start-planning.sh` | Project Grill, requirements approval, and project planning in a planning worktree |
 | `scripts/review-planning.sh` | Independent, read-only review of the planning documents |
 | `scripts/revise-planning.sh` | The planner's decision per planning finding, then the revision |
@@ -90,4 +91,4 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Continuation notes for interrupted work | Yes |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |
-| `tests/` | Integration tests of the workflow scripts, run by `verify.sh` | Yes |
+| `tests/` | Integration tests of the workflow scripts, run by `verify.sh` when a workflow file changed, and always in CI | Yes |
