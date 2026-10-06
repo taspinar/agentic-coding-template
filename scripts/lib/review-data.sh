@@ -17,6 +17,9 @@ review_data_require_jq() {
   }
 }
 
+# The jq programs here must run on jq 1.6 and later. In particular, jq 1.6
+# rejects a keyword such as "label" as a variable name ($label).
+
 # review_data_is_json <file>: succeeds when the file holds exactly one JSON value.
 review_data_is_json() {
   [[ -s "$1" ]] && jq -es 'length == 1' "$1" >/dev/null 2>&1

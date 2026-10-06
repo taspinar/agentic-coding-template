@@ -47,4 +47,6 @@ exactly the adopted findings listed by the caller:
 - do not commit, push, open or merge a PR, create Issues, or deploy.
 
 Finish when every adopted finding is resolved. A new planning review round
-confirms the result.
+confirms the result. `revise-planning.sh` is waiting for this session to end:
+summarize the changes and ask the human to exit the session. The script then
+checks your changes and prints the next step.

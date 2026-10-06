@@ -102,8 +102,8 @@ fi
 
 render_decisions() {
   jq -r '
-    def group($decision; $label):
-      $label,
+    def group($decision; $heading):
+      $heading,
       ([.[] | select(.decision == $decision)] as $items
        | if ($items | length) == 0 then "- (none)"
          else ($items[] | "- \(.finding_id) [\(.severity)] \(.title) — \(.rationale)") end),

@@ -71,3 +71,8 @@ must return to Project Grill and human approval.
 
 Finish after the architecture, necessary ADRs, and roadmap are internally
 consistent with the approved requirements and with each other.
+
+You run inside `scripts/start-planning.sh`, which is waiting for this session
+to end. When you are done, summarize what you wrote and ask the human to exit
+the session. The script then checks the result and prints the next step, the
+independent planning review. Do not tell them to run any command yourself.

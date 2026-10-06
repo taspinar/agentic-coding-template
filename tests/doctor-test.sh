@@ -104,6 +104,11 @@ expect_failure "$bin" "gh\\) is not installed"
 bin="$(make_bin no-git gh jq codex claude)"
 expect_failure "$bin" "git is not installed"
 
+# A jq that is too old for the workflow scripts fails.
+bin="$(make_bin old-jq git gh jq codex claude)"
+printf '#!%s\necho "jq-1.5"\n' "$bash_path" >"$bin/jq"
+expect_failure "$bin" "jq jq-1.5 is too old"
+
 # An unauthenticated GitHub CLI fails.
 bin="$(make_bin all-unauthenticated git gh jq codex claude)"
 MOCK_GH_AUTH_EXIT=1 expect_failure "$bin" "not authenticated"

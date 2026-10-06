@@ -61,6 +61,11 @@ Record the final commit/reference in the plan or handoff when applicable.
 
 Do not claim completion when verification fails.
 
+`scripts/start-feature.sh` is waiting for this session to end. When you are
+done, report the result and ask the human to exit the session. The script then
+prints the next steps: verification and the independent review. Do not commit;
+`scripts/finish-feature.sh` creates the commit after the review.
+
 ## Boundaries
 
 Follow:
