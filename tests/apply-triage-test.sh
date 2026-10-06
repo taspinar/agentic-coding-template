@@ -122,7 +122,7 @@ run_apply "$repo" y "$triage" || {
   cat "$repo.out" >&2
   fail "applying an approved triage failed"
 }
-grep -Fq -- "--sandbox workspace-write --ask-for-approval never --model model-i" "$repo.log" ||
+grep -Fq -- "--sandbox workspace-write --ask-for-approval on-request --model model-i" "$repo.log" ||
   fail "implementation agent was not started write-capable with the configured model"
 grep -Fq "C1. Correctness regression" "$repo.log" || fail "the FIX_NOW finding was not passed to the agent"
 if grep -Fq "Deferred cleanup" "$repo.log" || grep -Fq "Accepted rename" "$repo.log"; then

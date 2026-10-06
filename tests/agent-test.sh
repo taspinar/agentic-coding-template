@@ -151,16 +151,22 @@ for provider in codex claude; do
   grep -Fqx "$provider report" "$tmp/report.txt" || fail "$provider report was not stored"
 done
 
-# A Codex write session has network access, like a Claude write session, but
-# a read-only session does not get it.
+# A Codex write session has network access, like a Claude write session, and
+# asks the user for what its sandbox blocks instead of failing or running
+# unsandboxed. A read-only session gets neither.
 : >"$MOCK_AGENT_LOG"
 agent_run write codex model-a "$workdir" "the prompt" >/dev/null
 grep -Fq -- "sandbox_workspace_write.network_access=true" "$MOCK_AGENT_LOG" ||
   fail "codex write session has no network access"
+grep -Fq -- "--sandbox workspace-write --ask-for-approval on-request" "$MOCK_AGENT_LOG" ||
+  fail "codex write session does not ask the user for what its sandbox blocks"
+if grep -Eq -- "danger-full-access|bypass-approvals" "$MOCK_AGENT_LOG"; then
+  fail "codex write session runs without a sandbox"
+fi
 : >"$MOCK_AGENT_LOG"
 agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/report.txt"
-if grep -Fq -- "network_access" "$MOCK_AGENT_LOG"; then
-  fail "codex read-only session was given network access"
+if grep -Eq -- "network_access|--ask-for-approval" "$MOCK_AGENT_LOG"; then
+  fail "codex read-only session was given network access or approval prompts"
 fi
 
 # A read-only run uses the read-only flags of each provider.
