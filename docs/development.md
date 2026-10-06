@@ -97,14 +97,18 @@ as Codex, and is never replaced: an unknown provider, missing CLI, missing
 model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
-Agents run with one of two permission profiles:
+Agents run with one of two permission profiles. The profile follows from the
+role, not from the provider or model configured for it: a reviewing role is
+always read-only, a writing role always gets `write`.
 
 - `write`: an interactive session that may modify its worktree and use the
-  network, for example to install dependencies and run builds. Codex runs in
-  a workspace-write sandbox with network access and without approval prompts,
-  so it can write only inside the worktree. Claude accepts edits automatically
-  and asks you before it runs a shell command. Used for planning,
-  implementation, and applying triage.
+  network, for example to install dependencies and run builds. Anything beyond
+  that needs your permission. Claude accepts edits automatically and asks you
+  before it runs a shell command. Codex works without asking inside a
+  workspace-write sandbox with network access and asks you when a command
+  needs to leave that sandbox, for example to write outside the worktree;
+  Codex has no setting that asks per command without a sandbox. Used for
+  planning, implementation, and applying triage.
 - `read-only`: a non-interactive session that cannot modify files and gets no
   MCP servers, apps, or other tools from the user's configuration. Codex runs
   in a read-only sandbox without the user's `config.toml`, with apps, browser
