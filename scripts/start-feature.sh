@@ -92,4 +92,18 @@ Do not push, merge, or deploy unless explicitly instructed."
 echo "Starting $agent ($model)..."
 echo
 
-agent_run write "$agent" "$model" "$worktree" "$START_PROMPT"
+agent_status=0
+agent_run write "$agent" "$model" "$worktree" "$START_PROMPT" || agent_status=$?
+
+echo
+if [[ "$agent_status" -ne 0 ]]; then
+  echo "Error: the implementation agent exited with status $agent_status." >&2
+  echo "The feature worktree is preserved at: $worktree" >&2
+  exit "$agent_status"
+fi
+echo "The implementation session ended. Nothing is committed yet."
+echo
+echo "Next, in the feature worktree:"
+echo "  cd \"$worktree\""
+echo "  ./scripts/verify.sh"
+echo "  ./scripts/review-feature.sh $issue"

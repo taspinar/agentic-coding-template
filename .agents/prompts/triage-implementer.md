@@ -46,4 +46,6 @@ Report:
 - checks performed
 - unresolved findings or risks
 
-The calling script runs the repository verification command after you exit.
+`scripts/apply-triage.sh` is waiting for this session to end. Ask the human to
+exit the session; the script then checks the protected artifacts and runs the
+repository verification command.

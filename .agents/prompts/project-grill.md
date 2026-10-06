@@ -67,3 +67,9 @@ During Project Grill:
 
 Finish only after the questions are resolved as far as the human can currently
 resolve them and the complete Draft artifact has been written.
+
+You run inside `scripts/start-planning.sh`, which is waiting for this session
+to end. When you are done, summarize the decisions and ask the human to exit
+the session. Tell them that the script then shows the requirements, asks for
+their approval, and starts project planning in a new session. Do not tell them
+to run `start-planning.sh` again or any other command.

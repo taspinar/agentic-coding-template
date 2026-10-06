@@ -4,7 +4,7 @@
 
 - Git
 - GitHub CLI (`gh`), installed and authenticated
-- `jq`
+- `jq` 1.6 or later
 - Codex or Claude CLI when that agent is selected
 - Project-specific tools documented in this file after the template is adopted
 

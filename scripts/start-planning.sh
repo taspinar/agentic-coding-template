@@ -247,6 +247,7 @@ run_agent() {
 
   echo
   echo "Starting $phase with $agent ($model)..."
+  echo "$5"
   echo
 
   set +e
@@ -400,7 +401,10 @@ planner_baseline="$state_dir/planner-baseline.tsv"
 snapshot_forbidden_paths "grill" "$grill_baseline"
 snapshot_forbidden_paths "planner" "$planner_baseline"
 
-run_agent "Project Grill" "$grill_prompt" "$grill_agent" "$grill_model"
+run_agent "Project Grill" "$grill_prompt" "$grill_agent" "$grill_model" \
+  "Phase 1 of 2. The agent asks you questions and writes docs/PROJECT_REQUIREMENTS.md.
+After the session, this script shows the requirements and asks for your approval.
+When you approve, phase 2 starts by itself: project planning in a new session."
 require_unchanged_head "Project Grill"
 require_scope_unchanged "grill" "$grill_baseline" "Project Grill"
 
@@ -428,7 +432,9 @@ approve_requirements
 validate_requirements "Approved"
 approved_requirements_signature="$(requirements_signature)"
 
-run_agent "project planning" "$planner_prompt" "$planner_agent" "$planner_model"
+run_agent "project planning" "$planner_prompt" "$planner_agent" "$planner_model" \
+  "Phase 2 of 2. A new session writes the architecture, roadmap, and ADRs from the
+approved requirements. After the session, this script checks the result."
 require_unchanged_head "project planner"
 
 if [[ "$(requirements_signature)" != "$approved_requirements_signature" ]]; then

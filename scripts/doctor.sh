@@ -40,7 +40,14 @@ else
 fi
 
 if have jq; then
-  ok "jq is installed"
+  # The workflow scripts are written for jq 1.6 and later.
+  jq_version="$(jq --version 2>/dev/null || true)"
+  if [[ "$jq_version" =~ ^jq-([0-9]+)\.([0-9]+) ]] &&
+    ((BASH_REMATCH[1] < 1 || (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] < 6))); then
+    missing "jq $jq_version is too old" "Install jq 1.6 or later: 'brew install jq' or 'sudo apt-get install jq'"
+  else
+    ok "jq is installed"
+  fi
 else
   missing "jq is not installed" "Install jq: 'brew install jq' or 'sudo apt-get install jq'"
 fi

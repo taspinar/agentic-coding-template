@@ -133,6 +133,25 @@ agent_resolve() {
   AGENT_MODEL="$model"
 }
 
+# agent_session_notice <provider>
+# Tells the user how an interactive session behaves and how the calling
+# script continues, before the agent's own interface takes over the terminal.
+agent_session_notice() {
+  echo "An interactive $1 session starts now. This script waits for it."
+  case "$1" in
+    claude)
+      echo "- Claude may ask your permission before it runs a shell command. That is"
+      echo "  normal; file edits in the worktree are accepted automatically."
+      echo "- When the agent says it is done, type /exit. This script then continues."
+      ;;
+    codex)
+      echo "- Codex works without asking for permission, inside its workspace sandbox."
+      echo "- When the agent says it is done, type /quit. This script then continues."
+      ;;
+  esac
+  echo
+}
+
 # agent_run <profile> <provider> <model> <workdir> <prompt> [output-file] [context-file] [schema-file]
 #
 # Profiles:
@@ -182,6 +201,10 @@ agent_run() {
 
   if [[ "$profile" == "read-only" && -z "$output_file" ]]; then
     agent_fail "permission profile 'read-only' requires an output file."
+  fi
+
+  if [[ "$profile" == "write" ]]; then
+    agent_session_notice "$provider"
   fi
 
   case "$provider:$profile" in
