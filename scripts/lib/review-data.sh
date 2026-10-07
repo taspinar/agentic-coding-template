@@ -204,8 +204,8 @@ review_artifact_errors() {
       unexpected(["base", "branch", "created_at", "findings", "head", "issue", "kind", "limitations",
                   "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "scope",
                   "verdict", "verification"]; "the review"),
-      (if .scope == null or .scope.kind == "full"
-          or (.scope.kind == "changes" and (.scope.since_round | positive_integer)
+      (if .scope == null or ((.scope | type) == "object" and .scope.kind == "full")
+          or ((.scope | type) == "object" and .scope.kind == "changes" and (.scope.since_round | positive_integer)
               and (.scope.since_round < .round) and (.scope.base_tree | nonempty)) then empty
        else "scope must be full, or changes since an earlier round with its reviewed tree" end),
       (if .verification == null

@@ -99,6 +99,40 @@ fi
 merge_base="$(git -C "$root" merge-base HEAD "$base_ref")" ||
   fail "could not determine the merge base of HEAD and $base_ref."
 
+# Determine next review number.
+review_number=1
+previous_review=""
+while true; do
+  candidate="$reviews_dir/${slug}-review-$(printf "%02d" "$review_number")"
+  if [[ ! -e "$candidate.json" && ! -e "$candidate.md" ]]; then
+    out="$candidate"
+    break
+  fi
+  # A round without JSON, such as a review from before JSON artifacts, is not
+  # an input for the re-review.
+  if [[ -f "$candidate.json" ]]; then
+    previous_review="$candidate.json"
+  fi
+  review_number=$((review_number + 1))
+done
+review_relative=".agents/reviews/$(basename "$out")"
+
+# --changes builds on the previous round. What can be refused without the
+# content is refused here, before the verification runs.
+if [[ "$changes_only" -eq 1 ]]; then
+  [[ -n "$previous_review" ]] ||
+    fail "--changes needs a previous round, and this is round 1. Run a complete review first."
+  previous_errors="$(review_artifact_errors "$previous_review")"
+  [[ -z "$previous_errors" ]] ||
+    fail "the previous review is invalid, so --changes cannot build on it: ${previous_errors//$'\n'/; }"
+  previous_round="$(jq -r '.round' "$previous_review")"
+  previous_tree="$(jq -r '.reviewed_tree' "$previous_review")"
+  git -C "$root" cat-file -e "$previous_tree^{tree}" 2>/dev/null ||
+    fail "the content that round $previous_round reviewed is no longer available, so the changes since then cannot be determined. Run a complete review, without --changes."
+  [[ "$(jq -r '.merge_base' "$previous_review")" == "$merge_base" ]] ||
+    fail "the base of the branch changed since round $previous_round, so the feature differs in more than your changes. Run a complete review, without --changes."
+fi
+
 # A reviewer cannot run the checks, so the review starts only on content that
 # passes them. A pass recorded for exactly this content is reused.
 tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/review-feature.XXXXXX")"
@@ -145,39 +179,10 @@ if GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --quiet 
   fail "no changes to review between $base_ref and the working tree."
 fi
 
-# Determine next review number.
-review_number=1
-previous_review=""
-while true; do
-  candidate="$reviews_dir/${slug}-review-$(printf "%02d" "$review_number")"
-  if [[ ! -e "$candidate.json" && ! -e "$candidate.md" ]]; then
-    out="$candidate"
-    break
-  fi
-  # A round without JSON, such as a review from before JSON artifacts, is not
-  # an input for the re-review.
-  if [[ -f "$candidate.json" ]]; then
-    previous_review="$candidate.json"
-  fi
-  review_number=$((review_number + 1))
-done
-review_relative=".agents/reviews/$(basename "$out")"
-
 # A review of changes only builds on the previous round: it needs that round's
 # reviewed content and the same base, and something must have changed.
 scope='{"kind": "full"}'
 if [[ "$changes_only" -eq 1 ]]; then
-  [[ -n "$previous_review" ]] ||
-    fail "--changes needs a previous round, and this is round 1. Run a complete review first."
-  previous_errors="$(review_artifact_errors "$previous_review")"
-  [[ -z "$previous_errors" ]] ||
-    fail "the previous review is invalid, so --changes cannot build on it: ${previous_errors//$'\n'/; }"
-  previous_round="$(jq -r '.round' "$previous_review")"
-  previous_tree="$(jq -r '.reviewed_tree' "$previous_review")"
-  git -C "$root" cat-file -e "$previous_tree^{tree}" 2>/dev/null ||
-    fail "the content that round $previous_round reviewed is no longer available, so the changes since then cannot be determined. Run a complete review, without --changes."
-  [[ "$(jq -r '.merge_base' "$previous_review")" == "$merge_base" ]] ||
-    fail "the base of the branch changed since round $previous_round, so the feature differs in more than your changes. Run a complete review, without --changes."
   ! git -C "$root" diff --quiet "$previous_tree" "$tree_before" ||
     fail "nothing changed since round $previous_round; there is nothing for --changes to review."
   scope="$(jq -n --argjson round "$previous_round" --arg tree "$previous_tree" \
@@ -269,7 +274,9 @@ section of your contract. Round ${previous_round} reviewed the feature as it
 was then. Standard input contains the Issue, the findings of round
 ${previous_round} with what was decided about each, and the diff from the
 content that round reviewed to the current content. Read the files in the
-repository for surrounding context."
+repository for surrounding context.
+
+Read the matching .agents/plans/${issue}-*.md if one exists."
 else
   START_PROMPT="Read and follow .agents/prompts/reviewer.md.
 

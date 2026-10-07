@@ -377,6 +377,7 @@ expect_no_changes_review() {
 
 repo="$(setup_repo changes-first-round)"
 expect_no_changes_review "$repo" "there is no previous round" "this is round 1"
+[[ "$(verification_runs "$repo")" -eq 0 ]] || fail "verification ran before --changes was refused in round 1"
 
 repo="$(setup_repo changes-nothing)"
 run_review "$repo" 7 || fail "the complete first round failed"
@@ -389,6 +390,10 @@ jq '.merge_base = "0000000000000000000000000000000000000000"' "$tmp/first.json" 
 expect_no_changes_review "$repo" "the base of the branch changed" "the base of the branch changed since round 1"
 jq '.reviewed_tree = "0123456789012345678901234567890123456789"' "$tmp/first.json" >"$first"
 expect_no_changes_review "$repo" "the earlier content is unknown" "is no longer available"
+# A scope that is not an object is rejected as an invalid review, not with a
+# raw tool error.
+jq '.scope = "changes"' "$tmp/first.json" >"$first"
+expect_no_changes_review "$repo" "the previous review has a malformed scope" "scope must be full"
 
 # Invalid invocations fail before a reviewer starts.
 repo="$(setup_repo preconditions)"
