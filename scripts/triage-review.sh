@@ -226,7 +226,10 @@ stale_status=0
 review_is_current "$root" "$tmp_work" "$review_path" || stale_status=$?
 case "$stale_status" in
   0) ;;
-  1) fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review." ;;
+  1)
+    review_stale_notice "$root" "$tmp_work" "$review_path"
+    fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review."
+    ;;
   *) fail "could not compute the current fingerprint of the working tree." ;;
 esac
 

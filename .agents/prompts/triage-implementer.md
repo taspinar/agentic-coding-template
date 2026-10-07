@@ -37,6 +37,13 @@ Do not:
 If a finding cannot be resolved without changing scope or architecture, stop
 and report the conflict instead of implementing deferred work.
 
+## Manual steps
+
+When a fix adds, changes, or removes a step that only the human can do (a
+repository or account setting, a secret, a service to enable), update
+`.agents/manual-steps/<issue-number>.md` to match: one step per line starting
+with `- `, and nothing else. Delete the file when no step remains.
+
 ## Completion
 
 Report:

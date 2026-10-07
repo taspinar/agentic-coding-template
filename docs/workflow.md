@@ -85,6 +85,7 @@ flowchart TD
   triage["triage-review.sh<br/>your approval, report on the Issue"]
   apply["apply-triage.sh<br/>fix only FIX_NOW findings"]
   finish["finish-feature.sh<br/>checks, commit in your editor"]
+  publish["publish-feature.sh<br/>push, pull request, wait for CI"]
 
   start --> review
   review -- findings --> triage
@@ -92,18 +93,23 @@ flowchart TD
   apply -- review again --> review
   review -- no findings --> finish
   triage -- no FIX_NOW --> finish
+  finish --> publish
+  publish -- a check fails: fix --> review
 
   classDef feat fill:#EEEDFE,stroke:#534AB7,color:#3C3489
-  class start,review,triage,apply,finish feat
+  class start,review,triage,apply,finish,publish feat
 ```
 
 - Fixes change the code, so the review becomes stale and the next step is a new
   review round. A passed newer round confirms the fixes of earlier rounds.
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
-- After `finish-feature.sh`, push the branch, open a pull request containing
-  `Closes #<issue>`, and merge it after CI. Then remove the worktree and its
-  branch with `cleanup-worktree.sh <issue>`.
+- `publish-feature.sh` pushes the branch, opens the pull request that closes
+  the Issue, and waits for CI. You merge the pull request yourself, after its
+  checks passed. A failed check means a fix in the worktree and another round:
+  review, finish, publish.
+- After the merge, remove the worktree and its branch with
+  `cleanup-worktree.sh <issue>`.
 
 ## Artifacts
 
@@ -150,7 +156,7 @@ flowchart LR
   tr --> gh["follow-up Issues for DEFER<br/>comment with both reports"]
   at["apply-triage.sh<br/>runs verify.sh"] --> fixes["fixes for FIX_NOW"]
   ff["finish-feature.sh<br/>runs verify.sh"] --> commit["commit with review round<br/>and a reference to the Issue"]
-  pr["push and PR<br/>CI runs verify.sh"] --> prgh["pull request that closes the Issue"]
+  pr["publish-feature.sh<br/>CI runs verify.sh"] --> prgh["pull request that closes the Issue"]
 
   classDef repo fill:#E1F5EE,stroke:#0F6E56,color:#085041
   classDef local fill:#F1EFE8,stroke:#5F5E5A,color:#444441
@@ -189,7 +195,7 @@ tools.
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes |
 | `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes |
-| Push and PR | None | Merge after CI | Pull request | Not applicable | Yes, in CI |
+| `publish-feature.sh` | None | Merge after the checks passed | The pushed branch and the pull request | Not applicable | Yes, in CI |
 
 ### Checks that stop a step
 
@@ -204,6 +210,7 @@ tools.
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
 | `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, or `FIX_NOW` findings are left |
+| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. It exits non-zero when a check of the pull request fails |
 
 ### Helper scripts
 

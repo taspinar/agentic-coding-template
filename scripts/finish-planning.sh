@@ -71,7 +71,10 @@ current=0
 review_is_current "$root" "$tmp_work" "$latest" || current=$?
 case "$current" in
   0) ;;
-  1) fail "the latest planning review ($latest_relative) is stale: a planning document changed after it. Run ./scripts/review-planning.sh again." ;;
+  1)
+    review_stale_notice "$root" "$tmp_work" "$latest"
+    fail "the latest planning review ($latest_relative) is stale: a planning document changed after it. Run ./scripts/review-planning.sh again."
+    ;;
   *) fail "could not compute the fingerprint of the planning documents." ;;
 esac
 

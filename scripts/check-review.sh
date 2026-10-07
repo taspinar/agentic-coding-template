@@ -44,6 +44,7 @@ case "$status" in
     echo "Current: $review_relative still matches the reviewed content."
     ;;
   1)
+    review_stale_notice "$root" "$tmp_work" "$review_path"
     echo "Stale: the reviewed content changed after $review_relative was written."
     echo "Run a new review before triage, fixes, or approval."
     exit 1

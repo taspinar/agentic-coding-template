@@ -56,6 +56,16 @@ Before declaring the issue complete:
 4. Check for unrelated changes.
 5. Record compact verification evidence.
 6. Report unresolved issues or risks.
+7. Record the manual steps, as described below.
+
+A manual step is something only the human can do and without which the
+feature does not work after the merge: a repository or account setting, a
+secret, a service to enable, a one-time command on their machine. Write them
+to `.agents/manual-steps/<issue-number>.md`, one step per line starting with
+`- `, each with where to do it and why. Put nothing else in that file, and do
+not create it when the feature needs no manual step. `scripts/finish-feature.sh`
+shows the steps to the human and records them in the commit and the pull
+request.
 
 Record the final commit/reference in the plan or handoff when applicable.
 

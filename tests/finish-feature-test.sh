@@ -113,7 +113,28 @@ git -C "$repo" show --name-only --format= HEAD | grep -Fqx "feature.txt" || fail
 if git -C "$repo" show --name-only --format= HEAD | grep -Fq ".agents/reviews/"; then
   fail "a review file was committed"
 fi
-grep -Fq "Closes #12" "$repo.out" || fail "the next steps do not mention the pull request"
+grep -Fq "./scripts/publish-feature.sh 12" "$repo.out" || fail "the next steps do not name publish-feature.sh"
+message "$repo" | grep -A1 -Fx "Manual steps:" | grep -Fqx -- "- none" ||
+  fail "a feature without manual steps does not say so in the commit message"
+
+# Manual steps recorded by the implementer are shown before the commit and
+# recorded in the message. The file is a working file: it is not committed and
+# writing it after the review does not make the review stale.
+repo="$(setup_repo manual PASS "[]")"
+mkdir -p "$repo/.agents/manual-steps"
+printf -- '- Enable GitHub Pages under Settings, Pages.\n\n- Add the secret API_KEY.\n' >"$repo/.agents/manual-steps/12.md"
+printf -- '- A step of another Issue.\n' >"$repo/.agents/manual-steps/99.md"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing a feature with manual steps failed"
+}
+grep -Fq "This feature needs these manual steps from you:" "$repo.out" || fail "the manual steps were not shown"
+[[ "$(message "$repo" | sed -n '/^Manual steps:$/,/^$/p')" == "Manual steps:
+- Enable GitHub Pages under Settings, Pages.
+- Add the secret API_KEY." ]] || fail "the commit message does not list exactly the manual steps of the Issue"
+if git -C "$repo" show --name-only --format= HEAD | grep -Fq "manual-steps"; then
+  fail "the manual steps file was committed"
+fi
 
 # Minor findings that were triaged without FIX_NOW and published are fine.
 repo="$(setup_repo minor PASS_WITH_MINOR_FINDINGS "$minor")"

@@ -109,10 +109,16 @@ jq -n '{
 record_reviewed_tree "$repo" "$review"
 (cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || fail "a current review was reported as stale"
 printf 'four\n' >>"$repo/a.txt"
+printf 'new\n' >"$repo/added.txt"
 status=0
-(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || status=$?
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>"$tmp/stale.err") || status=$?
 [[ "$status" -eq 1 ]] || fail "a stale review was not reported as stale (status $status)"
+# A stale review names what changed, and nothing else.
+grep -Eq "^  M[[:space:]]+a.txt$" "$tmp/stale.err" || fail "the stale review did not name the modified file"
+grep -Eq "^  A[[:space:]]+added.txt$" "$tmp/stale.err" || fail "the stale review did not name the added file"
+[[ "$(grep -c '^  [AMD]' "$tmp/stale.err")" -eq 2 ]] || fail "the stale review named an unchanged file"
 git -C "$repo" checkout -q -- a.txt
+rm "$repo/added.txt"
 
 jq --arg tree "$(files)" '.reviewed_paths = ["docs/plan.md"] | .reviewed_tree = $tree' "$review" >"$review.tmp"
 mv "$review.tmp" "$review"
@@ -121,7 +127,31 @@ printf 'five\n' >>"$repo/a.txt"
   fail "a change outside the reviewed paths made the review stale"
 printf 'revised\n' >>"$repo/docs/plan.md"
 status=0
-(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || status=$?
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>"$tmp/stale.err") || status=$?
 [[ "$status" -eq 1 ]] || fail "a change to a reviewed path did not make the review stale"
+# Only the reviewed paths are compared, so the change outside them is not named.
+grep -Eq "^  M[[:space:]]+docs/plan.md$" "$tmp/stale.err" || fail "the stale review did not name the reviewed path"
+if grep -Fq "a.txt" "$tmp/stale.err"; then fail "the stale review named a path it does not cover"; fi
+
+# A long list of changes is cut off with a count, and the review is still
+# reported as stale with its normal status.
+for number in $(seq 1 30); do printf 'x\n' >"$repo/docs/extra-$number.md"; done
+jq '.reviewed_paths = ["docs"]' "$review" >"$review.tmp"
+mv "$review.tmp" "$review"
+status=0
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>"$tmp/stale.err") || status=$?
+[[ "$status" -eq 1 ]] || fail "a review with many changes was not reported as stale (status $status)"
+[[ "$(grep -c '^  [AMD]' "$tmp/stale.err")" -eq 20 ]] || fail "a long list of changes was not cut off at 20"
+grep -Eq "and [0-9]+ more" "$tmp/stale.err" || fail "the remaining changes were not counted"
+rm "$repo"/docs/extra-*.md
+
+# A reviewed tree that is not in the object database gives no notice and
+# still reports the review as stale.
+jq '.reviewed_tree = "0123456789012345678901234567890123456789"' "$review" >"$review.tmp"
+mv "$review.tmp" "$review"
+status=0
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>"$tmp/stale.err") || status=$?
+[[ "$status" -eq 1 ]] || fail "a review with an unknown tree was not reported as stale (status $status)"
+if grep -Fq "Changed since the review" "$tmp/stale.err"; then fail "a notice was printed for an unknown tree"; fi
 
 echo "fingerprint tests passed"

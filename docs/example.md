@@ -226,6 +226,9 @@ Changes:
 Verification:
 - ./scripts/verify.sh passed
 
+Manual steps:
+- none
+
 Review: round 2, PASS, by claude (fable); triage published on #12
 
 Refs #12
@@ -234,11 +237,12 @@ Refs #12
 Replace the TODO, save, and close the editor. Then:
 
 ```bash
-git push -u origin feature/12-recipes
+./scripts/publish-feature.sh 12
 ```
 
-Open a pull request containing `Closes #12` and merge it after CI. Remove the
-worktree from the primary checkout:
+It pushes the branch, opens a pull request that closes Issue #12, and waits
+for CI. Merge the pull request when it reports that all checks passed. Remove
+the worktree from the primary checkout:
 
 ```bash
 ./scripts/cleanup-worktree.sh 12
