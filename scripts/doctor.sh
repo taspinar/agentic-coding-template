@@ -11,6 +11,7 @@ root="$script_dir/.."
 source "$script_dir/lib/agent.sh"
 
 failed=0
+gh_ready=0
 
 ok() {
   echo "OK       $1"
@@ -29,6 +30,33 @@ missing() {
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# check_main_protection
+# Warns when a pull request into 'main' can be merged without a passing status
+# check. Rulesets are read first, then classic branch protection.
+check_main_protection() {
+  local count
+
+  [[ "$gh_ready" -eq 1 ]] || return 0
+  count="$(gh api "repos/{owner}/{repo}/rules/branches/main" \
+    --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]] | length' 2>/dev/null)" ||
+    count=""
+  if [[ "$count" == "0" ]]; then
+    count="$(gh api "repos/{owner}/{repo}/branches/main" \
+      --jq '[(.protection.required_status_checks.contexts // [])[], (.protection.required_status_checks.checks // [])[]] | length' 2>/dev/null)" ||
+      count=""
+  fi
+
+  if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then
+    ok "branch 'main' requires a passing status check before a merge"
+  elif [[ "$count" == "0" ]]; then
+    warn "branch 'main' accepts a merge while its checks fail" \
+      "Add a ruleset for 'main' that requires the CI status check; see docs/repository-setup.md."
+  else
+    warn "could not read the rules of branch 'main' on GitHub" \
+      "Check that 'main' requires the CI status check; see docs/repository-setup.md."
+  fi
 }
 
 echo "== Agentic template doctor =="
@@ -56,6 +84,7 @@ if have gh; then
   ok "GitHub CLI (gh) is installed"
   if gh auth status >/dev/null 2>&1; then
     ok "GitHub CLI is authenticated"
+    gh_ready=1
   else
     missing "GitHub CLI is not authenticated" "Run: gh auth login"
   fi
@@ -118,6 +147,7 @@ if have git; then
           GIT_HTTP_LOW_SPEED_LIMIT=1 GIT_HTTP_LOW_SPEED_TIME=10 \
           git push --dry-run --quiet origin HEAD:refs/heads/doctor-push-check >/dev/null 2>&1; then
           ok "you can push to origin"
+          check_main_protection
         else
           missing "you cannot push to origin" \
             "Check that the remote URL uses the GitHub account that owns the repository: git remote get-url origin; ssh -T git@github.com"

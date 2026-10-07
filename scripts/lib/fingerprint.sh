@@ -111,3 +111,29 @@ review_is_current() {
   current="$(fingerprint_review "$1" "$2" "$3")" || return 2
   [[ "$current" == "$(jq -r '.reviewed_tree' "$3")" ]]
 }
+
+# review_stale_notice <root> <scratch-dir> <review-json>
+# Prints to standard error which paths differ between the reviewed content and
+# the current content, so a stale review can be traced to its cause. Prints
+# nothing when that cannot be determined, for example because the reviewed
+# tree is no longer in the object database.
+review_stale_notice() {
+  local reviewed
+  local current
+  local changed
+  local total
+
+  reviewed="$(jq -r '.reviewed_tree' "$3" 2>/dev/null)" || return 0
+  git -C "$1" cat-file -e "$reviewed^{tree}" 2>/dev/null || return 0
+  current="$(fingerprint_review "$1" "$2" "$3" 2>/dev/null)" || return 0
+  changed="$(git -C "$1" diff-tree -r --name-status "$reviewed" "$current" 2>/dev/null)" || return 0
+  [[ -n "$changed" ]] || return 0
+
+  total="$(printf '%s\n' "$changed" | grep -c .)"
+  {
+    echo "Changed since the review (A added, M modified, D deleted):"
+    # sed reads all of its input, so a long list cannot end the pipe early.
+    printf '%s\n' "$changed" | sed -n '1,20s/^/  /p'
+    [[ "$total" -le 20 ]] || echo "  ... and $((total - 20)) more"
+  } >&2
+}

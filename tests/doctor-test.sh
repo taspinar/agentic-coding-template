@@ -47,6 +47,15 @@ FAKE
         cat >"$bin/gh" <<FAKE
 #!$bash_path
 [[ "\$*" == "auth status" ]] && exit "\${MOCK_GH_AUTH_EXIT:-0}"
+if [[ "\$1" == "api" ]]; then
+  [[ -z "\${MOCK_GH_API_FAIL:-}" ]] || exit 1
+  case "\$2" in
+    "repos/{owner}/{repo}/rules/branches/main") echo "\${MOCK_RULESET_CHECKS:-1}" ;;
+    "repos/{owner}/{repo}/branches/main") echo "\${MOCK_CLASSIC_CHECKS:-0}" ;;
+    *) echo "unexpected gh api call: \$*" >&2; exit 97 ;;
+  esac
+  exit 0
+fi
 echo "unexpected gh call: \$*" >&2
 exit 97
 FAKE
@@ -119,6 +128,27 @@ MOCK_REPO_EXIT=128 expect_failure "$bin" "not inside a Git repository"
 MOCK_ORIGIN_EXIT=2 expect_failure "$bin" "'origin' is not configured"
 MOCK_MAIN_EXIT=2 expect_failure "$bin" "'main' is not reachable"
 MOCK_PUSH_EXIT=128 expect_failure "$bin" "cannot push to origin"
+
+# A 'main' that can be merged into while its checks fail is a warning, whether
+# the requirement would come from a ruleset or from classic branch protection.
+expect_warning() {
+  local pattern="$1"
+
+  run_doctor "$bin" || {
+    cat "$tmp/out.log" >&2
+    fail "a warning was reported as a failure: $pattern"
+  }
+  grep -Eq "^WARNING +.*$pattern" "$tmp/out.log" || {
+    cat "$tmp/out.log" >&2
+    fail "expected a warning matching: $pattern"
+  }
+}
+
+bin="$(make_bin protection git gh jq codex claude)"
+MOCK_RULESET_CHECKS=0 expect_warning "accepts a merge while its checks fail"
+MOCK_RULESET_CHECKS=0 MOCK_CLASSIC_CHECKS=2 run_doctor "$bin" || fail "classic branch protection was reported as a failure"
+if grep -Eq '^WARNING' "$tmp/out.log"; then fail "classic branch protection was not recognised"; fi
+MOCK_GH_API_FAIL=1 expect_warning "could not read the rules"
 
 # A missing agent CLI fails when a role uses it and is a warning otherwise.
 bin="$(make_bin one-agent git gh jq claude)"

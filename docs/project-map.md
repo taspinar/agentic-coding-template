@@ -50,6 +50,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/triage-review.sh` | Classifies review findings, creates follow-up Issues, and publishes the reports on the Issue |
 | `scripts/apply-triage.sh` | Lets an implementer resolve only the `FIX_NOW` findings |
 | `scripts/finish-feature.sh` | Checks the feature and creates the commit |
+| `scripts/publish-feature.sh` | Pushes the feature branch, opens its pull request, and waits for CI; never merges |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
@@ -89,6 +90,7 @@ What each part of the template is for. The workflow that connects them is in
 |---|---|---|
 | `.agents/reviews/` | Review and revision results (JSON and generated reports) | No |
 | `.agents/triage/` | Approved triage results (JSON and generated reports) | No |
+| `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Continuation notes for interrupted work | Yes |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |

@@ -13,7 +13,9 @@ push to `origin` with the Git identity in use. It reports each check
 as `OK`, `WARNING`, or `FAILED` with a fix hint, exits non-zero when a required
 prerequisite is missing, and never modifies anything. A missing agent CLI
 fails when `.agents/agents.conf` assigns it to a role and is a warning
-otherwise.
+otherwise. It also warns when a pull request into `main` can be merged while
+its checks fail, because no ruleset or branch protection requires a status
+check; see `docs/repository-setup.md`.
 
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.
@@ -535,6 +537,8 @@ Check a review yourself with:
 ```
 
 It exits 0 when the review is current, 1 when it is stale, and 2 on an error.
+Every script that refuses a stale review, and `check-review.sh`, first lists
+the files that changed since the review, as added, modified, or deleted.
 
 ### Finishing a feature
 
@@ -569,14 +573,38 @@ message:
 ./scripts/finish-feature.sh 12 "Fix a typo in the README" --no-review "documentation only"
 ```
 
-Then push and open the pull request:
+When the feature needs a step that only you can do, such as a repository
+setting or a secret, the implementer records it in
+`.agents/manual-steps/<issue>.md`. `finish-feature.sh` shows those steps before
+the commit and records them in the commit message under `Manual steps:`; the
+file itself is a working file and is not committed.
+
+Then publish the feature:
 
 ```bash
-git push -u origin feature/12-player-movement
+./scripts/publish-feature.sh 12
 ```
 
-Open a PR containing `Closes #12`. After CI and required human gates pass,
-merge it; GitHub then closes the linked Issue. From the primary checkout,
+The script pushes the branch, opens a pull request whose description is the
+commit message, the manual steps, and `Closes #12`, and waits for its checks.
+For a pull request that is already open it pushes and replaces the
+description with the current one, since a fix round can change the manual
+steps. It never merges. It ends with the result:
+
+- all checks passed: the pull request is ready for you to merge;
+- a check failed: it exits non-zero and tells you not to merge. Fix the cause
+  in the worktree, then review, finish, and publish again;
+- no checks were reported: the repository has no CI for pull requests, and the
+  script says that nothing verified the change on GitHub.
+
+`--no-wait` stops after the pull request is open. Local verification during a
+feature never runs on a clean checkout, and may run on another operating
+system than CI, so a failure can appear in CI only; wait for it before
+merging. A ruleset that requires the CI status check on `main` makes GitHub
+refuse a merge while a check fails; `./scripts/doctor.sh` warns when `main`
+has no such rule.
+
+After the merge GitHub closes the linked Issue. From the primary checkout,
 remove the merged worktree and its branch:
 
 ```bash

@@ -85,6 +85,7 @@ review_is_current "$root" "$tmp_work" "$review_path" || current=$?
 case "$current" in
   0) ;;
   1)
+    review_stale_notice "$root" "$tmp_work" "$review_path"
     if [[ -f "$revision.json" ]]; then
       fail "this review was already revised and the planning has changed since. Run ./scripts/review-planning.sh for the next round."
     fi

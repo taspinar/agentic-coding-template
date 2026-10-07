@@ -50,9 +50,10 @@ flowchart LR
    ./scripts/apply-triage.sh .agents/triage/feature-12-recipes-review-01-triage.json
    ./scripts/review-feature.sh 12    # again after fixes, until it is resolved
    ./scripts/finish-feature.sh 12 "Add recipes"
+   ./scripts/publish-feature.sh 12   # push, pull request, wait for CI
    ```
 
-   Push, open a PR containing `Closes #12`, merge it after CI, and remove the
+   Merge the pull request after its checks passed, and remove the
    worktree from the primary checkout with
    `./scripts/cleanup-worktree.sh 12`, or all merged worktrees at once with
    `./scripts/cleanup-worktree.sh --merged`.

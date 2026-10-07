@@ -92,7 +92,10 @@ else
   review_is_current "$root" "$tmp_work" "$latest" || current=$?
   case "$current" in
     0) ;;
-    1) fail "the latest review ($latest_relative) is stale: the code changed after it. Run ./scripts/review-feature.sh $issue again." ;;
+    1)
+      review_stale_notice "$root" "$tmp_work" "$latest"
+      fail "the latest review ($latest_relative) is stale: the code changed after it. Run ./scripts/review-feature.sh $issue again."
+      ;;
     *) fail "could not compute the fingerprint of the working tree." ;;
   esac
 
@@ -126,7 +129,17 @@ else
   review_line="Review: round $round, $verdict, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")$triage_note"
 fi
 
-# 3. Stage everything and commit with an editable, structured message.
+# 3. Show the manual steps the implementer recorded for this feature.
+manual_steps="- none"
+manual_file="$root/.agents/manual-steps/$issue.md"
+if [[ -f "$manual_file" ]] && grep -q '[^[:space:]]' "$manual_file"; then
+  manual_steps="$(grep '[^[:space:]]' "$manual_file")"
+  echo "This feature needs these manual steps from you:"
+  printf '%s\n' "$manual_steps" | sed 's/^/  /'
+  echo
+fi
+
+# 4. Stage everything and commit with an editable, structured message.
 git -C "$root" add -A
 echo "Changes to commit:"
 git -C "$root" status --short
@@ -145,6 +158,9 @@ Changes:
 Verification:
 - ./scripts/verify.sh passed
 
+Manual steps:
+$manual_steps
+
 $review_line
 
 Refs #$issue
@@ -158,7 +174,6 @@ fi
 echo
 echo "Committed $(git -C "$root" rev-parse --short HEAD) on $branch."
 echo
-echo "Next steps:"
-echo "  git push -u origin $branch"
-echo "  Open a pull request whose description contains: Closes #$issue"
+echo "Next: push the branch, open the pull request, and wait for CI:"
+echo "  ./scripts/publish-feature.sh $issue"
 echo "After the merge, from the primary checkout: ./scripts/cleanup-worktree.sh $issue"
