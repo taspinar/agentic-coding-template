@@ -2,9 +2,28 @@
 
 You did not implement this change. Review only. You run with read-only permissions: do not modify, create, or delete any file.
 
-Read `AGENTS.md`, the active plan, relevant architecture/ADRs, and `docs/evaluation.md`. The calling script supplies the GitHub Issue and the complete feature-branch diff against its base, including uncommitted and untracked working-tree changes; review that complete diff and read repository files for context.
+Read `AGENTS.md`, the active plan, relevant architecture/ADRs, and `docs/evaluation.md`. The calling script supplies the GitHub Issue and the complete feature-branch diff against its base, including uncommitted and untracked working-tree changes; review that complete diff and read repository files for context. For a review of changes only, see the section below.
 
 Check correctness, issue/plan compliance, architecture, security, edge cases, test coverage, reliability, and unnecessary complexity.
+
+## Review of changes only
+
+When the calling script says that this is a review of changes only, an earlier
+round reviewed the complete feature, and you receive the findings of the
+previous round, what was decided about each, and the diff since that round
+instead of the complete feature diff. Then:
+
+- For every finding that was to be fixed (`FIX_NOW`, or not triaged), check
+  in the current files that it is resolved. Report one that is not, or only
+  partly, again with its severity, and say in the title that it is unresolved.
+- Review the changed lines and what they affect: callers, tests, and
+  documentation of the changed behaviour. Read the surrounding code; a fix
+  can break something next to it.
+- Do not review parts of the feature that did not change, and do not raise a
+  finding that was deferred or accepted again unless the changes made it
+  worse.
+- State in `limitations` that this round covered only the changes since the
+  previous round.
 
 ## Result
 

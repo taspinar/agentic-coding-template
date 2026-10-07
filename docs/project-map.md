@@ -48,7 +48,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/finish-planning.sh` | Checks and records your approval of the planning; `--check` tests it |
 | `scripts/create-feature-issue.sh` | Creates the Issue of one roadmap feature |
 | `scripts/start-feature.sh` | Creates the feature worktree and starts the implementer |
-| `scripts/review-feature.sh` | Independent, read-only review of the complete feature diff |
+| `scripts/review-feature.sh` | Independent, read-only review of the complete feature diff, or with `--changes` of what changed since the previous round |
 | `scripts/triage-review.sh` | Classifies review findings, creates follow-up Issues, and publishes the reports on the Issue |
 | `scripts/apply-triage.sh` | Lets an implementer resolve only the `FIX_NOW` findings |
 | `scripts/finish-feature.sh` | Checks the feature and creates the commit |

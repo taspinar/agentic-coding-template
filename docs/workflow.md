@@ -141,7 +141,10 @@ flowchart TD
 ```
 
 - Fixes change the code, so the review becomes stale and the next step is a new
-  review round. A passed newer round confirms the fixes of earlier rounds.
+  review round. A passed newer round confirms the fixes of earlier rounds. A
+  round reviews the complete feature; after a small fix,
+  `review-feature.sh <issue> --changes` reviews only what changed since the
+  previous round.
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - `publish-feature.sh` pushes the branch, opens the pull request that closes
@@ -249,9 +252,10 @@ tools.
 | `finish-planning.sh` | No current review, a critical or major finding in the latest round, an undecided or unapplied finding, or an unresolved escalation |
 | `create-feature-issue.sh` | The planning approval is missing or stale, the feature ID is unknown, duplicated, or empty, or the feature already has an Issue |
 | `review-feature.sh` | Not on `feature/<issue>-*`, nothing to review, or verification fails (unless `--unverified "<reason>"` is given) |
+| `review-feature.sh --changes` | Also: there is no previous round, nothing changed since it, the base of the branch changed, or the content of the previous round is no longer known |
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
-| `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, or `FIX_NOW` findings are left |
+| `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it |
 | `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. It exits non-zero when a check of the pull request fails |
 
 ### Helper scripts
