@@ -55,11 +55,11 @@ it verified. Any change to a file that Git does not ignore makes the record
 stale, and a failing run removes it.
 
 `./scripts/verify.sh --reuse` skips the run when the record matches the current
-content exactly, and says so. `review-feature.sh` and `finish-feature.sh` call
-it that way, so in a feature the checks run once per version of the content
-instead of once per step: after fixes, `apply-triage.sh` verifies, and the
-review and the commit that follow reuse that pass. Plain `./scripts/verify.sh`
-always runs every check.
+content exactly, and says so. `review-feature.sh`, `apply-triage.sh`, and
+`finish-feature.sh` call it that way, so in a feature the checks run once per
+version of the content instead of once per step: the agent verifies its final
+result, and the scripts that follow reuse that pass. Plain
+`./scripts/verify.sh` always runs every check.
 
 Two limits:
 
@@ -67,9 +67,13 @@ Two limits:
   on ignored state, such as an installed dependency or a build cache, is not
   run again when only that state changed. CI runs every check on a clean
   checkout.
-- A record is never accepted on an agent's word. `start-feature.sh` and
-  `apply-triage.sh` discard the record when their agent session ends, so a
-  record always comes from a run that you or a script started.
+- A run inside an agent session counts like any other. The implementer and
+  the triage implementer run the verification after their last change, and
+  the review, `apply-triage.sh`, and the commit that follow reuse that pass.
+  An agent could write the record instead of running the checks; that is
+  accepted, because CI runs every check on a clean checkout, and
+  `publish-feature.sh` and a ruleset on `main` make it the gate before a
+  merge.
 
 A record made without the workflow self-tests does not stand in for a run that
 needs them, such as `--reuse --all`.
@@ -644,7 +648,8 @@ The helper uses role `triage-implementer`. It validates the approved artifact an
 `FIX_NOW` scope, and asks for confirmation before starting a write-capable
 agent. It never passes `DEFER` or `ACCEPT` findings to that agent. After the
 agent exits, it verifies that the review and triage artifacts are unchanged and
-runs `./scripts/verify.sh`.
+verifies the result with `./scripts/verify.sh --reuse`, so a pass that the
+agent recorded for exactly that content is not repeated.
 
 The helper does not commit, push, merge, deploy, or create/close Issues. Inspect
 the resulting diff and run another independent review and triage when fixes
