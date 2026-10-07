@@ -145,6 +145,85 @@ MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: fo
 [[ ! -e "$worktree/.agents/verification/passed" ]] ||
   fail "a verification record from the agent session was kept"
 
+# --resume starts a new implementer session in the existing worktree of the
+# Issue, without creating a branch or a worktree, and tells it to read the
+# state from the repository instead of an earlier conversation.
+repo="$(setup_repo resumed)"
+run_start "$repo" 10 thing || fail "starting the feature to resume failed"
+worktree="$tmp/resumed-10-thing"
+printf 'half done\n' >"$worktree/work.txt"
+head_before="$(git -C "$worktree" rev-parse HEAD)"
+rm -f "$repo.log" "$repo.log.called"
+MOCK_AGENT_ACTION="pwd -P >'$repo.cwd'" run_start "$repo" 10 --resume --agent claude --model model-c || {
+  cat "$repo.out" >&2
+  fail "resuming a feature failed"
+}
+[[ "$(cat "$repo.cwd")" == "$worktree" ]] || fail "the resumed session did not run in the existing worktree"
+grep -Fq -- "--permission-mode acceptEdits --model model-c" "$repo.log" ||
+  fail "the resumed session did not use the overridden agent and model"
+grep -Fq "You are resuming interrupted work on GitHub Issue #10" "$repo.log" || fail "the session was not told that it resumes"
+grep -Fq "left no handoff note" "$repo.log" || fail "the session was not told that there is no handoff note"
+[[ "$(git -C "$worktree" rev-parse HEAD)" == "$head_before" ]] || fail "resuming changed the branch"
+grep -Fqx "half done" "$worktree/work.txt" || fail "resuming lost the work in progress"
+[[ "$(git -C "$repo" worktree list | grep -c .)" -eq 2 ]] || fail "resuming created another worktree"
+grep -Fq "./scripts/review-feature.sh 10" "$repo.out" || fail "the next steps were not printed after resuming"
+
+# With a handoff note, the session is pointed at it. Changed files that are
+# newer than the note are named as not described by it; older ones are not.
+mkdir -p "$worktree/.agents/handoffs"
+printf 'Done: the first part.\n' >"$worktree/.agents/handoffs/10.md"
+printf 'older\n' >"$worktree/older.txt"
+touch -t 202001010000 "$worktree/older.txt" "$worktree/work.txt"
+touch -t 202101010000 "$worktree/.agents/handoffs/10.md"
+printf 'changed after the note\n' >"$worktree/newer.txt"
+printf 'spaced\n' >"$worktree/a file with spaces.txt"
+# A tracked file that is deleted, and one that is renamed, after the note.
+git -C "$worktree" rm -q README.md
+git -C "$worktree" mv scripts/check-review.sh scripts/renamed-check.sh
+touch "$worktree/scripts/renamed-check.sh"
+rm -f "$repo.log"
+run_start "$repo" 10 --resume || fail "resuming with a handoff note failed"
+grep -Fq "handoff note: .agents/handoffs/10.md" "$repo.log" || fail "the session was not pointed at the handoff note"
+grep -Fq "The note is STALE in part" "$repo.log" || fail "a note older than changed files was not reported as stale"
+grep -Fqx -- "- newer.txt" "$repo.log" || fail "the file changed after the note was not named"
+grep -Fqx -- "- a file with spaces.txt" "$repo.log" || fail "a file name with spaces was not named as it is"
+grep -Fqx -- "- README.md (deleted)" "$repo.log" || fail "a deleted file was not named"
+grep -Fqx -- "- scripts/renamed-check.sh" "$repo.log" || fail "the new name of a renamed file was not named"
+if grep -Fq -- "- scripts/check-review.sh" "$repo.log"; then fail "the old name of a renamed file was named"; fi
+if grep -Fqx -- "- older.txt" "$repo.log"; then fail "a file older than the note was named as newer"; fi
+git -C "$worktree" reset -q --hard
+
+rm -f "$worktree/newer.txt" "$worktree/a file with spaces.txt"
+touch -t 203001010000 "$worktree/.agents/handoffs/10.md"
+rm -f "$repo.log"
+run_start "$repo" 10 --resume || fail "resuming with a current handoff note failed"
+grep -Fq "handoff note: .agents/handoffs/10.md" "$repo.log" || fail "the session was not pointed at the current note"
+if grep -Fq "STALE" "$repo.log"; then fail "a current note was reported as stale"; fi
+
+# A verification record from a resumed session is discarded too, and a failed
+# resumed session is reported with the way to continue.
+MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: forged\n' >'$worktree/.agents/verification/passed'" \
+  run_start "$repo" 10 --resume || fail "resuming failed"
+[[ ! -e "$worktree/.agents/verification/passed" ]] || fail "a verification record from a resumed session was kept"
+if MOCK_WRITE_EXIT=6 run_start "$repo" 10 --resume; then fail "a failed resumed session returned success"; fi
+grep -Fq "10 --resume" "$repo.out" || fail "a failed session did not say how to continue"
+
+# The resumed session compares with the base the feature was created from.
+repo="$(setup_repo other-base)"
+git -C "$repo" push -q origin main:develop
+run_start "$repo" 12 thing develop || fail "starting a feature from another base failed"
+rm -f "$repo.log"
+run_start "$repo" 12 --resume || fail "resuming a feature from another base failed"
+grep -Fq "git merge-base HEAD origin/develop" "$repo.log" || fail "the resumed session was not given the feature's base"
+
+# There must be exactly one worktree to resume, and --resume takes no slug.
+repo="$(setup_repo nothing-to-resume)"
+if run_start "$repo" 11 --resume; then fail "resuming without a worktree was accepted"; fi
+grep -Fq "nothing to resume" "$repo.out" || fail "the missing worktree was not reported"
+[[ ! -e "$repo.log" ]] || fail "an agent started although there was nothing to resume"
+if compgen -G "$tmp/nothing-to-resume-11-*" >/dev/null; then fail "resuming created a worktree"; fi
+if run_start "$repo" 11 thing --resume; then fail "--resume with a slug was accepted"; fi
+
 # Modified tracked files, an unreadable Issue title, and an unsafe slug fail
 # before a worktree is created.
 repo="$(setup_repo refused)"

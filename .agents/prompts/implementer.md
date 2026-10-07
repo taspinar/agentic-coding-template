@@ -46,6 +46,42 @@ Do not:
 If the implementation requires violating an ADR, materially changing architecture,
 or substantially expanding scope, stop and report the conflict.
 
+## Handoff note
+
+A session can end at any moment: a closed terminal, a usage limit, a crash. The
+next session starts without this conversation, so keep a short note that lets
+it continue: `.agents/handoffs/<issue-number>.md`. Write it when you have a
+plan for the work, and update it after each completed part, not only at the
+end. It is a working file that Git ignores.
+
+Keep it to what the repository does not already show:
+
+- **Done:** the parts that are complete and verified.
+- **In progress:** what you are working on now, and the next concrete step.
+- **Remaining:** what is left for the Issue's acceptance criteria.
+- **Tried and rejected:** approaches that failed, with the reason, so they are
+  not tried again.
+- **Open questions:** decisions you are waiting for from the human.
+
+When the Issue is complete, reduce the note to one line that says so.
+
+## When something fails
+
+Do not try fixes at random. For a failing check or unexpected behaviour:
+
+1. State one hypothesis about the cause.
+2. Collect evidence that confirms or refutes it: read the failing output
+   completely, reproduce the failure in the smallest way, inspect the code
+   path.
+3. Make one change that follows from the confirmed cause.
+4. Verify that the failure is gone and that nothing else broke.
+
+If the evidence refutes the hypothesis, undo what you changed for it before
+forming the next one. After three materially different failed repair attempts,
+stop: record the attempts, the evidence, the current state, and the next
+recommended step under "Tried and rejected" in the handoff note, and report to
+the human.
+
 ## Completion
 
 Before declaring the issue complete:
@@ -67,7 +103,6 @@ not create it when the feature needs no manual step. `scripts/finish-feature.sh`
 shows the steps to the human and records them in the commit and the pull
 request.
 
-Record the final commit/reference in the plan or handoff when applicable.
 
 Do not claim completion when verification fails.
 
