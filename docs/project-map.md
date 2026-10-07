@@ -39,7 +39,7 @@ What each part of the template is for. The workflow that connects them is in
 | Script | Purpose |
 |---|---|
 | `scripts/doctor.sh` | Checks the local prerequisites |
-| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; used by humans, agents, and CI |
+| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; records a pass and skips a repeated run with `--reuse`; used by humans, agents, and CI |
 | `scripts/start-planning.sh` | Project Grill, requirements approval, and project planning in a planning worktree |
 | `scripts/review-planning.sh` | Independent, read-only review of the planning documents |
 | `scripts/revise-planning.sh` | The planner's decision per planning finding, then the revision |
@@ -64,6 +64,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
+| `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
 
@@ -90,6 +91,7 @@ What each part of the template is for. The workflow that connects them is in
 |---|---|---|
 | `.agents/reviews/` | Review and revision results (JSON and generated reports) | No |
 | `.agents/triage/` | Approved triage results (JSON and generated reports) | No |
+| `.agents/verification/` | The record of the last passed verification, written by `verify.sh` | No |
 | `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Continuation notes for interrupted work | Yes |

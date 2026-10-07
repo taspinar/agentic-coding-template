@@ -167,9 +167,11 @@ In the feature worktree:
 
 ```bash
 cd ../recipe-box-12-recipes
-./scripts/verify.sh
 ./scripts/review-feature.sh 12
 ```
+
+The script first runs `./scripts/verify.sh` and starts the reviewer only when
+it passes.
 
 The reviewer receives the Issue and the complete diff, including uncommitted
 files, and cannot change anything. The report of round 1 might list:

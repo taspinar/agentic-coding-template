@@ -7,6 +7,10 @@ set -euo pipefail
 # The self-tests of the workflow scripts are declared in
 # scripts/verify-workflow.conf and run only when a workflow file changed,
 # or always with --all.
+#
+# A run in which every check passed is recorded for the content it verified
+# (scripts/lib/verification.sh). With --reuse, a second run on identical
+# content is skipped.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 config="$root/scripts/verify.conf"
@@ -16,11 +20,14 @@ comment_pattern='^[[:space:]]*(#.*)?$'
 check_pattern='^([a-z0-9][a-z0-9-]*):[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
 
 usage() {
-  echo "Usage: $0 [--all]"
+  echo "Usage: $0 [--all] [--reuse]"
   echo
   echo "Runs the checks in scripts/verify.conf. The workflow self-tests in"
   echo "scripts/verify-workflow.conf run only when a file listed under 'paths:' in"
   echo "that file differs from the base branch. --all runs them regardless."
+  echo
+  echo "--reuse skips the run when verification already passed for exactly the"
+  echo "current content, as recorded by an earlier run."
   exit 1
 }
 
@@ -31,11 +38,28 @@ config_fail() {
 }
 
 run_all=0
-case "$#:${1:-}" in
-  0:) ;;
-  1:--all) run_all=1 ;;
-  *) usage ;;
-esac
+reuse=0
+for argument in "$@"; do
+  case "$argument" in
+    --all) run_all=1 ;;
+    --reuse) reuse=1 ;;
+    *) usage ;;
+  esac
+done
+
+# A passed run is recorded only where the record is a file that Git ignores.
+recordable=0
+scratch=""
+for library in fingerprint verification; do
+  [[ -f "$root/scripts/lib/$library.sh" ]] || continue
+  source "$root/scripts/lib/$library.sh"
+done
+if declare -F verification_recordable >/dev/null && declare -F fingerprint_worktree >/dev/null &&
+  verification_recordable "$root"; then
+  recordable=1
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/verify.XXXXXX")"
+  trap 'rm -rf "$scratch"' EXIT
+fi
 
 names=()
 commands=()
@@ -138,6 +162,23 @@ if [[ -f "$workflow_config" ]]; then
   fi
 fi
 
+# With --reuse, a recorded pass for exactly this content stands in for a run.
+# A record made without the workflow self-tests does not cover a run that
+# needs them.
+tree_before=""
+if [[ "$recordable" -eq 1 ]]; then
+  tree_before="$(fingerprint_worktree "$root" "$scratch")" || tree_before=""
+  if [[ "$reuse" -eq 1 && -n "$tree_before" && "$(verification_field "$root" tree)" == "$tree_before" ]]; then
+    recorded_workflow="$(verification_field "$root" workflow-tests)"
+    if [[ "$recorded_workflow" != "skipped" || ( -n "$workflow_skipped" && "$run_all" -eq 0 ) ]]; then
+      echo
+      echo "Verification already passed for this content at $(verification_field "$root" verified-at); not run again."
+      echo "Run ./scripts/verify.sh without --reuse to run every check."
+      exit 0
+    fi
+  fi
+fi
+
 results=()
 failed=0
 for index in "${!names[@]}"; do
@@ -180,8 +221,27 @@ printf '%s\n' "${results[@]}"
 [[ -z "$workflow_skipped" ]] || echo "$workflow_skipped"
 
 if [[ "$failed" -ne 0 ]]; then
+  [[ "$recordable" -eq 0 ]] || verification_forget "$root"
   echo "Verification failed." >&2
   exit 1
+fi
+
+# Record the pass for the content that was verified. When a check changed a
+# file, no single content was verified, so nothing is recorded.
+if [[ "$recordable" -eq 1 ]]; then
+  if [[ -n "$tree_before" && "$(fingerprint_worktree "$root" "$scratch")" == "$tree_before" ]]; then
+    if [[ ! -f "$workflow_config" ]]; then
+      workflow_state="none"
+    elif [[ -n "$workflow_skipped" ]]; then
+      workflow_state="skipped"
+    else
+      workflow_state="ran"
+    fi
+    verification_write "$root" "$tree_before" "$workflow_state" ||
+      echo "Warning: could not record the passed verification." >&2
+  else
+    verification_forget "$root"
+  fi
 fi
 
 echo "Verification passed."
