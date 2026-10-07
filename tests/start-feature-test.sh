@@ -95,6 +95,48 @@ run_start "$repo" 4 recipes || {
 [[ "$(git -C "$tmp/explicit-4-recipes" branch --show-current)" == "feature/4-recipes" ]] ||
   fail "the explicit slug was not used"
 
+# An optional scripts/worktree-setup.sh prepares the new worktree before the
+# agent starts. It runs in the worktree and receives the primary checkout.
+add_setup_script() {
+  local repo="$1"
+  local mode="$2"
+  local body="$3"
+
+  printf '#!/usr/bin/env bash\n%s\n' "$body" >"$repo/scripts/worktree-setup.sh"
+  chmod "$mode" "$repo/scripts/worktree-setup.sh"
+  git -C "$repo" add scripts/worktree-setup.sh
+  git -C "$repo" -c user.name="Start Feature Test" -c user.email="start-feature-test@example.com" \
+    commit -qm "Add worktree setup"
+  git -C "$repo" push -q origin main
+}
+
+repo="$(setup_repo prepared)"
+add_setup_script "$repo" 755 'printf "%s\n%s\n" "$PWD" "$1" >prepared.txt'
+worktree="$tmp/prepared-8-thing"
+MOCK_WRITE_ACTION="cp '$worktree/prepared.txt' '$repo.seen-by-agent'" run_start "$repo" 8 thing || {
+  cat "$repo.out" >&2
+  fail "starting a feature with a worktree setup script failed"
+}
+[[ -f "$repo.seen-by-agent" ]] || fail "the worktree was not prepared before the agent started"
+[[ "$(sed -n 1p "$repo.seen-by-agent")" == "$(cd "$worktree" && pwd -P)" ]] ||
+  fail "the setup script did not run in the new worktree"
+[[ "$(sed -n 2p "$repo.seen-by-agent")" == "$(cd "$repo" && pwd -P)" ]] ||
+  fail "the setup script did not receive the primary checkout"
+
+# A failing or non-executable setup script is reported and does not stop the
+# feature.
+repo="$(setup_repo setup-fails)"
+add_setup_script "$repo" 755 'exit 9'
+run_start "$repo" 8 thing || fail "a failing setup script stopped the feature"
+grep -Fq "worktree-setup.sh failed with status 9" "$repo.out" || fail "the failed setup was not reported"
+[[ -e "$repo.log" ]] || fail "the agent did not start after a failed setup"
+
+repo="$(setup_repo setup-not-executable)"
+add_setup_script "$repo" 644 'touch prepared.txt'
+run_start "$repo" 8 thing || fail "a non-executable setup script stopped the feature"
+grep -Fq "worktree-setup.sh is not executable" "$repo.out" || fail "the skipped setup was not reported"
+[[ ! -e "$tmp/setup-not-executable-8-thing/prepared.txt" ]] || fail "a non-executable setup script ran"
+
 # Modified tracked files, an unreadable Issue title, and an unsafe slug fail
 # before a worktree is created.
 repo="$(setup_repo refused)"

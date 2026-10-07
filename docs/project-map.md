@@ -53,6 +53,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
+| `scripts/worktree-setup.sh` | Optional, written by the project: prepares a new feature worktree before the agent starts, for example by copying a dependency cache |
 
 ## Script libraries
 

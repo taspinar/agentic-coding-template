@@ -97,6 +97,26 @@ echo "Created feature worktree:"
 echo "  $worktree"
 echo
 
+# A new worktree has none of the project's ignored files, such as installed
+# dependencies or a build cache. A project can prepare them, for example by
+# copying them from the primary checkout, in an optional script that runs in
+# the worktree before the agent starts. A failure does not stop the feature:
+# the preparation only saves time.
+setup="$worktree/scripts/worktree-setup.sh"
+if [[ -f "$setup" ]]; then
+  if [[ -x "$setup" ]]; then
+    echo "Preparing the worktree with scripts/worktree-setup.sh..."
+    setup_status=0
+    (cd "$worktree" && ./scripts/worktree-setup.sh "$repo_root") || setup_status=$?
+    if [[ "$setup_status" -ne 0 ]]; then
+      echo "Warning: scripts/worktree-setup.sh failed with status $setup_status; continuing without it." >&2
+    fi
+  else
+    echo "Warning: scripts/worktree-setup.sh is not executable; skipped." >&2
+  fi
+  echo
+fi
+
 START_PROMPT="Read and follow .agents/prompts/implementer.md.
 
 Your assigned work item is GitHub Issue #${issue}.
