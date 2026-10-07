@@ -63,9 +63,10 @@ branch="$(git branch --show-current)"
 [[ -n "$(git -C "$root" status --porcelain)" ]] || fail "there are no changes to commit."
 review_data_require_jq
 
-# 1. Verification passes.
-echo "Running repository verification..."
-(cd "$root" && ./scripts/verify.sh) || fail "verification failed; nothing was committed."
+# 1. Verification passes. A pass that was already recorded for exactly this
+# content, by apply-triage.sh or review-feature.sh, is not repeated.
+echo "Checking repository verification..."
+(cd "$root" && ./scripts/verify.sh --reuse) || fail "verification failed; nothing was committed."
 echo
 
 # 2. The latest review is current and resolved, unless explicitly skipped.

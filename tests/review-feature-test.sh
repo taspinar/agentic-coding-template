@@ -57,7 +57,9 @@ setup_repo() {
   printf 'reviewer: claude model-r\n' >"$repo/.agents/agents.conf"
   printf 'base content\n' >"$repo/feature.txt"
   mkdir -p "$repo/docs"
-  printf '*.log\n' >"$repo/.gitignore"
+  printf '*.log\n.agents/verification/\n' >"$repo/.gitignore"
+  # Each verification run leaves one line in an ignored file.
+  printf 'count: echo run >>verify-count.log\n' >"$repo/scripts/verify.conf"
   printf 'tracked although ignored\n' >"$repo/tracked.log"
 
   git -C "$repo" init -q -b main
@@ -225,6 +227,55 @@ repo="$(setup_repo subdirectory)"
 if grep -Fq "tracked.log" "$repo.log.stdin"; then
   fail "an unchanged tracked file matching an ignore rule appeared in the reviewed diff"
 fi
+
+# The review starts only on content that passes verification, and records
+# that. A pass for the same content is not run a second time.
+verification_runs() {
+  grep -c . "$1/verify-count.log" 2>/dev/null || true
+}
+
+repo="$(setup_repo verified)"
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review of verified content failed"
+}
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "verification did not run once before the review"
+review="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -r '.verification.status' "$review")" == "passed" ]] || fail "the review does not record the passed verification"
+grep -Fq "Verification: passed for the reviewed tree" "${review%.json}.md" ||
+  fail "the report does not show the verification"
+run_review "$repo" 7 || fail "a second review of the same content failed"
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "verification ran again for unchanged content"
+printf 'another change\n' >>"$repo/feature.txt"
+run_review "$repo" 7 || fail "a review of changed content failed"
+[[ "$(verification_runs "$repo")" -eq 2 ]] || fail "verification did not run again for changed content"
+
+repo="$(setup_repo verification-fails)"
+printf 'broken: false\n' >"$repo/scripts/verify.conf"
+expect_no_review "$repo" "verification fails" 7
+[[ ! -e "$repo.log" ]] || fail "a reviewer started although verification failed"
+grep -Fq "FAIL  broken" "$repo.out" || fail "the failing check was not named"
+grep -Fq -- "--unverified" "$repo.out" || fail "the refusal did not name the override"
+
+# A check that passes but changes a file verified other content than the
+# review would cover, so no review starts.
+repo="$(setup_repo check-changes-content)"
+printf 'rewrite: echo changed >>feature.txt\n' >"$repo/scripts/verify.conf"
+expect_no_review "$repo" "a check changed the content under review" 7
+[[ ! -e "$repo.log" ]] || fail "a reviewer started although a check changed the content"
+grep -Fq "the content changed while verification ran" "$repo.out" || fail "the changed content was not reported"
+
+# --unverified reviews anyway and records the reason instead of a pass.
+run_review "$repo" 7 --unverified "the build fails and the cause is unclear" || {
+  cat "$repo.out" >&2
+  fail "a review with --unverified failed"
+}
+review="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -r '.verification | "\(.status): \(.reason)"' "$review")" == "not-verified: the build fails and the cause is unclear" ]] ||
+  fail "the review does not record why it was not verified"
+grep -Fq "Verification: NOT verified (the build fails and the cause is unclear)" "${review%.json}.md" ||
+  fail "the report does not show that the review was not verified"
+if run_review "$repo" 7 --unverified " "; then fail "--unverified without a reason was accepted"; fi
 
 # Invalid invocations fail before a reviewer starts.
 repo="$(setup_repo preconditions)"

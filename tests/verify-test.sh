@@ -229,6 +229,108 @@ project="$(setup_workflow_project workflow-duplicate)"
 printf 'paths: tools\nlint: pytest\n' >"$project/scripts/verify-workflow.conf"
 expect_failure "$project" "a check name used in both files must fail"
 
+# A run in which every check passed is recorded for the content it verified,
+# and --reuse skips a second run on exactly that content.
+setup_recorded_project() {
+  local project
+
+  project="$(setup_project "$1" "lint: ruff check .")"
+  mkdir -p "$project/scripts/lib" "$project/src"
+  cp "$source_root/scripts/lib/fingerprint.sh" "$source_root/scripts/lib/verification.sh" "$project/scripts/lib/"
+  printf '*.log\n.agents/verification/\n' >"$project/.gitignore"
+  printf 'one\n' >"$project/src/app.txt"
+  git -C "$project" init -q -b main
+  git -C "$project" config user.name "Test User"
+  git -C "$project" config user.email "test@example.com"
+  git -C "$project" add -A
+  git -C "$project" commit -qm "Initial commit"
+  printf '%s\n' "$project"
+}
+
+record="/.agents/verification/passed"
+
+# run_checks <project> <description> [option...]: the checks must really run.
+expect_checks_ran() {
+  local project="$1"
+  local description="$2"
+
+  shift 2
+  rm -f "$project/tools.log"
+  PATH="$tmp/bin:/usr/bin:/bin" MOCK_TOOL_LOG="$project/tools.log" \
+    "$project/scripts/verify.sh" "$@" >"$project/out.log" 2>&1 || {
+    cat "$project/out.log" >&2
+    fail "verification failed: $description"
+  }
+  grep -Fq "ruff" "$project/tools.log" 2>/dev/null || fail "the checks did not run although $description"
+}
+
+expect_reused() {
+  local project="$1"
+  local description="$2"
+
+  shift 2
+  rm -f "$project/tools.log"
+  PATH="$tmp/bin:/usr/bin:/bin" MOCK_TOOL_LOG="$project/tools.log" \
+    "$project/scripts/verify.sh" "$@" >"$project/out.log" 2>&1 || {
+    cat "$project/out.log" >&2
+    fail "a reused verification failed: $description"
+  }
+  [[ ! -e "$project/tools.log" ]] || fail "the checks ran again although $description"
+  grep -Fq "already passed" "$project/out.log" || fail "the reuse was not reported: $description"
+}
+
+project="$(setup_recorded_project recorded)"
+expect_checks_ran "$project" "nothing was recorded yet" --reuse
+[[ -f "$project$record" ]] || fail "a passed run was not recorded"
+[[ -z "$(git -C "$project" status --porcelain)" ]] || fail "the record changed the working tree"
+expect_reused "$project" "the content is unchanged" --reuse
+expect_checks_ran "$project" "--reuse was not given"
+printf 'two\n' >>"$project/src/app.txt"
+expect_checks_ran "$project" "a tracked file changed" --reuse
+expect_reused "$project" "the changed content was verified" --reuse
+printf 'new\n' >"$project/src/new.txt"
+expect_checks_ran "$project" "an untracked file was added" --reuse
+git -C "$project" add -A
+git -C "$project" commit -qm "Commit the same content"
+expect_reused "$project" "the same content was only committed" --reuse
+
+# A failing run records nothing and removes an earlier record.
+if MOCK_RUFF_EXIT=1 run_verify "$project"; then fail "a failing run returned success"; fi
+[[ ! -e "$project$record" ]] || fail "a failing run left a record"
+expect_checks_ran "$project" "the last run failed" --reuse
+
+# A run whose check changes a file verified no single content.
+project="$(setup_recorded_project self-modifying)"
+printf 'touch: date >>src/app.txt\n' >"$project/scripts/verify.conf"
+run_verify "$project" || fail "a run whose check changes a file failed"
+[[ ! -e "$project$record" ]] || fail "a run that changed the content was recorded"
+
+# Without the ignore rule the record would become part of the content, so
+# none is written.
+project="$(setup_recorded_project not-ignored)"
+printf '*.log\n' >"$project/.gitignore"
+git -C "$project" commit -qam "Drop the ignore rule"
+expect_checks_ran "$project" "no record can be kept" --reuse
+[[ ! -e "$project$record" ]] || fail "a record was written where Git does not ignore it"
+expect_checks_ran "$project" "no record can be kept" --reuse
+
+# A record made without the workflow self-tests does not cover --all.
+project="$(setup_workflow_project recorded-workflow)"
+mkdir -p "$project/scripts/lib"
+cp "$source_root/scripts/lib/fingerprint.sh" "$source_root/scripts/lib/verification.sh" "$project/scripts/lib/"
+printf 'paths: tools\nself-test: pytest\n' >"$project/scripts/verify-workflow.conf"
+printf '*.log\n.agents/verification/\n' >"$project/.gitignore"
+git -C "$project" add -A
+git -C "$project" commit -qm "Keep verification records"
+git -C "$project" branch -q -f main
+expect_checks_ran "$project" "nothing was recorded yet" --reuse
+if self_tests_ran "$project"; then fail "the self-tests ran although no workflow file changed"; fi
+expect_reused "$project" "the content is unchanged" --reuse
+expect_checks_ran "$project" "the record does not include the self-tests" --reuse --all
+self_tests_ran "$project" || fail "--all with --reuse did not run the self-tests"
+expect_reused "$project" "the self-tests were included in the record" --reuse --all
+expect_reused "$project" "a complete record covers a plain run" --reuse
+
 project="$(setup_project unknown-option "lint: ruff check .")"
 if PATH="$tmp/bin:/usr/bin:/bin" "$project/scripts/verify.sh" --everything >"$project/out.log" 2>&1; then
   fail "an unknown option was accepted"

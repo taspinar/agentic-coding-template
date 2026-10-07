@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$script_dir/lib/agent.sh"
+source "$script_dir/lib/verification.sh"
 
 agent_parse_args "$@"
 if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 3 ]]; then
@@ -135,6 +137,10 @@ echo
 agent_status=0
 agent_run write "$agent" "$model" "$worktree" "$START_PROMPT" || agent_status=$?
 
+# A verification record from inside the agent session is not relied on;
+# review-feature.sh verifies the result itself.
+verification_forget "$worktree"
+
 echo
 if [[ "$agent_status" -ne 0 ]]; then
   echo "Error: the implementation agent exited with status $agent_status." >&2
@@ -145,5 +151,4 @@ echo "The implementation session ended. Nothing is committed yet."
 echo
 echo "Next, in the feature worktree:"
 echo "  cd \"$worktree\""
-echo "  ./scripts/verify.sh"
-echo "  ./scripts/review-feature.sh $issue"
+echo "  ./scripts/review-feature.sh $issue    # runs the verification first"

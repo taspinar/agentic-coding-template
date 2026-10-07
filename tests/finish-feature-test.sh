@@ -136,6 +136,32 @@ if git -C "$repo" show --name-only --format= HEAD | grep -Fq "manual-steps"; the
   fail "the manual steps file was committed"
 fi
 
+# A pass that was recorded for exactly this content is not run again; any
+# change to the content is verified again before the commit.
+count_runs() {
+  grep -c . "$1/verify-count.log" 2>/dev/null || true
+}
+
+repo="$(setup_repo reuse PASS "[]")"
+printf 'count: echo run >>verify-count.log\n' >"$repo/scripts/verify.conf"
+record_reviewed_tree "$repo" "$repo/$review"
+(cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/verify.sh >/dev/null) || fail "the first verification failed"
+[[ "$(count_runs "$repo")" -eq 1 ]] || fail "the first verification did not run"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing verified content failed"
+}
+[[ "$(count_runs "$repo")" -eq 1 ]] || fail "verification ran again for unchanged content"
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 2 ]] || fail "no commit was created after a reused verification"
+
+repo="$(setup_repo reverify PASS "[]")"
+printf 'count: echo run >>verify-count.log\n' >"$repo/scripts/verify.conf"
+(cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/verify.sh >/dev/null) || fail "the first verification failed"
+printf 'more feature work\n' >>"$repo/feature.txt"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || fail "finishing changed content failed"
+[[ "$(count_runs "$repo")" -eq 2 ]] || fail "changed content was committed without a new verification"
+
 # Minor findings that were triaged without FIX_NOW and published are fine.
 repo="$(setup_repo minor PASS_WITH_MINOR_FINDINGS "$minor")"
 add_triage "$repo" DEFER

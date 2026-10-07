@@ -47,6 +47,33 @@ after a failure, and a summary lists each check as `PASS` or `FAIL`.
 There is no automatic stack detection and no optional check: remove a check
 from `scripts/verify.conf` rather than letting it be skipped.
 
+### Recorded verification
+
+A run in which every check passed is recorded in `.agents/verification/passed`,
+a working file that Git ignores, together with the fingerprint of the content
+it verified. Any change to a file that Git does not ignore makes the record
+stale, and a failing run removes it.
+
+`./scripts/verify.sh --reuse` skips the run when the record matches the current
+content exactly, and says so. `review-feature.sh` and `finish-feature.sh` call
+it that way, so in a feature the checks run once per version of the content
+instead of once per step: after fixes, `apply-triage.sh` verifies, and the
+review and the commit that follow reuse that pass. Plain `./scripts/verify.sh`
+always runs every check.
+
+Two limits:
+
+- The fingerprint does not cover files that Git ignores. A check that depends
+  on ignored state, such as an installed dependency or a build cache, is not
+  run again when only that state changed. CI runs every check on a clean
+  checkout.
+- A record is never accepted on an agent's word. `start-feature.sh` and
+  `apply-triage.sh` discard the record when their agent session ends, so a
+  record always comes from a run that you or a script started.
+
+A record made without the workflow self-tests does not stand in for a run that
+needs them, such as `--reuse --all`.
+
 ### Workflow self-tests
 
 The tests of the workflow scripts (`tests/*-test.sh`) are declared separately,
@@ -358,24 +385,26 @@ primary="$1"
 The script is optional and only saves time: when it fails, the script reports
 that and starts the agent anyway.
 
-After the implementation agent exits, enter the feature worktree and verify:
+After the implementation agent exits, enter the feature worktree. When
+independent review is required by `.agents/policies/autonomy.md`, run it before
+committing so the reviewer includes the complete working-tree changes:
 
 ```bash
 cd ../project-12-player-movement
-./scripts/verify.sh
-```
-
-When independent review is required by `.agents/policies/autonomy.md`, run it
-before committing so the reviewer includes the complete working-tree changes:
-
-```bash
 ./scripts/review-feature.sh 12
 ```
+
+A reviewer cannot run the checks, so the review starts only when
+`./scripts/verify.sh` passes for the content under review. The script runs it
+first, names the failing check when it fails, and starts no agent then. The
+review records that verification passed for the reviewed tree. To have a
+failure reviewed, for example when its cause is unclear, pass
+`--unverified "<reason>"`; the review then records the reason instead.
 
 The full interface is:
 
 ```text
-./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>]
+./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--unverified "<reason>"]
 ```
 
 It uses role `reviewer` with the `read-only` profile. The review is

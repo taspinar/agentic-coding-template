@@ -191,10 +191,10 @@ tools.
 | `finish-planning.sh` | None | Confirm earlier escalations; approve the planning | `docs/PLANNING_APPROVAL.md` | Yes | No |
 | `create-feature-issue.sh` | None | Create the Issue | Feature Issue on GitHub | Not applicable | No |
 | `start-feature.sh` | `implementer` (write) | None | Code and tests | Yes, by `finish-feature.sh` | No |
-| `review-feature.sh` | `reviewer` (read-only) | None | Review JSON and report | No | No |
+| `review-feature.sh` | `reviewer` (read-only) | None | Review JSON and report | No | Yes, unless it already passed for this content |
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes |
-| `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes |
+| `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes, unless it already passed for this content |
 | `publish-feature.sh` | None | Merge after the checks passed | The pushed branch and the pull request | Not applicable | Yes, in CI |
 
 ### Checks that stop a step
@@ -206,7 +206,7 @@ tools.
 | `revise-planning.sh` | The planning review is stale, or the planner leaves its file scope, commits, or changes nothing for adopted findings |
 | `finish-planning.sh` | No current review, a critical or major finding in the latest round, an undecided or unapplied finding, or an unresolved escalation |
 | `create-feature-issue.sh` | The planning approval is missing or stale, the feature ID is unknown, duplicated, or empty, or the feature already has an Issue |
-| `review-feature.sh` | Not on `feature/<issue>-*`, or nothing to review |
+| `review-feature.sh` | Not on `feature/<issue>-*`, nothing to review, or verification fails (unless `--unverified "<reason>"` is given) |
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
 | `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, or `FIX_NOW` findings are left |
@@ -217,7 +217,7 @@ tools.
 | Script | When to use it |
 |---|---|
 | `doctor.sh` | Once after creating a repository from the template, and whenever a tool may be missing |
-| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `apply-triage.sh`, `finish-feature.sh`, and CI. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
+| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |

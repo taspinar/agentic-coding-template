@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/verification.sh"
 
 usage() {
   echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>]"
@@ -230,6 +231,10 @@ if [[ "$triage_signature_before" != "$triage_signature_after" ]]; then
   echo "Error: implementation agent modified the approved triage artifact."
   protected_artifact_changed=1
 fi
+
+# A verification record from inside the agent session is not relied on; the
+# run below records the result for the fixed content.
+verification_forget "$root"
 
 echo
 echo "Running repository verification..."

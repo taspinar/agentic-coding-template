@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/review-run.sh"
 
 fail() {
@@ -13,12 +14,31 @@ fail() {
   exit 1
 }
 
-agent_parse_args "$@"
+# --unverified "<reason>" reviews although verification fails.
+unverified_reason=""
+arguments=()
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--unverified" ]]; then
+    [[ $# -ge 2 && "$2" =~ [^[:space:]] ]] || fail "--unverified requires a reason."
+    unverified_reason="$2"
+    shift 2
+  else
+    arguments+=("$1")
+    shift
+  fi
+done
+
+agent_parse_args ${arguments[@]+"${arguments[@]}"}
 if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; then
-  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>]"
+  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>] [--unverified \"<reason>\"]"
   echo
   echo "The agent and model come from role 'reviewer' in .agents/agents.conf"
   echo "unless --agent and --model are given."
+  echo
+  echo "The review starts only when ./scripts/verify.sh passes for the current"
+  echo "content; a pass that was already recorded for it is reused. --unverified"
+  echo "reviews anyway, for a review that must help diagnose a failure; the reason"
+  echo "is recorded in the review."
   echo
   echo "Examples:"
   echo "  $0 2"
@@ -68,8 +88,27 @@ fi
 merge_base="$(git -C "$root" merge-base HEAD "$base_ref")" ||
   fail "could not determine the merge base of HEAD and $base_ref."
 
+# A reviewer cannot run the checks, so the review starts only on content that
+# passes them. A pass recorded for exactly this content is reused.
 tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/review-feature.XXXXXX")"
 trap 'rm -rf "$tmp_work"' EXIT
+
+verified_tree=""
+if [[ -n "$unverified_reason" ]]; then
+  echo "Reviewing without verification: $unverified_reason"
+  verification="$(jq -n --arg reason "$unverified_reason" '{status: "not-verified", reason: $reason}')"
+else
+  echo "Checking that verification passes for the content under review..."
+  # The content as it is before the checks run. The review below must cover
+  # exactly this content, so a check that changes a file is detected.
+  verified_tree="$(fingerprint_worktree "$root" "$tmp_work")" ||
+    fail "could not compute the fingerprint of the working tree."
+  (cd "$root" && ./scripts/verify.sh --reuse) ||
+    fail "verification failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"."
+  verification="$(jq -n --arg at "$(verification_field "$root" verified-at)" \
+    '{status: "passed", verified_at: (if $at == "" then (now | todate) else $at end)}')"
+fi
+echo
 
 # The reviewer is read-only and has no network access, so the script supplies
 # the Issue and the complete diff.
@@ -84,6 +123,8 @@ head_before="$(git -C "$root" rev-parse HEAD)"
 tree_before="$(fingerprint_worktree "$root" "$tmp_work")" ||
   fail "could not compute the fingerprint of the working tree."
 cp "$tmp_work/fingerprint.index" "$tmp_work/index.before"
+[[ -z "$verified_tree" || "$tree_before" == "$verified_tree" ]] ||
+  fail "the content changed while verification ran, so the pass does not cover what would be reviewed. A check may modify a file; the review was not started."
 
 review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage")
 context_file="$tmp_work/context.md"
@@ -183,9 +224,11 @@ metadata="$(jq -n \
   --arg agent "$agent" \
   --arg model "$model" \
   --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --argjson verification "$verification" \
   '{
     schema: "review/v1",
     kind: "feature",
+    verification: $verification,
     issue: $issue,
     round: $round,
     branch: $branch,

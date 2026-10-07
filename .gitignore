@@ -27,3 +27,5 @@ credentials*.json
 # Steps a feature needs from the human, written by the implementer. They are
 # copied into the commit message and the pull request.
 .agents/manual-steps/
+# The record of the last passed verification of this working tree.
+.agents/verification/

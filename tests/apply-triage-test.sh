@@ -242,6 +242,19 @@ if MOCK_AGENT_ACTION="rm '$repo/$review'" run_apply "$repo" y "$triage"; then
   fail "a deleted review artifact returned success"
 fi
 
+# A verification record written by the agent is not relied on: the script
+# verifies the fixed content itself.
+repo="$(setup_repo forged-record)"
+printf 'broken: false\n' >"$repo/scripts/verify.conf"
+git -C "$repo" commit -qam "Break verification"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+if MOCK_WRITE_ACTION="mkdir -p '$repo/.agents/verification' && printf 'tree: forged\n' >'$repo/.agents/verification/passed'" \
+  run_apply "$repo" y "$triage"; then
+  fail "a forged verification record replaced the verification"
+fi
+grep -Fq "FAIL  broken" "$repo.out" || fail "verification did not run after a forged record"
+[[ ! -e "$repo/.agents/verification/passed" ]] || fail "a forged verification record was kept"
+
 # A failing verification fails the run.
 repo="$(setup_repo verification-fails)"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"

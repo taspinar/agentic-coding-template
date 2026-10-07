@@ -137,6 +137,14 @@ run_start "$repo" 8 thing || fail "a non-executable setup script stopped the fea
 grep -Fq "worktree-setup.sh is not executable" "$repo.out" || fail "the skipped setup was not reported"
 [[ ! -e "$tmp/setup-not-executable-8-thing/prepared.txt" ]] || fail "a non-executable setup script ran"
 
+# A verification record written during the agent session does not survive it.
+repo="$(setup_repo forged)"
+worktree="$tmp/forged-9-thing"
+MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: forged\n' >'$worktree/.agents/verification/passed'" \
+  run_start "$repo" 9 thing || fail "starting a feature failed"
+[[ ! -e "$worktree/.agents/verification/passed" ]] ||
+  fail "a verification record from the agent session was kept"
+
 # Modified tracked files, an unreadable Issue title, and an unsafe slug fail
 # before a worktree is created.
 repo="$(setup_repo refused)"
