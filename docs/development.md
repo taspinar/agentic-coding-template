@@ -542,7 +542,7 @@ failure reviewed, for example when its cause is unclear, pass
 The full interface is:
 
 ```text
-./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--unverified "<reason>"]
+./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--unverified "<reason>"]
 ```
 
 It uses role `reviewer` with the `read-only` profile. The review is
@@ -682,6 +682,45 @@ fields the scripts own, so editing a stored artifact cannot weaken a decision.
 
 Documents that people maintain, such as the roadmap, requirements, and
 architecture, keep Markdown as their source.
+
+### Reviewing only the changes
+
+Every round reviews the complete feature by default, also after a fix. That
+costs a full review each time, and it is what finds a problem that an earlier
+round missed: a later complete round regularly reports something in code that
+did not change.
+
+After a small fix you can limit a round to what changed since the previous
+one:
+
+```bash
+./scripts/review-feature.sh 12 --changes
+```
+
+The reviewer then receives the difference between the content that the
+previous round reviewed and the current content, with the findings of that
+round and what an approved triage decided about each; without one, every
+finding counts as to be fixed. It checks that every finding
+that was to be fixed is resolved, reviews the changed lines and what they
+affect, and leaves the rest of the feature alone. The review records its
+scope, its report says so at the top, and the commit message of
+`finish-feature.sh` names it.
+
+Use it when the fix is small and local. Run a complete round when the fix
+touches several parts, changes behaviour beyond the finding, or when you are
+not sure. The script refuses `--changes` when it cannot build on the previous
+round:
+
+- there is no previous round;
+- nothing changed since it;
+- the base of the branch changed, for example after merging `main`, so the
+  feature differs in more than your changes;
+- the content that the previous round reviewed is no longer in the object
+  database.
+
+`finish-feature.sh` accepts a review of changes only as the latest round when
+it builds on exactly the content of the round before it, back to a complete
+review. Otherwise it asks for a complete round.
 
 ### When a review becomes stale
 

@@ -162,6 +162,42 @@ record_reviewed_tree "$repo" "$repo/$review"
 run_finish "$repo" 12 "Add the marker" || fail "finishing changed content failed"
 [[ "$(count_runs "$repo")" -eq 2 ]] || fail "changed content was committed without a new verification"
 
+# A latest review of changes only counts when it builds on the content that
+# the round before it reviewed, back to a review of the complete feature.
+# add_changes_review <repo>: makes round 2 a passed review of the changes
+# since round 1, after a further change, and prints its path.
+add_changes_review() {
+  local repo="$1"
+  local second="$repo/.agents/reviews/feature-12-marker-review-02.json"
+
+  jq '.round = 2 | .verdict = "PASS" | .findings = []
+      | .scope = {kind: "changes", since_round: 1, base_tree: .reviewed_tree}' "$repo/$review" >"$second"
+  printf 'the fix\n' >>"$repo/feature.txt"
+  record_reviewed_tree "$repo" "$second"
+  printf '%s\n' "$second"
+}
+
+repo="$(setup_repo changes-chain PASS "[]")"
+second="$(add_changes_review "$repo")"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing after a review of changes only failed"
+}
+message "$repo" | grep -Fqx "Review: round 2 (changes since round 1 only), PASS, by claude (model-r)" ||
+  fail "the commit message does not say that the last round reviewed changes only"
+
+repo="$(setup_repo changes-broken PASS "[]")"
+second="$(add_changes_review "$repo")"
+jq '.scope.base_tree = "0123456789012345678901234567890123456789"' "$second" >"$second.tmp" && mv "$second.tmp" "$second"
+expect_no_commit "$repo" "a review of changes does not build on the previous round" 12 "Add the marker"
+grep -Fq "Run a complete review" "$repo.out" || fail "the broken chain did not ask for a complete review"
+
+repo="$(setup_repo changes-orphan PASS "[]")"
+second="$(add_changes_review "$repo")"
+rm "$repo/$review"
+expect_no_commit "$repo" "the round a review of changes builds on is missing" 12 "Add the marker"
+grep -Fq "whose review is missing" "$repo.out" || fail "the missing earlier round was not reported"
+
 # Minor findings that were triaged without FIX_NOW and published are fine.
 repo="$(setup_repo minor PASS_WITH_MINOR_FINDINGS "$minor")"
 add_triage "$repo" DEFER

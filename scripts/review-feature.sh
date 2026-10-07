@@ -14,14 +14,19 @@ fail() {
   exit 1
 }
 
-# --unverified "<reason>" reviews although verification fails.
+# --unverified "<reason>" reviews although verification fails. --changes
+# reviews only what changed since the previous round.
 unverified_reason=""
+changes_only=0
 arguments=()
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == "--unverified" ]]; then
     [[ $# -ge 2 && "$2" =~ [^[:space:]] ]] || fail "--unverified requires a reason."
     unverified_reason="$2"
     shift 2
+  elif [[ "$1" == "--changes" ]]; then
+    changes_only=1
+    shift
   else
     arguments+=("$1")
     shift
@@ -30,7 +35,7 @@ done
 
 agent_parse_args ${arguments[@]+"${arguments[@]}"}
 if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; then
-  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>] [--unverified \"<reason>\"]"
+  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--unverified \"<reason>\"]"
   echo
   echo "The agent and model come from role 'reviewer' in .agents/agents.conf"
   echo "unless --agent and --model are given."
@@ -40,8 +45,14 @@ if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; the
   echo "reviews anyway, for a review that must help diagnose a failure; the reason"
   echo "is recorded in the review."
   echo
+  echo "Every round reviews the complete feature. --changes makes a later round"
+  echo "review only what changed since the previous round, with that round's"
+  echo "findings and their triage: cheaper after a small fix, but it does not look"
+  echo "at the rest of the feature again."
+  echo
   echo "Examples:"
   echo "  $0 2"
+  echo "  $0 2 --changes"
   echo "  $0 2 develop"
   echo "  $0 2 --agent codex --model gpt-6-astra"
   exit 1
@@ -134,22 +145,6 @@ if GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --quiet 
   fail "no changes to review between $base_ref and the working tree."
 fi
 
-{
-  echo "# Review context for Issue #$issue"
-  echo
-  echo "## GitHub Issue #$issue"
-  echo
-  printf '%s\n' "$issue_context"
-  echo
-  echo "## Changed files"
-  echo
-  GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --stat --no-color "$merge_base" -- "${review_paths[@]}"
-  echo
-  echo "## Complete diff against $base_ref, including uncommitted and untracked changes"
-  echo
-  GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --no-color "$merge_base" -- "${review_paths[@]}"
-} >"$context_file"
-
 # Determine next review number.
 review_number=1
 previous_review=""
@@ -168,6 +163,87 @@ while true; do
 done
 review_relative=".agents/reviews/$(basename "$out")"
 
+# A review of changes only builds on the previous round: it needs that round's
+# reviewed content and the same base, and something must have changed.
+scope='{"kind": "full"}'
+if [[ "$changes_only" -eq 1 ]]; then
+  [[ -n "$previous_review" ]] ||
+    fail "--changes needs a previous round, and this is round 1. Run a complete review first."
+  previous_errors="$(review_artifact_errors "$previous_review")"
+  [[ -z "$previous_errors" ]] ||
+    fail "the previous review is invalid, so --changes cannot build on it: ${previous_errors//$'\n'/; }"
+  previous_round="$(jq -r '.round' "$previous_review")"
+  previous_tree="$(jq -r '.reviewed_tree' "$previous_review")"
+  git -C "$root" cat-file -e "$previous_tree^{tree}" 2>/dev/null ||
+    fail "the content that round $previous_round reviewed is no longer available, so the changes since then cannot be determined. Run a complete review, without --changes."
+  [[ "$(jq -r '.merge_base' "$previous_review")" == "$merge_base" ]] ||
+    fail "the base of the branch changed since round $previous_round, so the feature differs in more than your changes. Run a complete review, without --changes."
+  ! git -C "$root" diff --quiet "$previous_tree" "$tree_before" ||
+    fail "nothing changed since round $previous_round; there is nothing for --changes to review."
+  scope="$(jq -n --argjson round "$previous_round" --arg tree "$previous_tree" \
+    '{kind: "changes", since_round: $round, base_tree: $tree}')"
+fi
+
+if [[ "$changes_only" -eq 1 ]]; then
+  # Only an approved triage that belongs to the previous review may tell the
+  # reviewer that a finding was deferred or accepted. With any other triage
+  # every finding counts as to be fixed.
+  previous_triage="$(review_latest_triage "$root" "$previous_review")"
+  if [[ -n "$previous_triage" && -n "$(triage_artifact_errors "$previous_triage" "$previous_review")" ]]; then
+    echo "Note: ${previous_triage#"$root"/} is not a valid, approved triage of round $previous_round; its decisions are not used."
+    previous_triage=""
+  fi
+  {
+    echo "# Review context for Issue #$issue: changes since round $previous_round"
+    echo
+    echo "## GitHub Issue #$issue"
+    echo
+    printf '%s\n' "$issue_context"
+    echo
+    echo "## Findings of round $previous_round and what was decided about them"
+    echo
+    if [[ "$(jq '.findings | length' "$previous_review")" -eq 0 ]]; then
+      echo "Round $previous_round had no findings."
+    elif [[ -n "$previous_triage" ]]; then
+      jq -r --slurpfile triage "$previous_triage" '
+        ($triage[0].decisions | map({(.finding_id): .}) | add // {}) as $decisions
+        | .findings[]
+        | "### \(.id) [\(.severity)] \(.title)\n\n" +
+          "Decision: \($decisions[.id].decision // "none recorded")" +
+          (if $decisions[.id].rationale then " (\($decisions[.id].rationale))" else "" end) + "\n\n" +
+          "Evidence: \(.evidence)\n\nRecommended action: \(.recommendation)\n"' "$previous_review"
+    else
+      echo "The findings were not triaged; treat each one as to be fixed."
+      echo
+      jq -r '.findings[] | "### \(.id) [\(.severity)] \(.title)\n\nEvidence: \(.evidence)\n\nRecommended action: \(.recommendation)\n"' "$previous_review"
+    fi
+    echo
+    echo "## Files changed since round $previous_round"
+    echo
+    git -C "$root" diff --stat --no-color "$previous_tree" "$tree_before"
+    echo
+    echo "## Diff since round $previous_round: from the content that round reviewed to the current content"
+    echo
+    git -C "$root" diff --no-color "$previous_tree" "$tree_before"
+  } >"$context_file"
+else
+  {
+    echo "# Review context for Issue #$issue"
+    echo
+    echo "## GitHub Issue #$issue"
+    echo
+    printf '%s\n' "$issue_context"
+    echo
+    echo "## Changed files"
+    echo
+    GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --stat --no-color "$merge_base" -- "${review_paths[@]}"
+    echo
+    echo "## Complete diff against $base_ref, including uncommitted and untracked changes"
+    echo
+    GIT_INDEX_FILE="$tmp_work/index.before" git -C "$root" diff --cached --no-color "$merge_base" -- "${review_paths[@]}"
+  } >"$context_file"
+fi
+
 echo "Preparing independent review:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
@@ -178,9 +254,24 @@ echo "  Output:   $review_relative.json"
 if [[ -n "$previous_review" ]]; then
   echo "  Previous: .agents/reviews/$(basename "$previous_review")"
 fi
+if [[ "$changes_only" -eq 1 ]]; then
+  echo "  Scope:    only the changes since round $previous_round"
+fi
 echo
 
-START_PROMPT="Read and follow .agents/prompts/reviewer.md.
+if [[ "$changes_only" -eq 1 ]]; then
+  START_PROMPT="Read and follow .agents/prompts/reviewer.md.
+
+Your assigned work item is GitHub Issue #${issue}.
+
+This is a review of changes only: follow the \"Review of changes only\"
+section of your contract. Round ${previous_round} reviewed the feature as it
+was then. Standard input contains the Issue, the findings of round
+${previous_round} with what was decided about each, and the diff from the
+content that round reviewed to the current content. Read the files in the
+repository for surrounding context."
+else
+  START_PROMPT="Read and follow .agents/prompts/reviewer.md.
 
 Your assigned work item is GitHub Issue #${issue}.
 
@@ -191,8 +282,8 @@ the files in the repository for surrounding context.
 
 Read the matching .agents/plans/${issue}-*.md if one exists."
 
-if [[ -n "$previous_review" ]]; then
-  START_PROMPT+="
+  if [[ -n "$previous_review" ]]; then
+    START_PROMPT+="
 
 This is a re-review.
 
@@ -200,6 +291,7 @@ Read the previous review (JSON):
 .agents/reviews/$(basename "$previous_review")
 
 Check whether its findings have been resolved, but perform an independent review of the complete current implementation. Do not limit the review to the previous findings."
+  fi
 fi
 
 START_PROMPT+="
@@ -225,10 +317,12 @@ metadata="$(jq -n \
   --arg model "$model" \
   --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --argjson verification "$verification" \
+  --argjson scope "$scope" \
   '{
     schema: "review/v1",
     kind: "feature",
     verification: $verification,
+    scope: $scope,
     issue: $issue,
     round: $round,
     branch: $branch,

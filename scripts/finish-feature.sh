@@ -23,29 +23,6 @@ fail() {
   exit 1
 }
 
-# latest_triage <review-json>: prints the newest triage of a review. The first
-# triage has no number (-triage.json); later ones are numbered (-triage-02.json).
-latest_triage() {
-  local base
-  local number
-  local best=""
-  local best_number=0
-  local candidate
-
-  base="$root/.agents/triage/$(basename "$1" .json)"
-  [[ ! -f "$base-triage.json" ]] || { best="$base-triage.json"; best_number=1; }
-  for candidate in "$base-triage-"[0-9][0-9].json; do
-    [[ -f "$candidate" ]] || continue
-    number="${candidate%.json}"
-    number="${number##*-}"
-    if ((10#$number > best_number)); then
-      best="$candidate"
-      best_number=$((10#$number))
-    fi
-  done
-  printf '%s' "$best"
-}
-
 [[ $# -eq 2 || ( $# -eq 4 && "$3" == "--no-review" ) ]] || usage
 issue="$1"
 summary="$2"
@@ -100,6 +77,22 @@ else
     *) fail "could not compute the fingerprint of the working tree." ;;
   esac
 
+  # A review of changes only covers what changed since an earlier round. It
+  # counts when that round reviewed exactly the content it builds on, and so
+  # on back to a review of the complete feature.
+  cursor="$latest"
+  while [[ "$(jq -r '.scope.kind // "full"' "$cursor")" == "changes" ]]; do
+    since="$(jq -r '.scope.since_round' "$cursor")"
+    earlier="$root/.agents/reviews/${slug}-review-$(printf '%02d' "$since").json"
+    [[ -f "$earlier" ]] ||
+      fail "round $(jq -r '.round' "$cursor") reviewed only the changes since round $since, whose review is missing. Run a complete review: ./scripts/review-feature.sh $issue"
+    errors="$(review_artifact_errors "$earlier")"
+    [[ -z "$errors" ]] || fail "the review of round $since is invalid: ${errors//$'\n'/; }"
+    [[ "$(jq -r '.reviewed_tree' "$earlier")" == "$(jq -r '.scope.base_tree' "$cursor")" ]] ||
+      fail "round $(jq -r '.round' "$cursor") reviewed only the changes since round $since, but not from the content that round $since reviewed. Run a complete review: ./scripts/review-feature.sh $issue"
+    cursor="$earlier"
+  done
+
   round="$(jq -r '.round' "$latest")"
   verdict="$(jq -r '.verdict | gsub("_"; " ")' "$latest")"
   blocking="$(jq '[.findings[] | select(.severity == "critical" or .severity == "major")] | length' "$latest")"
@@ -113,7 +106,7 @@ else
   for review in "${reviews[@]}"; do
     [[ "$(jq '.findings | length' "$review")" -gt 0 ]] || continue
     review_round="$(jq -r '.round' "$review")"
-    triage="$(latest_triage "$review")"
+    triage="$(review_latest_triage "$root" "$review")"
     [[ -n "$triage" ]] ||
       fail "the findings of round $review_round are not triaged. Run ./scripts/triage-review.sh ${review#"$root"/}."
     triage_relative="${triage#"$root"/}"
@@ -127,7 +120,10 @@ else
     fi
     triage_note="; triage published on #$issue"
   done
-  review_line="Review: round $round, $verdict, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")$triage_note"
+  scope_note=""
+  [[ "$(jq -r '.scope.kind // "full"' "$latest")" != "changes" ]] ||
+    scope_note=" (changes since round $(jq -r '.scope.since_round' "$latest") only)"
+  review_line="Review: round $round$scope_note, $verdict, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")$triage_note"
 fi
 
 # 3. Show the manual steps the implementer recorded for this feature.

@@ -277,6 +277,119 @@ grep -Fq "Verification: NOT verified (the build fails and the cause is unclear)"
   fail "the report does not show that the review was not verified"
 if run_review "$repo" 7 --unverified " "; then fail "--unverified without a reason was accepted"; fi
 
+# --changes reviews only what changed since the previous round. The reviewer
+# gets that difference, not the complete feature, with the findings of the
+# previous round and what was decided about them; the review records its
+# scope.
+repo="$(setup_repo changes-only)"
+run_review "$repo" 7 || fail "the complete first round failed"
+first="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -r '.scope.kind' "$first")" == "full" ]] || fail "a complete review does not record its scope"
+# add_first_triage <repo>: an approved triage of round 1 that fixes the major
+# finding and accepts the minor one.
+add_first_triage() {
+  mkdir -p "$1/.agents/triage"
+  jq '{
+    schema: "triage/v1", source_review: ".agents/reviews/feature-7-marker-review-01.json", issue,
+    reviewed_tree, review_verdict: .verdict, triage: {agent: "codex", model: "model-t"},
+    approved_at: "2026-01-02T00:00:00Z",
+    decisions: [.findings[] | {finding_id: .id, severity, title,
+      decision: (if .severity == "major" then "FIX_NOW" else "ACCEPT" end),
+      rationale: (if .severity == "major" then "The content must be checked." else "The name is fine." end),
+      followup: null}]
+  }' "$1/.agents/reviews/feature-7-marker-review-01.json" >"$1/.agents/triage/feature-7-marker-review-01-triage.json"
+}
+add_first_triage "$repo"
+printf 'the fix\n' >>"$repo/feature.txt"
+rm -f "$repo.log" "$repo.log.stdin"
+run_review "$repo" 7 --changes || {
+  cat "$repo.out" >&2
+  fail "a review of changes only failed"
+}
+second="$repo/.agents/reviews/feature-7-marker-review-02.json"
+[[ "$(jq -c '[.round, .scope.kind, .scope.since_round]' "$second")" == '[2,"changes",1]' ]] ||
+  fail "the review of changes does not record its scope"
+[[ "$(jq -r '.scope.base_tree' "$second")" == "$(jq -r '.reviewed_tree' "$first")" ]] ||
+  fail "the review of changes does not build on the content of the previous round"
+grep -Fq "Scope: ONLY the changes since round 1" "${second%.json}.md" || fail "the report does not show the limited scope"
+grep -Fqx "+the fix" "$repo.log.stdin" || fail "the change since the previous round was not supplied"
+if grep -Fq "untracked marker" "$repo.log.stdin"; then
+  fail "content that did not change since the previous round was supplied"
+fi
+if grep -Fq "diff --git a/marker.txt" "$repo.log.stdin"; then fail "an unchanged file was supplied as changed"; fi
+grep -Fq "### M1 [major] Marker content is unchecked" "$repo.log.stdin" || fail "the previous findings were not supplied"
+grep -Fq "Decision: FIX_NOW (The content must be checked.)" "$repo.log.stdin" || fail "the decision to fix was not supplied"
+grep -Fq "Decision: ACCEPT (The name is fine.)" "$repo.log.stdin" || fail "the accepted finding was not supplied with its decision"
+grep -Fq "This is a review of changes only" "$repo.log" || fail "the reviewer was not told that it reviews changes only"
+
+# Without the option a later round reviews the complete feature again.
+printf 'more\n' >>"$repo/feature.txt"
+rm -f "$repo.log" "$repo.log.stdin"
+run_review "$repo" 7 || fail "a complete third round failed"
+third="$repo/.agents/reviews/feature-7-marker-review-03.json"
+[[ "$(jq -r '.scope.kind' "$third")" == "full" ]] || fail "a round without --changes is not a complete review"
+grep -Fq "untracked marker" "$repo.log.stdin" || fail "a complete later round was not given the complete diff"
+
+# Findings that were never triaged are supplied as to be fixed.
+repo="$(setup_repo changes-untriaged)"
+run_review "$repo" 7 || fail "the complete first round failed"
+printf 'the fix\n' >>"$repo/feature.txt"
+rm -f "$repo.log.stdin"
+run_review "$repo" 7 --changes || fail "a review of changes without a triage failed"
+grep -Fq "The findings were not triaged; treat each one as to be fixed." "$repo.log.stdin" ||
+  fail "untriaged findings were not supplied as to be fixed"
+
+# A triage that is not approved, or that belongs to other content, does not
+# get to say that a finding was accepted: every finding counts as to be fixed.
+for defect in 'del(.approved_at)' '.reviewed_tree = "0123456789012345678901234567890123456789"' '(.decisions[] | select(.severity == "major") | .decision) = "ACCEPT"'; do
+  repo="$(setup_repo "changes-bad-triage-$(printf '%s' "$defect" | cksum | cut -d' ' -f1)")"
+  run_review "$repo" 7 || fail "the complete first round failed"
+  add_first_triage "$repo"
+  triage_file="$repo/.agents/triage/feature-7-marker-review-01-triage.json"
+  jq "$defect" "$triage_file" >"$triage_file.tmp" && mv "$triage_file.tmp" "$triage_file"
+  printf 'the fix\n' >>"$repo/feature.txt"
+  rm -f "$repo.log.stdin"
+  run_review "$repo" 7 --changes || fail "a review of changes with an invalid triage failed"
+  grep -Fq "treat each one as to be fixed" "$repo.log.stdin" || fail "an invalid triage was not ignored: $defect"
+  if grep -Fq "Decision: ACCEPT" "$repo.log.stdin"; then fail "an invalid triage told the reviewer to skip a finding: $defect"; fi
+  grep -Fq "its decisions are not used" "$repo.out" || fail "the ignored triage was not reported: $defect"
+done
+
+# --changes needs a previous round with the same base whose content is still
+# known, and a change since then. Otherwise no review starts.
+expect_no_changes_review() {
+  local repo="$1"
+  local description="$2"
+  local message="$3"
+
+  rm -f "$repo.log"
+  if run_review "$repo" 7 --changes; then
+    cat "$repo.out" >&2
+    fail "a review of changes started although: $description"
+  fi
+  grep -Fq "$message" "$repo.out" || {
+    cat "$repo.out" >&2
+    fail "the refusal did not say: $message"
+  }
+  [[ ! -e "$repo.log" ]] || fail "a reviewer started although: $description"
+  [[ ! -e "$repo/.agents/reviews/feature-7-marker-review-02.json" ]] || fail "a review was stored although: $description"
+}
+
+repo="$(setup_repo changes-first-round)"
+expect_no_changes_review "$repo" "there is no previous round" "this is round 1"
+
+repo="$(setup_repo changes-nothing)"
+run_review "$repo" 7 || fail "the complete first round failed"
+expect_no_changes_review "$repo" "nothing changed" "nothing changed since round 1"
+
+printf 'the fix\n' >>"$repo/feature.txt"
+first="$repo/.agents/reviews/feature-7-marker-review-01.json"
+cp "$first" "$tmp/first.json"
+jq '.merge_base = "0000000000000000000000000000000000000000"' "$tmp/first.json" >"$first"
+expect_no_changes_review "$repo" "the base of the branch changed" "the base of the branch changed since round 1"
+jq '.reviewed_tree = "0123456789012345678901234567890123456789"' "$tmp/first.json" >"$first"
+expect_no_changes_review "$repo" "the earlier content is unknown" "is no longer available"
+
 # Invalid invocations fail before a reviewer starts.
 repo="$(setup_repo preconditions)"
 expect_no_review "$repo" "the branch belongs to another Issue" 8

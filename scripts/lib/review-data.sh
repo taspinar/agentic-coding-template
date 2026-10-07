@@ -202,8 +202,12 @@ review_artifact_errors() {
       "the file is not a review/v1 artifact"
     else
       unexpected(["base", "branch", "created_at", "findings", "head", "issue", "kind", "limitations",
-                  "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "verdict",
-                  "verification"]; "the review"),
+                  "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "scope",
+                  "verdict", "verification"]; "the review"),
+      (if .scope == null or .scope.kind == "full"
+          or (.scope.kind == "changes" and (.scope.since_round | positive_integer)
+              and (.scope.since_round < .round) and (.scope.base_tree | nonempty)) then empty
+       else "scope must be full, or changes since an earlier round with its reviewed tree" end),
       (if .verification == null
           or (.verification.status == "passed" and (.verification.verified_at | nonempty))
           or (.verification.status == "not-verified" and (.verification.reason | nonempty)) then empty
@@ -261,6 +265,9 @@ review_render_markdown() {
     (if .issue != null then "Issue: #\(.issue)\n\n" else "" end) +
     (if (.reviewed_paths | type) == "array" then "Reviewed files: \(.reviewed_paths | map("`\(.)`") | join(", "))\n\n" else "" end) +
     "Round: \(.round)\n\n" +
+    (if (.scope.kind // "full") == "changes"
+     then "Scope: ONLY the changes since round \(.scope.since_round); the rest of the feature was reviewed in earlier rounds\n\n"
+     else "" end) +
     "Base: \(.base) (\(.merge_base))\n\n" +
     "HEAD at review start: \(.head)\n\n" +
     "Reviewed tree: \(.reviewed_tree)\n\n" +
@@ -463,4 +470,28 @@ triage_render_markdown() {
     group("DEFER"; "Deferred") + "\n" +
     group("ACCEPT"; "Accepted")
   ' "$1"
+}
+
+# review_latest_triage <root> <review-json>
+# Prints the newest triage of a review, or nothing. The first triage has no
+# number (-triage.json); later ones are numbered (-triage-02.json).
+review_latest_triage() {
+  local base
+  local number
+  local best=""
+  local best_number=0
+  local candidate
+
+  base="$1/.agents/triage/$(basename "$2" .json)"
+  [[ ! -f "$base-triage.json" ]] || { best="$base-triage.json"; best_number=1; }
+  for candidate in "$base-triage-"[0-9][0-9].json; do
+    [[ -f "$candidate" ]] || continue
+    number="${candidate%.json}"
+    number="${number##*-}"
+    if ((10#$number > best_number)); then
+      best="$candidate"
+      best_number=$((10#$number))
+    fi
+  done
+  printf '%s' "$best"
 }
