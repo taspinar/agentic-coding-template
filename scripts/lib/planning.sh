@@ -4,10 +4,10 @@
 # Source this file after fingerprint.sh; do not execute it.
 
 # The planning scope: every document of the project planning. It names the
-# optional description and the decisions directory even when they are absent,
-# so adding, changing, or deleting any planning document changes its
-# fingerprint.
-PLANNING_SCOPE=(docs/PROJECT_DESCRIPTION.md docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions)
+# optional description, the change requests of later change cycles, and the
+# decisions directory even when they are absent, so adding, changing, or
+# deleting any planning document changes its fingerprint.
+PLANNING_SCOPE=(docs/PROJECT_DESCRIPTION.md docs/changes docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md docs/decisions)
 PLANNING_APPROVAL_FILE="docs/PLANNING_APPROVAL.md"
 
 # planning_approval_status <root> <scratch-dir>

@@ -198,15 +198,24 @@ if [[ "$removed" -gt 0 ]]; then
     echo "Update it by hand with: git pull --ff-only origin main"
   fi
 
-  # After a merged planning, the description that start-planning.sh copied is
-  # in the repository. Remove an untracked original that is byte-identical.
-  description="$primary/docs/PROJECT_DESCRIPTION.md"
-  if [[ "$removed_planning" -eq 1 && "$main_updated" -eq 1 && -f "$description" ]]; then
+  # After a merged planning, the description or the change request that
+  # start-planning.sh copied is in the repository. Remove an untracked
+  # original that is byte-identical to its copy.
+  if [[ "$removed_planning" -eq 1 && "$main_updated" -eq 1 ]]; then
+    copies=()
+    [[ ! -f "$primary/docs/PROJECT_DESCRIPTION.md" ]] || copies+=("docs/PROJECT_DESCRIPTION.md")
+    while IFS= read -r -d '' copy; do
+      copies+=("$copy")
+    done < <(git -C "$primary" ls-files -z -- 'docs/changes/*.md')
     while IFS= read -r -d '' candidate; do
-      if [[ -f "$primary/$candidate" && ! -L "$primary/$candidate" ]] && cmp -s "$primary/$candidate" "$description"; then
-        rm "$primary/$candidate"
-        echo "Removed $candidate: it is identical to docs/PROJECT_DESCRIPTION.md, which is now in the repository."
-      fi
+      [[ -f "$primary/$candidate" && ! -L "$primary/$candidate" ]] || continue
+      for copy in ${copies[@]+"${copies[@]}"}; do
+        if cmp -s "$primary/$candidate" "$primary/$copy"; then
+          rm "$primary/$candidate"
+          echo "Removed $candidate: it is identical to $copy, which is now in the repository."
+          break
+        fi
+      done
     done < <(git -C "$primary" ls-files --others --exclude-standard -z)
   fi
 

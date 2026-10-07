@@ -169,6 +169,7 @@ fingerprint="$(fingerprint_files "$root" "$tmp_work" "${PLANNING_SCOPE[@]}")" ||
   echo "Status: Approved"
   echo "Approved at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   echo "Planning branch: $branch"
+  [[ ! -f "$root/docs/changes/$name.md" ]] || echo "Change request: docs/changes/$name.md"
   echo "Final review: round $round, ${verdict//_/ }, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")"
   echo "Planning fingerprint: $fingerprint"
   echo
@@ -210,7 +211,11 @@ for path in "${PLANNING_SCOPE[@]}"; do
   [[ ! -e "$root/$path" ]] || to_add+=("$path")
 done
 echo "  git add ${to_add[*]} $PLANNING_APPROVAL_FILE"
-echo "  git commit -m \"Plan project bootstrap\""
+if [[ -f "$root/docs/changes/$name.md" ]]; then
+  echo "  git commit -m \"Plan change: $name\""
+else
+  echo "  git commit -m \"Plan project bootstrap\""
+fi
 echo "  git push -u origin \"$branch\""
 echo
 echo "Open the planning PR; $PLANNING_APPROVAL_FILE summarizes the review rounds and the"

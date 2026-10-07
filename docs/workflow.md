@@ -74,6 +74,45 @@ flowchart TD
   approval of exactly the reviewed documents. It refuses while an escalation
   of the latest round is unresolved and asks you to confirm earlier ones.
 
+### Changing an approved planning
+
+A planning that is approved and merged changes through a change cycle: the
+same loop as above, started from a change request instead of a project idea.
+
+```mermaid
+flowchart TD
+  request["Change request<br/>a short file in your own words"]
+  start["start-planning.sh NAME --change FILE<br/>planner changes only what is needed"]
+  grill["--grill: Project Grill asks about the change<br/>you approve changed requirements"]
+  loop["review-planning.sh, revise-planning.sh<br/>until the review passes"]
+  finish["finish-planning.sh<br/>approval records the change request"]
+  merged["Planning PR merged<br/>create-feature-issue.sh for a new feature"]
+
+  request --> start
+  start -. a requirement changes .-> grill
+  grill --> loop
+  start --> loop
+  loop --> finish --> merged
+
+  classDef plan fill:#E1F5EE,stroke:#0F6E56,color:#085041
+  class request,start,grill,loop,finish,merged plan
+```
+
+| Kind of change | What changes | Project Grill |
+|---|---|---|
+| Fits a feature that is not built yet | Only the feature Issue | No change cycle |
+| New feature within the approved requirements | Roadmap | No |
+| New or changed requirement | Requirements, and usually architecture, roadmap, and ADRs | Yes: `--grill`, about the change only |
+| Technical change only | Architecture and an ADR that supersedes the old one | No |
+
+- The change request is kept as `docs/changes/<name>.md`; the original
+  description is not touched.
+- Feature IDs stay stable, a feature that has an Issue is not rewritten, and
+  an ADR is superseded by a new one instead of removed. The script refuses a
+  removed feature ID and a deleted ADR; the reviewer checks the rest.
+- Between the change and its merged approval no new feature Issue can be
+  created. Features in progress continue.
+
 ### Feature phase
 
 All feature steps run in the feature worktree (`feature/<issue>-<slug>`).
@@ -186,6 +225,7 @@ tools.
 | Step | Agent: role (profile) | Your decision | Writes | Committed | `verify.sh` |
 |---|---|---|---|---|---|
 | `start-planning.sh` | `project-grill` (write), then `project-planner` (write) | Approve the requirements | Description, requirements, architecture, roadmap, ADRs | Yes, with the planning PR | No |
+| `start-planning.sh <name> --change <file>` | `project-planner` (write); with `--grill` first `project-grill` (write) | Approve changed requirements, with `--grill` | The change request; the roadmap, architecture, or ADRs; with `--grill` the requirements | Yes, with the planning PR | No |
 | `review-planning.sh` | `planning-reviewer` (read-only) | None | Planning review JSON and report | No | No |
 | `revise-planning.sh` | `project-planner` (read-only, then write) | Approve the decisions | Revision JSON and report; architecture, roadmap, ADRs | Documents yes, revision no | No |
 | `finish-planning.sh` | None | Confirm earlier escalations; approve the planning | `docs/PLANNING_APPROVAL.md` | Yes | No |
@@ -201,7 +241,8 @@ tools.
 
 | Step | Refuses when |
 |---|---|
-| `start-planning.sh` | The checkout is dirty (except an uncommitted description), the planning branch or worktree exists, or an agent leaves its file scope or commits |
+| `start-planning.sh` | The checkout is dirty (except an uncommitted description or change request), the planning branch or worktree exists, or an agent leaves its file scope or commits |
+| `start-planning.sh --change` | Also: `origin/main` has no approved planning, the change request name is taken, the planner changed nothing, removed or renumbered a feature ID, or deleted an ADR |
 | `review-planning.sh` | Not on a planning branch, a planning document is missing, or the requirements are not approved |
 | `revise-planning.sh` | The planning review is stale, or the planner leaves its file scope, commits, or changes nothing for adopted findings |
 | `finish-planning.sh` | No current review, a critical or major finding in the latest round, an undecided or unapplied finding, or an unresolved escalation |

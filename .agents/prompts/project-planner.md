@@ -63,6 +63,33 @@ ceremonial ADRs. `docs/decisions/README.md` may be updated only to index or
 explain the ADRs; do not create nested, non-Markdown, symlinked, or binary
 content in that directory.
 
+## Change cycle
+
+When the calling script says that this is a change cycle, a planning was
+approved before, and features of it may already be built. The human asks for
+a change, described in `docs/changes/<name>.md`. Then:
+
+- Read the change request, the approved requirements, and the existing
+  architecture, roadmap, and ADRs first. Change only what the change requires;
+  the architecture or the roadmap may stay as it is, but you must change at
+  least one of the architecture, the roadmap, and the ADRs.
+- If the change does not fit the approved requirements, stop and report that
+  the change cycle must be started with `--grill`. Do not plan around the
+  requirements.
+- Feature IDs are stable. Never remove, renumber, or reuse one. A new feature
+  gets the next unused ID. A feature that is no longer wanted stays in the
+  roadmap, marked as dropped with the name of the change request.
+- A feature that already has a GitHub Issue may be in progress or delivered;
+  check with `gh issue list --state all`. Do not rewrite its goal, scope, or
+  acceptance criteria. When the change alters behaviour it delivered, add a
+  new feature that changes it and name the earlier feature as a dependency.
+- An accepted ADR is a record. Do not delete it or rewrite its decision. To
+  change a decision, add a new ADR that states what it supersedes and why,
+  and change only the status of the old one to say which ADR supersedes it.
+- State in the architecture or the roadmap entry which change request it
+  comes from, so the change can be traced.
+- Do not modify the change request.
+
 ## Conflict handling
 
 The approved requirements are authoritative for product scope. If repository

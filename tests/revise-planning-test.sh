@@ -53,7 +53,7 @@ setup_repo() {
   jq -n '{
     schema: "review/v1", kind: "planning", issue: null, round: 1,
     branch: "planning/project-bootstrap", base: "origin/main", merge_base: "aaaa", head: "bbbb",
-    reviewed_tree: "", reviewed_paths: ["docs/PROJECT_DESCRIPTION.md", "docs/PROJECT_REQUIREMENTS.md", "docs/architecture.md", "docs/roadmap.md", "docs/decisions"],
+    reviewed_tree: "", reviewed_paths: ["docs/PROJECT_DESCRIPTION.md", "docs/changes", "docs/PROJECT_REQUIREMENTS.md", "docs/architecture.md", "docs/roadmap.md", "docs/decisions"],
     reviewer: {agent: "codex", model: "model-r"}, created_at: "2026-01-01T00:00:00Z",
     verdict: "CHANGES_REQUIRED", limitations: "",
     findings: [
