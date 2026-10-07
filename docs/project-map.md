@@ -9,6 +9,7 @@ What each part of the template is for. The workflow that connects them is in
 |---|---|
 | `AGENTS.md` | Durable working rules for every agent: source precedence, Definition of Done, boundaries, branch policy |
 | `.agents/agents.conf` | Provider and model per workflow role |
+| `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
 | `scripts/verify.conf` | The required verification checks of the project |
 | `scripts/verify-workflow.conf` | The self-tests of the workflow scripts and the workflow files they guard |
@@ -54,6 +55,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
+| `scripts/sync-template.sh` | Takes over the template's changes since the version the project has; never commits |
 | `scripts/worktree-setup.sh` | Optional, written by the project: prepares a new feature worktree before the agent starts, for example by copying a dependency cache |
 
 ## Script libraries

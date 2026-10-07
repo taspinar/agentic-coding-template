@@ -58,4 +58,12 @@ flowchart LR
    `./scripts/cleanup-worktree.sh 12`, or all merged worktrees at once with
    `./scripts/cleanup-worktree.sh --merged`.
 
+## Keep a project up to date
+
+A project is a copy of this template. To take over later improvements of the
+workflow, run `./scripts/sync-template.sh` in the project: it replaces the
+workflow files the project did not change, merges the ones it did, and leaves
+everything else alone. See "Taking over template changes" in
+[Development](docs/development.md).
+
 Rules for agents are in `AGENTS.md`; boundaries are in `.agents/policies/`.
