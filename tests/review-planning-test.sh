@@ -102,7 +102,7 @@ artifact="$repo/.agents/reviews/planning-project-bootstrap-review-01"
 [[ "$(jq -c '[.kind, .issue, .branch, .round]' "$artifact.json")" == '["planning",null,"planning/project-bootstrap",1]' ]] ||
   fail "the planning review metadata is wrong"
 [[ "$(jq -c '.reviewed_paths' "$artifact.json")" == \
-  '["docs/PROJECT_DESCRIPTION.md","docs/PROJECT_REQUIREMENTS.md","docs/architecture.md","docs/roadmap.md","docs/decisions"]' ]] ||
+  '["docs/PROJECT_DESCRIPTION.md","docs/changes","docs/PROJECT_REQUIREMENTS.md","docs/architecture.md","docs/roadmap.md","docs/decisions"]' ]] ||
   fail "the reviewed scope is wrong"
 grep -Fq "# ADR 001: Local storage" "$repo.log.stdin" || fail "the ADR was not supplied"
 grep -Fq -- "-Template." "$repo.log.stdin" || fail "the diff does not show replaced template content"
@@ -176,5 +176,31 @@ expect_no_review "$repo" "the requirements are not approved"
 repo="$(setup_repo missing-roadmap)"
 rm "$repo/docs/roadmap.md"
 expect_no_review "$repo" "the roadmap is missing"
+
+# In a change cycle the reviewer gets the change request of the branch and is
+# told that it reviews a change. The change request is part of what the review
+# covers, so changing it afterwards makes the review stale.
+repo="$(setup_repo change-cycle)"
+mkdir -p "$repo/docs/changes"
+printf 'Add a shopping list.\n' >"$repo/docs/changes/project-bootstrap.md"
+printf 'An older, unrelated change.\n' >"$repo/docs/changes/earlier.md"
+run_review "$repo" || {
+  cat "$repo.out" >&2
+  fail "the review of a change cycle failed"
+}
+grep -Fq "## docs/changes/project-bootstrap.md" "$repo.log.stdin" || fail "the change request was not supplied"
+grep -Fq "Add a shopping list." "$repo.log.stdin" || fail "the content of the change request was not supplied"
+grep -Fq "This is a change cycle" "$repo.log" || fail "the reviewer was not told that this is a change cycle"
+artifact="$repo/.agents/reviews/planning-change-cycle-review-01"
+review="$(ls "$repo"/.agents/reviews/planning-*-review-01.json)"
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || fail "a fresh change review is not current"
+printf 'And sort it by shop.\n' >>"$repo/docs/changes/project-bootstrap.md"
+status=0
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>&1) || status=$?
+[[ "$status" -eq 1 ]] || fail "changing the change request did not make the review stale"
+
+repo="$(setup_repo no-change-cycle)"
+run_review "$repo" || fail "a first planning review failed"
+if grep -Fq "This is a change cycle" "$repo.log"; then fail "a first planning was reviewed as a change cycle"; fi
 
 echo "review-planning tests passed"

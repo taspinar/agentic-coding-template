@@ -126,19 +126,22 @@ repo="$(setup_repo planning)"
 git -C "$repo" worktree add -q "$tmp/planning-wt" -b planning/project-bootstrap origin/main
 mkdir -p "$tmp/planning-wt/docs"
 printf 'The project idea.\n' >"$tmp/planning-wt/docs/PROJECT_DESCRIPTION.md"
-git -C "$tmp/planning-wt" add docs/PROJECT_DESCRIPTION.md
+mkdir -p "$tmp/planning-wt/docs/changes"
+printf 'Add a shopping list.\n' >"$tmp/planning-wt/docs/changes/shopping-list.md"
+git -C "$tmp/planning-wt" add docs/PROJECT_DESCRIPTION.md docs/changes
 git -C "$tmp/planning-wt" commit -qm "Plan project bootstrap"
 other="$tmp/merge-planning"
 git clone -q "$(git -C "$repo" remote get-url origin)" "$other"
 git -C "$other" config user.name "Cleanup Test"
 git -C "$other" config user.email "cleanup-test@example.com"
 mkdir -p "$other/docs"
-cp "$tmp/planning-wt/docs/PROJECT_DESCRIPTION.md" "$other/docs/PROJECT_DESCRIPTION.md"
+cp -R "$tmp/planning-wt/docs/." "$other/docs/"
 git -C "$other" add -A
 git -C "$other" commit -qm "Squash merge planning"
 git -C "$other" push -q origin main
 printf 'planning/project-bootstrap %s\n' "$(git -C "$tmp/planning-wt" rev-parse HEAD)" >>"$repo.merged"
 printf 'The project idea.\n' >"$repo/idea.md"
+printf 'Add a shopping list.\n' >"$repo/change.md"
 printf 'Something else.\n' >"$repo/notes.md"
 run_cleanup "$repo" planning/project-bootstrap || {
   cat "$repo.out" >&2
@@ -147,6 +150,8 @@ run_cleanup "$repo" planning/project-bootstrap || {
 [[ ! -e "$tmp/planning-wt" ]] || fail "the merged planning worktree was not removed"
 [[ -f "$repo/docs/PROJECT_DESCRIPTION.md" ]] || fail "main was not updated although only untracked files were present"
 [[ ! -e "$repo/idea.md" ]] || fail "the identical copy of the project description was not removed"
+[[ ! -e "$repo/change.md" ]] || fail "the identical copy of a merged change request was not removed"
+[[ -f "$repo/docs/changes/shopping-list.md" ]] || fail "the change request in the repository was removed"
 [[ -f "$repo/notes.md" ]] || fail "an unrelated untracked file was removed"
 grep -Fq "create-feature-issue.sh" "$repo.out" || fail "the next step after a planning cleanup was not printed"
 

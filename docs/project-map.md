@@ -22,6 +22,7 @@ What each part of the template is for. The workflow that connects them is in
 |---|---|---|
 | `README.md` | What the project is and how to start | You |
 | `docs/PROJECT_DESCRIPTION.md` | Your original project idea, unchanged | `start-planning.sh --description` |
+| `docs/changes/` | One change request per later change to the approved planning, unchanged | `start-planning.sh <name> --change` |
 | `docs/PROJECT_REQUIREMENTS.md` | The requirements you approved | Project Grill, approved by you |
 | `docs/architecture.md` | The current system design | Project planner |
 | `docs/roadmap.md` | Roadmap features with stable IDs (F01, F02, …) | Project planner |

@@ -53,7 +53,7 @@ add_review() {
   jq -n --argjson round "$2" --arg verdict "$3" --argjson findings "$4" '{
     schema: "review/v1", kind: "planning", issue: null, round: $round,
     branch: "planning/project-bootstrap", base: "origin/main", merge_base: "aaaa", head: "bbbb",
-    reviewed_tree: "", reviewed_paths: ["docs/PROJECT_DESCRIPTION.md", "docs/PROJECT_REQUIREMENTS.md", "docs/architecture.md", "docs/roadmap.md", "docs/decisions"],
+    reviewed_tree: "", reviewed_paths: ["docs/PROJECT_DESCRIPTION.md", "docs/changes", "docs/PROJECT_REQUIREMENTS.md", "docs/architecture.md", "docs/roadmap.md", "docs/decisions"],
     reviewer: {agent: "codex", model: "model-r"}, created_at: "2026-01-01T00:00:00Z",
     verdict: $verdict, limitations: "", findings: $findings
   }' >"$review"
@@ -236,5 +236,24 @@ repo="$(setup_repo not-planning)"
 add_review "$repo" 1 PASS "[]"
 git -C "$repo" switch -q -c feature/1-x
 expect_refused "$repo" "the branch is not a planning branch"
+
+# The approval of a change cycle records its change request, covers it, and
+# names the commit after the change.
+repo="$(setup_repo change-cycle)"
+mkdir -p "$repo/docs/changes"
+printf 'Add a shopping list.\n' >"$repo/docs/changes/project-bootstrap.md"
+printf '\n## F02 — Shopping list\n' >>"$repo/docs/roadmap.md"
+add_review "$repo" 1 PASS "[]"
+run_finish "$repo" y || {
+  cat "$repo.out" >&2
+  fail "approving a change cycle failed"
+}
+grep -Fqx "Change request: docs/changes/project-bootstrap.md" "$repo/docs/PLANNING_APPROVAL.md" ||
+  fail "the approval does not record the change request"
+grep -Fq 'git commit -m "Plan change: project-bootstrap"' "$repo.out" || fail "the commit is not named after the change"
+grep -Fq "docs/changes" "$repo.out" || fail "the commit step does not include the change request"
+[[ "$(check_status "$repo")" -eq 0 ]] || fail "a fresh change approval is not current"
+printf 'More.\n' >>"$repo/docs/changes/project-bootstrap.md"
+[[ "$(check_status "$repo")" -eq 1 ]] || fail "changing the change request did not invalidate the approval"
 
 echo "finish-planning tests passed"

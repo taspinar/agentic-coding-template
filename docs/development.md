@@ -164,7 +164,11 @@ The full interface is:
 
 ```text
 ./scripts/start-planning.sh [name] [--description <file>] [--agent <agent>] [--model <model>]
+./scripts/start-planning.sh <name> --change <file> [--grill] [--agent <agent>] [--model <model>]
 ```
+
+The second form changes a planning that is already approved; see "Changing an
+approved planning" below.
 
 If you already have a project description, pass it with `--description`:
 
@@ -311,6 +315,74 @@ planning PR needs a new review round and approval.
 Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,
 pushes, opens or merges a PR, or deploys.
+
+## Changing an approved planning
+
+A project changes while it runs: a new feature, a requirement that turns out
+different, another technical direction. A change to the planning documents
+goes through the same review and approval as the first planning, in its own
+planning worktree, while feature work continues in its own worktrees.
+
+Which route a change needs:
+
+| Kind of change | Example | What changes | Command |
+|---|---|---|---|
+| Fits a feature that is not built yet | Sorting within the recipe list of F03 | Only the feature Issue | None; edit the Issue |
+| New feature within the approved requirements | A shopping list the requirements already allow | Roadmap | `--change` |
+| New or changed requirement | Sharing between households when one household was agreed | Requirements, and usually architecture, roadmap, and ADRs | `--change --grill` |
+| Technical change only | From local storage to a server database | Architecture and an ADR that supersedes the old one | `--change` |
+
+Write the change down in a short file, in your own words, and start the cycle
+from a clean primary checkout:
+
+```bash
+./scripts/start-planning.sh shopping-list --change ~/notes/shopping-list.md
+```
+
+The name is required. It names the branch `planning/shopping-list` and the
+change request, which the script copies to `docs/changes/shopping-list.md`.
+The original `docs/PROJECT_DESCRIPTION.md` stays as it is. The script requires
+that the planning on `origin/main` has a current approval
+(`./scripts/finish-planning.sh --check`).
+
+Without `--grill` the requirements keep their approval and only the planner
+runs. It changes what the change requires: the roadmap, the architecture, an
+ADR, or several of them. With `--grill`, Project Grill runs first and asks
+about the change only. When it changes the requirements, the script shows the
+difference and asks for your approval before the planner starts; when it finds
+that the approved requirements already allow the change, it leaves them
+untouched and no approval is asked.
+
+A change keeps what exists:
+
+- **Feature IDs are stable.** A new feature gets the next unused ID. The
+  script refuses a result that removed or renumbered a feature; a feature that
+  is no longer wanted stays in the roadmap, marked as dropped.
+- **Features with an Issue are not rewritten.** They may be in progress or
+  delivered. A change to their behaviour is a new feature that depends on
+  them.
+- **ADRs are superseded, not removed.** A changed decision is a new ADR that
+  names what it supersedes; the old one only gets a status line that says so.
+  The script refuses a deleted ADR.
+
+After the session, continue as after the first planning, in the planning
+worktree:
+
+```bash
+./scripts/review-planning.sh
+./scripts/revise-planning.sh --review .agents/reviews/planning-shopping-list-review-01.json    # when the review has findings
+./scripts/finish-planning.sh
+```
+
+The reviewer receives the change request and the complete planning with the
+difference against `main`, and checks the rules above. The approval records
+the change request and covers it. Commit, push, and merge the planning pull
+request; `cleanup-worktree.sh planning/shopping-list` then removes the
+worktree and an untracked original of the change request.
+
+Every change to a planning document invalidates the planning approval until
+the new one is merged. In between, `create-feature-issue.sh` creates no new
+Issue. A feature that is already in progress is not affected.
 
 ## Creating a feature Issue from the roadmap
 

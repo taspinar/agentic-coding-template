@@ -45,6 +45,18 @@ fi
   echo "ARGS=$*"
 } >>"$MOCK_AGENT_LOG"
 
+if [[ "$prompt" == *"This is a change cycle"* ]]; then
+  echo "CHANGE=$phase" >>"$MOCK_AGENT_LOG"
+  [[ "$prompt" == *"docs/changes/"* ]] || exit 92
+  if [[ "$phase" == "grill" ]]; then
+    eval "${MOCK_CHANGE_GRILL:-:}"
+  else
+    grep -Fqx "Status: Approved" docs/PROJECT_REQUIREMENTS.md || exit 91
+    eval "${MOCK_CHANGE_PLANNER:-:}"
+  fi
+  exit 0
+fi
+
 if [[ "$phase" == "grill" ]]; then
   if [[ "${MOCK_GRILL_MODE:-success}" == "fail" ]]; then
     exit 41
@@ -886,5 +898,241 @@ if git -C "$description_invalid_repo" show-ref --verify --quiet refs/heads/plann
   fail "unusable project description created a branch"
 fi
 [[ ! -e "$tmp/description-invalid.log" ]] || fail "an agent started despite an unusable project description"
+
+# --- Change cycle ------------------------------------------------------------
+#
+# A change to a planning that was approved and merged before.
+
+# Records a planning approval that matches the planning documents in <dir>.
+record_planning_approval() {
+  local fingerprint
+
+  fingerprint="$(bash -c 'source "$1/scripts/lib/fingerprint.sh"; source "$1/scripts/lib/planning.sh"
+    scratch="$(mktemp -d)"; fingerprint_files "$1" "$scratch" "${PLANNING_SCOPE[@]}"; rm -rf "$scratch"' _ "$1")"
+  printf '# Planning Approval\n\nStatus: Approved\nPlanning fingerprint: %s\n' "$fingerprint" >"$1/docs/PLANNING_APPROVAL.md"
+}
+
+# Creates a repository whose origin/main holds an approved planning with one
+# feature, one ADR, and the original project description.
+setup_approved_repo() {
+  local label="$1"
+  local repo
+  local worktree="$tmp/${label}-repo-planning-project-bootstrap"
+
+  repo="$(setup_repo "$label")"
+  printf 'The original idea.\n' >"$tmp/$label-idea.md"
+  (
+    cd "$repo"
+    printf 'y\n' |
+      PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$tmp/$label-bootstrap.log" \
+      ./scripts/start-planning.sh --agent codex --model astra --description "$tmp/$label-idea.md" >/dev/null 2>&1
+  ) || fail "the first planning of $label failed"
+  mkdir -p "$worktree/docs/decisions"
+  printf '# ADR 001: Local component\n\n## Status\n\nAccepted.\n' >"$worktree/docs/decisions/001-local-component.md"
+  record_planning_approval "$worktree"
+  git -C "$worktree" add -A
+  git -C "$worktree" -c user.name="Planning Test" -c user.email="planning-test@example.com" \
+    commit -qm "Plan project bootstrap"
+  git -C "$worktree" push -q origin HEAD:main
+  git -C "$repo" pull -q
+  git -C "$repo" cat-file -e origin/main:docs/decisions/001-local-component.md ||
+    fail "the approved planning of $label has no ADR"
+  printf '%s\n' "$repo"
+}
+
+change_request="$tmp/change-request.md"
+printf 'Add a shopping list that is filled from the recipes.\n' >"$change_request"
+add_feature='printf "\n## F02 — Shopping list\n\n- Goal: list what to buy.\n- Dependencies: F01.\n" >>docs/roadmap.md'
+
+# run_change <repo> <log-label> <stdin> <name> [option...]
+run_change() {
+  local repo="$1"
+  local label="$2"
+  local answer="$3"
+  local name="$4"
+
+  shift 4
+  (
+    cd "$repo"
+    printf '%s' "$answer" |
+      PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$tmp/$label.log" \
+      ./scripts/start-planning.sh "$name" --agent codex --model astra "$@"
+  ) >"$tmp/$label.out" 2>&1
+}
+
+phases() {
+  awk -F= '/^PHASE=/ { print $2 }' "$1" | paste -sd, -
+}
+
+# A new feature that fits the requirements changes only the roadmap. Only the
+# planner runs, the requirements keep their approval, and the change request
+# gets its own file next to the original description.
+change_repo="$(setup_approved_repo change)"
+approved_requirements="$(git -C "$change_repo" show origin/main:docs/PROJECT_REQUIREMENTS.md)"
+MOCK_CHANGE_PLANNER="$add_feature" run_change "$change_repo" change-roadmap "" shopping-list --change "$change_request" || {
+  cat "$tmp/change-roadmap.out" >&2
+  fail "a roadmap-only change failed"
+}
+change_worktree="$tmp/change-repo-planning-shopping-list"
+[[ "$(git -C "$change_worktree" branch --show-current)" == "planning/shopping-list" ]] ||
+  fail "the change cycle did not get its own planning branch"
+[[ "$(phases "$tmp/change-roadmap.log")" == "planner" ]] || fail "a change without --grill did not run only the planner"
+grep -Fq "Planning change cycle completed." "$tmp/change-roadmap.out" || fail "the change cycle was not reported as completed"
+cmp -s "$change_request" "$change_worktree/docs/changes/shopping-list.md" ||
+  fail "the change request was not copied to docs/changes/"
+grep -Fqx "The original idea." "$change_worktree/docs/PROJECT_DESCRIPTION.md" ||
+  fail "the change cycle overwrote the original project description"
+[[ "$(cat "$change_worktree/docs/PROJECT_REQUIREMENTS.md")" == "$approved_requirements" ]] ||
+  fail "a change without --grill touched the approved requirements"
+git -C "$change_worktree" diff --quiet -- docs/architecture.md || fail "a roadmap-only change touched the architecture"
+grep -Fq "## F02 — Shopping list" "$change_worktree/docs/roadmap.md" || fail "the new feature is not in the roadmap"
+
+# A technical change may leave the roadmap as it is.
+MOCK_CHANGE_PLANNER='printf "\nA server component stores the data.\n" >>docs/architecture.md; printf "# ADR 002: Server storage\n\nSupersedes ADR 001.\n" >docs/decisions/002-server-storage.md' \
+  run_change "$change_repo" change-architecture "" server-storage --change "$change_request" || {
+  cat "$tmp/change-architecture.out" >&2
+  fail "an architecture-only change failed"
+}
+git -C "$tmp/change-repo-planning-server-storage" diff --quiet -- docs/roadmap.md ||
+  fail "an architecture-only change touched the roadmap"
+
+# The planner must produce the change, keep every feature ID, keep the ADRs,
+# and leave the requirements and the change request alone.
+expect_change_rejected() {
+  local name="$1"
+  local planner_action="$2"
+  local message="$3"
+
+  if MOCK_CHANGE_PLANNER="$planner_action" run_change "$change_repo" "rejected-$name" "" "$name" --change "$change_request"; then
+    cat "$tmp/rejected-$name.out" >&2
+    fail "a change cycle was accepted although: $name"
+  fi
+  grep -Fq "$message" "$tmp/rejected-$name.out" || {
+    cat "$tmp/rejected-$name.out" >&2
+    fail "the rejection of '$name' did not say: $message"
+  }
+}
+
+expect_change_rejected nothing-planned ":" "the change was not planned"
+expect_change_rejected feature-removed 'printf "# Roadmap\n\n## F02 — Shopping list\n" >docs/roadmap.md' \
+  "removed or renumbered roadmap feature(s): F01"
+expect_change_rejected feature-renumbered "sed 's/## F01 /## F03 /' docs/roadmap.md >roadmap.tmp && mv roadmap.tmp docs/roadmap.md" \
+  "removed or renumbered roadmap feature(s): F01"
+expect_change_rejected adr-deleted "$add_feature; rm docs/decisions/001-local-component.md" \
+  "deleted an existing decision artifact"
+expect_change_rejected requirements-edited "$add_feature; printf 'More.\n' >>docs/PROJECT_REQUIREMENTS.md" \
+  "modified the approved requirements artifact"
+expect_change_rejected request-edited "$add_feature; printf 'More.\n' >>docs/changes/request-edited.md" \
+  "exceeded its allowed file scope"
+
+# A feature ID that only appears inside a code block is not a feature.
+MOCK_CHANGE_PLANNER="$add_feature; printf '\n\`\`\`text\n## F09 — Example\n\`\`\`\n' >>docs/roadmap.md" \
+  run_change "$change_repo" change-fenced "" fenced --change "$change_request" || fail "a roadmap with a fenced example failed"
+
+# With --grill, Project Grill may change the requirements. They return to
+# Draft, the script shows the difference, and after approval the planner runs
+# on the newly approved requirements.
+change_requirements='sed -e "s/^Status: Approved$/Status: Draft/" -e "s/^Approved at: .*/Approved at: Not approved/" -e "s/^One complete vertical slice.$/One complete vertical slice, and a shopping list./" docs/PROJECT_REQUIREMENTS.md >requirements.tmp && mv requirements.tmp docs/PROJECT_REQUIREMENTS.md'
+MOCK_CHANGE_GRILL="$change_requirements" MOCK_CHANGE_PLANNER="$add_feature" \
+  run_change "$change_repo" change-grill "y
+" with-grill --change "$change_request" --grill || {
+  cat "$tmp/change-grill.out" >&2
+  fail "a change cycle with a requirement change failed"
+}
+[[ "$(phases "$tmp/change-grill.log")" == "grill,planner" ]] || fail "--grill did not run Project Grill before the planner"
+grep -Fq "+One complete vertical slice, and a shopping list." "$tmp/change-grill.out" ||
+  fail "the change to the requirements was not shown before the approval"
+grill_worktree="$tmp/change-repo-planning-with-grill"
+grep -Fqx "Status: Approved" "$grill_worktree/docs/PROJECT_REQUIREMENTS.md" || fail "the changed requirements were not approved"
+grep -Fqx "One complete vertical slice, and a shopping list." "$grill_worktree/docs/PROJECT_REQUIREMENTS.md" ||
+  fail "the approved requirements lack the change"
+[[ "$(grep '^Approved at: ' "$grill_worktree/docs/PROJECT_REQUIREMENTS.md")" != "$(printf '%s\n' "$approved_requirements" | grep '^Approved at: ')" ]] ||
+  fail "the changed requirements kept their old approval"
+
+# Declining the changed requirements stops before the planner.
+if MOCK_CHANGE_GRILL="$change_requirements" MOCK_CHANGE_PLANNER="$add_feature" \
+  run_change "$change_repo" change-declined "n
+" declined --change "$change_request" --grill; then
+  fail "declined requirement changes returned success"
+fi
+[[ "$(phases "$tmp/change-declined.log")" == "grill" ]] || fail "the planner ran although the changed requirements were declined"
+
+# When Project Grill leaves the requirements as they are, no approval is
+# asked: the run has no input to answer with.
+MOCK_CHANGE_PLANNER="$add_feature" run_change "$change_repo" change-fits "" fits --change "$change_request" --grill || {
+  cat "$tmp/change-fits.out" >&2
+  fail "a change that needs no requirement change failed"
+}
+[[ "$(phases "$tmp/change-fits.log")" == "grill,planner" ]] || fail "the planner did not run after an unchanged Project Grill"
+grep -Fq "no new approval is needed" "$tmp/change-fits.out" || fail "the unchanged requirements were not reported"
+[[ "$(cat "$tmp/change-repo-planning-fits/docs/PROJECT_REQUIREMENTS.md")" == "$approved_requirements" ]] ||
+  fail "unchanged requirements were touched"
+
+# Project Grill may not change anything but the requirements in a change cycle.
+if MOCK_CHANGE_GRILL='printf "More.\n" >>docs/changes/grill-scope.md' \
+  run_change "$change_repo" change-grill-scope "" grill-scope --change "$change_request" --grill; then
+  fail "Project Grill changed the change request"
+fi
+
+# Invalid change cycles fail before a branch or worktree is created.
+expect_change_refused() {
+  local description="$1"
+  local name="$2"
+  local repo="$3"
+
+  shift 3
+  if run_change "$repo" refused "" "$name" "$@"; then
+    fail "a change cycle was started although: $description"
+  fi
+  [[ ! -e "$tmp/refused.log" ]] || fail "an agent started although: $description"
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/planning/$name"; then
+    fail "a branch was created although: $description"
+  fi
+}
+
+: >"$tmp/empty-change.md"
+expect_change_refused "the change request does not exist" missing "$change_repo" --change "$tmp/no-such-change.md"
+expect_change_refused "the change request is empty" empty "$change_repo" --change "$tmp/empty-change.md"
+expect_change_refused "a description was given too" both "$change_repo" --change "$change_request" --description "$change_request"
+fresh_repo="$(setup_repo change-unapproved)"
+expect_change_refused "no planning was approved yet" early "$fresh_repo" --change "$change_request"
+
+# The planning on origin/main must have a current approval: a change cycle
+# does not start from a planning that was never approved, or that changed
+# after its approval. Nothing is left behind.
+expect_no_current_approval() {
+  local label="$1"
+  local repo="$2"
+
+  expect_change_refused "$label" late "$repo" --change "$change_request"
+  grep -Fq "has no current approval" "$tmp/refused.out" || fail "the refusal did not name the approval: $label"
+  [[ ! -e "${repo}-planning-late" ]] || fail "a worktree was left behind although: $label"
+}
+
+unapproved_repo="$(setup_approved_repo unapproved-planning)"
+git -C "$unapproved_repo" rm -q docs/PLANNING_APPROVAL.md
+git -C "$unapproved_repo" commit -qm "Drop the approval"
+git -C "$unapproved_repo" push -q origin main
+expect_no_current_approval "the planning has no approval" "$unapproved_repo"
+
+stale_repo="$(setup_approved_repo stale-planning)"
+printf '\nChanged after the approval.\n' >>"$stale_repo/docs/roadmap.md"
+git -C "$stale_repo" commit -qam "Change the roadmap without approval"
+git -C "$stale_repo" push -q origin main
+expect_no_current_approval "the planning changed after its approval" "$stale_repo"
+if (cd "$change_repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/start-planning.sh --agent codex --model astra --change "$change_request") >/dev/null 2>&1; then
+  fail "a change cycle without a name was accepted"
+fi
+if (cd "$change_repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/start-planning.sh again --agent codex --model astra --grill) >/dev/null 2>&1; then
+  fail "--grill without --change was accepted"
+fi
+
+# A change request name that origin/main already has is refused.
+git -C "$change_worktree" add -A
+git -C "$change_worktree" -c user.name="Planning Test" -c user.email="planning-test@example.com" commit -qm "Plan change"
+git -C "$change_worktree" push -q origin HEAD:main
+git -C "$change_worktree" switch -q --detach
+git -C "$change_repo" branch -q -D planning/shopping-list
+expect_change_refused "the change request name is taken" shopping-list "$change_repo" --change "$change_request"
 
 echo "start-planning tests passed"

@@ -54,6 +54,27 @@ has no requirements. Record genuinely unresolved decisions under
 Any substantive change returns the artifact to Draft status. Approval is
 recorded later by `scripts/start-planning.sh`, never by this agent.
 
+## Change cycle
+
+When the calling script says that this is a change cycle, the requirements
+were approved before and the human asks for a change, described in
+`docs/changes/<name>.md`. Then:
+
+- Read the change request and the approved requirements first.
+- Ask only about the change: what it adds, alters, or removes, and what it
+  means for the sections it touches. Do not reopen decisions that the change
+  does not affect.
+- Change only the sections the change requires, and keep every other line of
+  the approved requirements as it is. Record the decision under
+  `## Major product decisions`, with the name of the change request.
+- When you changed anything, set the status lines back to `Status: Draft` and
+  `Approved at: Not approved`; the script asks the human to approve the
+  changed requirements.
+- When the change turns out to need no requirement change, because the
+  approved requirements already allow it, leave the file exactly as it is and
+  say so. The script then continues with the planner without a new approval.
+- Do not modify the change request.
+
 ## Boundaries
 
 During Project Grill:

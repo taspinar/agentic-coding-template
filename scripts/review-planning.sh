@@ -53,6 +53,10 @@ scope=("${PLANNING_SCOPE[@]}")
 # The documents whose contents the reviewer receives.
 paths=()
 [[ ! -f "$root/docs/PROJECT_DESCRIPTION.md" ]] || paths+=(docs/PROJECT_DESCRIPTION.md)
+# A change cycle has a change request named after its branch.
+change_request="docs/changes/$name.md"
+[[ -f "$root/$change_request" ]] || change_request=""
+[[ -z "$change_request" ]] || paths+=("$change_request")
 paths+=(docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md)
 while IFS= read -r decision; do
   paths+=("docs/decisions/$decision")
@@ -124,6 +128,15 @@ prompt="Read and follow .agents/prompts/planning-reviewer.md.
 
 Standard input contains the planning documents of $branch and their diff
 against ${base_ref}. Review those documents."
+
+if [[ -n "$change_request" ]]; then
+  prompt+="
+
+This is a change cycle for a planning that was approved before. The human's
+change request is $change_request. Review the change, which is the diff, in
+the context of the complete planning, and apply the \"Change cycle\" checks
+of your contract."
+fi
 
 if [[ -n "$previous_review" ]]; then
   prompt+="
