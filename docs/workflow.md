@@ -221,5 +221,6 @@ tools.
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |
+| `sync-template.sh` | To take over changes of the workflow template: replaces unchanged files, merges changed ones, reports conflicts, and records the template version |
 | `update-issue-with-plan.sh <issue> <plan>` | To link an optional feature plan in `.agents/plans/` to its Issue |
 | `cleanup-worktree.sh <issue>`, `planning/<name>`, or `--merged` | After a merge, from the primary checkout: removes the worktree and its branch once GitHub reports the pull request as merged, and updates `main` |

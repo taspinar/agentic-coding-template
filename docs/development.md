@@ -664,6 +664,56 @@ The helper manages one delimited plan block in the Issue body. Re-running it
 updates that block instead of appending duplicates. It stores only the
 repository-relative plan path; the detailed plan remains in `.agents/plans/`.
 
+## Taking over template changes
+
+A project is created as a copy of the template and does not receive later
+template changes by itself. `scripts/sync-template.sh` takes them over:
+
+```bash
+./scripts/sync-template.sh
+```
+
+Run it from the primary checkout without uncommitted changes to tracked
+files. On `main` it first creates a branch `fix/sync-template-<commit>`. It
+fetches the template named in `.agents/template.conf`, lists the template's
+commits since the version the project has, and applies them to the files
+listed under `paths:` in the template's version of that file. Every other
+file is the project's own and is never touched. To keep a listed file as the
+project's own, add `:(exclude)<path>` to `paths:` in the project's
+`.agents/template.conf`; the project's exclusions always apply.
+
+| Situation | What the script does |
+|---|---|
+| The project did not change the file | Replaces it with the template's version |
+| Both changed it | Merges the two; a conflict is marked in the file and reported |
+| The template added the file | Adds it |
+| The template removed the file | Reports it; the project decides whether to delete it |
+| The template changed a file the project deleted | Reports it and leaves it out |
+| The template changed only the executable bit | Applies it to the project's file |
+| The file, or a directory above it, is a symbolic link in the project | Reports it and writes nothing |
+
+The script records the template commit the project now has in
+`.agents/template.conf` and prints the next steps: resolve conflicts, run
+`./scripts/verify.sh --all`, commit, and open a pull request. It never commits
+or pushes, and exits 1 when it left a conflict. Running it again when nothing
+changed in the template reports that the project is up to date.
+
+A project that has no recorded version yet, because it was created before
+this script existed or has never been synced, gets one on the first run: the
+script uses the template commit that has the most files identical to the
+project's, and says which one. When several versions match equally well and
+differ in template files, it does not guess, because the newest would skip a
+template change to a file the project changed too: it lists them and asks for
+`--from <commit>`, where the oldest is the safe choice. A project that is
+already up to date only gets its version recorded. `--to <ref>` selects
+another template version than its default branch, and
+`--template <url-or-path>` another location, for example a fork; that location
+is recorded, so the next sync continues from it.
+
+A template change can need a decision in the project, such as a new check or
+a changed step. Read the listed commits before merging the result; the sync
+only takes over files.
+
 ## Lifecycle
 
 The complete lifecycle, with diagrams and a reference table per step, is in
