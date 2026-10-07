@@ -6,27 +6,174 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/verification.sh"
 
-agent_parse_args "$@"
-if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 3 ]]; then
+usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>]"
+  echo "       $0 <issue-number> --resume [--agent <agent>] [--model <model>]"
   echo
   echo "The slug names the branch (feature/<issue>-<slug>) and the worktree. Without"
   echo "one, it is derived from the Issue title. The agent and model come from role"
   echo "'implementer' in .agents/agents.conf unless --agent and --model are given."
+  echo
+  echo "--resume continues interrupted work: it starts a new implementer session in"
+  echo "the existing worktree of the Issue, which reads the handoff note and the"
+  echo "state of the worktree instead of an earlier conversation."
   echo
   echo "Examples:"
   echo "  $0 3"
   echo "  $0 3 site-skeleton"
   echo "  $0 3 site-skeleton develop"
   echo "  $0 4 multiplayer --agent claude --model fable"
+  echo "  $0 4 --resume"
   exit 1
-fi
+}
+
+resume=0
+arguments=()
+for argument in "$@"; do
+  if [[ "$argument" == "--resume" ]]; then
+    resume=1
+  else
+    arguments+=("$argument")
+  fi
+done
+
+agent_parse_args ${arguments[@]+"${arguments[@]}"}
+[[ "${#AGENT_POSITIONAL[@]}" -ge 1 && "${#AGENT_POSITIONAL[@]}" -le 3 ]] || usage
+[[ "$resume" -eq 0 || "${#AGENT_POSITIONAL[@]}" -eq 1 ]] || usage
 
 issue="${AGENT_POSITIONAL[0]}"
 slug="${AGENT_POSITIONAL[1]:-}"
 base="${AGENT_POSITIONAL[2]:-main}"
 
 [[ "$issue" =~ ^[0-9]+$ ]] || agent_fail "issue number must be numeric: $issue"
+
+# run_session <worktree> <prompt>: runs the implementer and reports the result.
+run_session() {
+  local session_worktree="$1"
+  local agent_status=0
+
+  echo "Starting $agent ($model)..."
+  echo
+  agent_run write "$agent" "$model" "$session_worktree" "$2" || agent_status=$?
+
+  # A verification record from inside the agent session is not relied on;
+  # review-feature.sh verifies the result itself.
+  verification_forget "$session_worktree"
+
+  echo
+  if [[ "$agent_status" -ne 0 ]]; then
+    echo "Error: the implementation agent exited with status $agent_status." >&2
+    echo "The feature worktree is preserved at: $session_worktree" >&2
+    echo "Continue the work with: $0 $issue --resume" >&2
+    exit "$agent_status"
+  fi
+  echo "The implementation session ended. Nothing is committed yet."
+  echo
+  echo "Next, in the feature worktree:"
+  echo "  cd \"$session_worktree\""
+  echo "  ./scripts/review-feature.sh $issue    # runs the verification first"
+  echo
+  echo "When the work is not complete, continue it with: $0 $issue --resume"
+}
+
+if [[ "$resume" -eq 1 ]]; then
+  repo_root="$(git rev-parse --show-toplevel)"
+  # The worktree whose branch belongs to the Issue; the primary checkout
+  # counts when the feature was developed there.
+  found="$(git -C "$repo_root" worktree list --porcelain |
+    awk -v prefix="refs/heads/feature/${issue}-" '
+      /^worktree / { path = substr($0, 10) }
+      /^branch / { if (index($2, prefix) == 1) print path }')"
+  [[ -n "$found" ]] ||
+    agent_fail "no worktree is on a branch feature/${issue}-*; there is nothing to resume. Start the feature with: $0 $issue"
+  [[ "$(printf '%s\n' "$found" | grep -c .)" -eq 1 ]] ||
+    agent_fail "more than one worktree is on a branch feature/${issue}-*: $(printf '%s' "$found" | tr '\n' ' ')"
+  worktree="$found"
+  branch="$(git -C "$worktree" branch --show-current)"
+  # The base the feature was created from; 'main' for a feature that was
+  # created before the base was recorded.
+  resume_base="$(git -C "$worktree" config --get "branch.$branch.workflow-base" || true)"
+  resume_base="${resume_base:-main}"
+
+  agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+  agent="$AGENT_PROVIDER"
+  model="$AGENT_MODEL"
+
+  echo "Resuming feature:"
+  echo "  Issue:    #$issue"
+  echo "  Branch:   $branch"
+  echo "  Base:     $resume_base"
+  echo "  Worktree: $worktree"
+  echo "  Agent:    $agent"
+  echo "  Model:    $model"
+
+  # The note the earlier session kept. Files that changed after it was last
+  # written are named, because the note does not describe them.
+  note_relative=".agents/handoffs/$issue.md"
+  note="$worktree/$note_relative"
+  if [[ -f "$note" ]] && grep -q '[^[:space:]]' "$note"; then
+    newer=""
+    # NUL-separated records, so any file name is read as it is. A rename or
+    # copy is followed by a record with the original path, which is skipped.
+    # A deleted file has no time to compare, so it is named as well.
+    skip_origin=0
+    while IFS= read -r -d '' record; do
+      if [[ "$skip_origin" -eq 1 ]]; then
+        skip_origin=0
+        continue
+      fi
+      state="${record:0:2}"
+      path="${record:3}"
+      [[ "$state" != *R* && "$state" != *C* ]] || skip_origin=1
+      if [[ ! -e "$worktree/$path" && ! -L "$worktree/$path" ]]; then
+        newer+="- $path (deleted)"$'\n'
+      elif [[ "$worktree/$path" -nt "$note" ]]; then
+        newer+="- $path"$'\n'
+      fi
+    done < <(git -C "$worktree" status --porcelain -z --untracked-files=all)
+    echo "  Handoff:  $note_relative${newer:+ (older than some changed files)}"
+    note_prompt="The earlier session kept a handoff note: $note_relative. Read it first."
+    if [[ -n "$newer" ]]; then
+      note_prompt+="
+The note is STALE in part: these files changed after it was last written, so
+it does not describe them. Trust the files, not the note, where they differ:
+${newer%$'\n'}"
+    fi
+  else
+    echo "  Handoff:  none"
+    note_prompt="The earlier session left no handoff note in $note_relative, so the state of the
+work has to be read from the repository."
+  fi
+  echo
+
+  RESUME_PROMPT="Read and follow .agents/prompts/implementer.md.
+
+You are resuming interrupted work on GitHub Issue #${issue} in this worktree.
+An earlier session ended before the work was complete. You do not have its
+conversation.
+
+${note_prompt}
+
+Before you change anything, establish where the work stands:
+- Read GitHub Issue #${issue} using the GitHub CLI, and the matching
+  .agents/plans/${issue}-*.md if one exists.
+- Inspect 'git status' and the diff against the base of this branch
+  (git merge-base HEAD origin/${resume_base}), including untracked files.
+- If .agents/reviews/ or .agents/triage/ holds a review or an approved triage
+  of this branch, the interrupted session may have been resolving its FIX_NOW
+  findings; read the latest one.
+- Check what a handoff note claims against the files before relying on it.
+
+Then tell the human in a few lines what is done and what remains, and
+continue. Do not redo work that is complete; verify it instead.
+
+Work only on this issue.
+
+Do not commit, push, merge, or deploy."
+
+  run_session "$worktree" "$RESUME_PROMPT"
+  exit 0
+fi
 
 if [[ -z "$slug" ]]; then
   # Derive the slug from the Issue title: without a leading feature ID, in
@@ -93,6 +240,8 @@ fi
 
 # Create isolated worktree from latest remote base.
 git worktree add "$worktree" -b "$branch" "origin/$base"
+# Remember the base for a session that resumes the work.
+git -C "$worktree" config "branch.$branch.workflow-base" "$base"
 
 echo
 echo "Created feature worktree:"
@@ -131,24 +280,4 @@ Work only on this issue.
 
 Do not commit, push, merge, or deploy."
 
-echo "Starting $agent ($model)..."
-echo
-
-agent_status=0
-agent_run write "$agent" "$model" "$worktree" "$START_PROMPT" || agent_status=$?
-
-# A verification record from inside the agent session is not relied on;
-# review-feature.sh verifies the result itself.
-verification_forget "$worktree"
-
-echo
-if [[ "$agent_status" -ne 0 ]]; then
-  echo "Error: the implementation agent exited with status $agent_status." >&2
-  echo "The feature worktree is preserved at: $worktree" >&2
-  exit "$agent_status"
-fi
-echo "The implementation session ended. Nothing is committed yet."
-echo
-echo "Next, in the feature worktree:"
-echo "  cd \"$worktree\""
-echo "  ./scripts/review-feature.sh $issue    # runs the verification first"
+run_session "$worktree" "$START_PROMPT"

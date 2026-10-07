@@ -39,10 +39,10 @@ If a material conflict remains, stop and report it.
 - Never access or mutate production data, secrets, IAM, or production infrastructure without explicit human approval.
 - Never broaden the task merely to make implementation easier.
 - One writing agent per worktree. Parallel writers require separate worktrees/branches.
-- After three materially different failed repair attempts, stop and create/update a diagnostic handoff.
+- After three materially different failed repair attempts, stop and record the attempts, the evidence, and the next recommended step in the handoff note of the Issue (`.agents/handoffs/<issue-number>.md`).
 
 ## Context freshness
-When resuming work, compare the plan/handoff base commit with current repository state. Revalidate assumptions before continuing and update stale artifacts.
+When resuming work, check the plan and the handoff note against the current repository state: the files are the truth, the note is a summary. Revalidate assumptions before continuing and update stale artifacts.
 
 ## Branch and worktree policy
 

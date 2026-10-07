@@ -252,6 +252,7 @@ fi
 
 if [[ "$agent_status" -ne 0 ]]; then
   echo "Error: implementation agent exited with status $agent_status."
+  echo "Continue the fixes with ./scripts/start-feature.sh $source_issue --resume, then review again."
   if [[ "$verification_status" -ne 0 ]]; then
     echo "Repository verification also failed with status $verification_status."
   fi

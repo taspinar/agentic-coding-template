@@ -357,6 +357,7 @@ The full interface is:
 
 ```text
 ./scripts/start-feature.sh <issue> [slug] [base-branch] [--agent <agent>] [--model <model>]
+./scripts/start-feature.sh <issue> --resume [--agent <agent>] [--model <model>]
 ```
 
 The slug names the branch and the worktree. Without one, the script derives it
@@ -384,6 +385,38 @@ primary="$1"
 
 The script is optional and only saves time: when it fails, the script reports
 that and starts the agent anyway.
+
+### Resuming an interrupted feature
+
+A session can end before the work is complete: a closed terminal, a usage
+limit, an agent that got stuck. Continue with:
+
+```bash
+./scripts/start-feature.sh 12 --resume
+```
+
+Run it from any checkout of the repository. It finds the worktree whose branch
+is `feature/12-*` and starts a new implementer session there; it creates
+nothing. `--agent` and `--model` let another provider or model continue.
+
+The new session does not have the earlier conversation. It is told to read
+the state from the repository: the Issue, the plan, `git status` and the diff
+against the base, the latest review or triage if the interrupted session was
+resolving findings, and the handoff note.
+
+The handoff note is `.agents/handoffs/<issue>.md`, a working file that Git
+ignores. The implementer keeps it while it works, updated after each completed
+part and not only at the end, with what is done, what is in progress, what
+remains, and what was tried and rejected. A session that ends abruptly may not
+have updated it, so the script compares it with the files: changed files that
+are newer than the note are named to the new session as not described by it.
+Resuming also works without a note.
+
+After a resumed session, continue as after `start-feature.sh`: review, triage,
+fixes. When the interrupted session was `apply-triage.sh`, the partial fixes
+have made its review stale; resume, then run `review-feature.sh` again.
+
+### Reviewing a feature
 
 After the implementation agent exits, enter the feature worktree. When
 independent review is required by `.agents/policies/autonomy.md`, run it before

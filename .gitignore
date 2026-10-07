@@ -24,6 +24,10 @@ credentials*.json
 !.agents/reviews/.gitkeep
 .agents/triage/*
 !.agents/triage/.gitkeep
+# Continuation notes of a feature in progress, kept by the implementer for a
+# session that resumes the work.
+.agents/handoffs/*
+!.agents/handoffs/.gitkeep
 # Steps a feature needs from the human, written by the implementer. They are
 # copied into the commit message and the pull request.
 .agents/manual-steps/
