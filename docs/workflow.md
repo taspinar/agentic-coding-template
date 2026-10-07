@@ -104,6 +104,7 @@ flowchart TD
 | New feature within the approved requirements | Roadmap | No |
 | New or changed requirement | Requirements, and usually architecture, roadmap, and ADRs | Yes: `--grill`, about the change only |
 | Technical change only | Architecture and an ADR that supersedes the old one | No |
+| Small technical amendment | Architecture and ADRs only | No change cycle: `finish-planning.sh --amend`, your approval without a review |
 
 - The change request is kept as `docs/changes/<name>.md`; the original
   description is not touched.
@@ -261,6 +262,7 @@ tools.
 | `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
+| `finish-planning.sh --amend "<reason>"` | To approve a change to the architecture and the ADRs only, on a `planning/<name>` branch, without a review round. Refuses any other planning change and a planning without a current approval |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |
 | `start-feature.sh <issue> --resume` | To continue a feature whose session ended early: a new implementer session in the existing worktree, which reads the handoff note and the state of the worktree |
 | `sync-template.sh` | To take over changes of the workflow template: replaces unchanged files, merges changed ones, reports conflicts, and records the template version |

@@ -331,6 +331,7 @@ Which route a change needs:
 | New feature within the approved requirements | A shopping list the requirements already allow | Roadmap | `--change` |
 | New or changed requirement | Sharing between households when one household was agreed | Requirements, and usually architecture, roadmap, and ADRs | `--change --grill` |
 | Technical change only | From local storage to a server database | Architecture and an ADR that supersedes the old one | `--change` |
+| Small technical amendment | One ADR gets an addition | Architecture and ADRs only | `finish-planning.sh --amend`, without a review |
 
 Write the change down in a short file, in your own words, and start the cycle
 from a clean primary checkout:
@@ -383,6 +384,38 @@ worktree and an untracked original of the change request.
 Every change to a planning document invalidates the planning approval until
 the new one is merged. In between, `create-feature-issue.sh` creates no new
 Issue. A feature that is already in progress is not affected.
+
+### A small technical amendment
+
+A change that touches only `docs/architecture.md` and the ADRs in
+`docs/decisions/`, such as amending one decision, can be approved without an
+agent and without a review round. Make the change by hand on a branch
+`planning/<name>` and run:
+
+```bash
+git switch -c planning/cache-adr
+# edit docs/architecture.md, add or edit an ADR
+./scripts/finish-planning.sh --amend "Add a cache in front of the storage."
+```
+
+The script shows the difference against `main` and asks for your approval. It
+then adds the amendment to the existing `docs/PLANNING_APPROVAL.md`, with the
+date, the branch, your reason, and the changed files, and updates the
+fingerprint, so the approval is current again. The earlier review rounds stay
+in the record, and the entry says that no independent review took place.
+Commit, push, and merge as the script prints.
+
+Your approval is the only check here, so the route is narrow. The script
+refuses, and points to the change cycle, when:
+
+- the requirements, the roadmap, the project description, or a change request
+  changed;
+- an ADR was deleted, since a decision is superseded, not removed;
+- the planning on `main` has no current approval. An amendment does not repair
+  a missing or stale approval;
+- the branch does not contain the latest `main`, because the amendment is
+  shown and approved against the planning as it is now;
+- a required planning document is missing or empty afterwards.
 
 ## Creating a feature Issue from the roadmap
 

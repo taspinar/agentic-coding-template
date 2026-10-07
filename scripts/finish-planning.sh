@@ -9,11 +9,18 @@ source "$script_dir/lib/planning.sh"
 
 usage() {
   echo "Usage:"
-  echo "  $0           Check the planning and record your approval (planning worktree)."
-  echo "  $0 --check   Report whether the recorded approval still matches the documents."
+  echo "  $0                     Check the planning and record your approval (planning worktree)."
+  echo "  $0 --check             Report whether the recorded approval still matches the documents."
+  echo "  $0 --amend \"<reason>\"  Approve a small technical amendment without a review round."
   echo
   echo "--check exits 0 when the approval is current, 1 when it is missing or stale,"
   echo "and 2 on an error."
+  echo
+  echo "--amend is for a change to an approved planning that touches only"
+  echo "docs/architecture.md and the ADRs in docs/decisions/, such as amending one"
+  echo "decision. It shows the change, asks for your approval, and adds the amendment"
+  echo "to the existing approval. Anything else needs a change cycle:"
+  echo "  ./scripts/start-planning.sh <name> --change <file>"
   exit 2
 }
 
@@ -27,8 +34,14 @@ review_data_require_jq
 tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/finish-planning.XXXXXX")"
 trap 'rm -rf "$tmp_work"' EXIT
 
+amend_reason=""
 case "$#:${1:-}" in
   0:) ;;
+  2:--amend)
+    [[ "$2" =~ [^[:space:]] ]] || fail "--amend requires a reason."
+    [[ "$2" != *$'\n'* ]] || fail "the reason of an amendment must be a single line."
+    amend_reason="$2"
+    ;;
   1:--check)
     status=0
     reason="$(planning_approval_status "$root" "$tmp_work")" || status=$?
@@ -47,6 +60,130 @@ branch="$(git branch --show-current)"
   fail "finish-planning.sh must run in a planning worktree (branch planning/<name>). Current branch: $branch"
 name="${branch#planning/}"
 
+# An amendment: a change to an approved planning that touches only the
+# architecture and the ADRs, approved by the human without a review round.
+amend() {
+  local base_ref
+  local base
+  local base_approval
+  local recorded
+  local base_tree
+  local changed
+  local path
+  local status
+  local outside=""
+  local files=""
+  local fingerprint
+  local answer=""
+  local approval="$root/$PLANNING_APPROVAL_FILE"
+  local entry
+
+  if git -C "$root" rev-parse --verify --quiet "origin/main^{commit}" >/dev/null; then
+    base_ref="origin/main"
+  elif git -C "$root" rev-parse --verify --quiet "main^{commit}" >/dev/null; then
+    base_ref="main"
+  else
+    fail "neither origin/main nor main exists."
+  fi
+  # The amendment is judged against the base branch as it is now, so fetch it
+  # when there is a remote; a failed fetch leaves the local state in use.
+  [[ "$base_ref" != "origin/main" ]] || git -C "$root" fetch -q origin main 2>/dev/null || true
+  base="$(git -C "$root" merge-base HEAD "$base_ref")" ||
+    fail "could not determine the merge base of HEAD and $base_ref."
+  [[ "$base" == "$(git -C "$root" rev-parse "$base_ref^{commit}")" ]] ||
+    fail "$branch does not contain the latest $base_ref. Bring it up to date first (git merge $base_ref), so the amendment is shown and approved against the current planning."
+
+  # The planning that is amended must have been approved as it is on the base
+  # branch; an amendment does not repair a missing or stale approval.
+  base_approval="$(git -C "$root" show "$base:$PLANNING_APPROVAL_FILE" 2>/dev/null || true)"
+  recorded="$(printf '%s\n' "$base_approval" | sed -n 's/^Planning fingerprint: \([0-9a-f]\{40,64\}\)$/\1/p')"
+  [[ "$(printf '%s' "$recorded" | grep -c . || true)" -eq 1 ]] ||
+    fail "$base_ref has no planning approval to amend. Approve the planning with a review first."
+  [[ $'\n'"$base_approval"$'\n' == *$'\n'"Status: Approved"$'\n'* ]] ||
+    fail "$PLANNING_APPROVAL_FILE on $base_ref does not record an approval."
+  GIT_INDEX_FILE="$tmp_work/base.index" git -C "$root" read-tree --empty
+  git -C "$root" ls-tree -r "$base" -- "${PLANNING_SCOPE[@]}" |
+    GIT_INDEX_FILE="$tmp_work/base.index" git -C "$root" update-index --index-info
+  base_tree="$(GIT_INDEX_FILE="$tmp_work/base.index" git -C "$root" write-tree)"
+  [[ "$base_tree" == "$recorded" ]] ||
+    fail "the planning on $base_ref changed after its approval, so there is no current approval to amend. Approve it with a review first."
+
+  [[ -f "$approval" && ! -L "$approval" ]] && git -C "$root" diff --quiet "$base" -- "$PLANNING_APPROVAL_FILE" ||
+    fail "$PLANNING_APPROVAL_FILE differs from $base_ref. The script updates it; restore it first."
+
+  # What changed in the planning documents, including uncommitted and
+  # untracked files.
+  fingerprint="$(fingerprint_files "$root" "$tmp_work" "${PLANNING_SCOPE[@]}")" ||
+    fail "could not compute the fingerprint of the planning documents."
+  changed="$(GIT_INDEX_FILE="$tmp_work/fingerprint-files.index" git -C "$root" diff --cached --no-renames --name-status "$base" -- "${PLANNING_SCOPE[@]}")"
+  [[ -n "$changed" ]] || fail "no planning document differs from $base_ref; there is nothing to amend."
+
+  while IFS=$'\t' read -r status path; do
+    case "$path" in
+      docs/architecture.md) ;;
+      docs/decisions/*.md)
+        [[ "${path#docs/decisions/}" != */* && "$status" != "D" ]] || outside+="  $status $path"$'\n'
+        ;;
+      *) outside+="  $status $path"$'\n' ;;
+    esac
+    files+="${files:+, }$path"
+  done <<<"$changed"
+  if [[ -n "$outside" ]]; then
+    echo "Error: an amendment may change only docs/architecture.md and add or edit ADRs in docs/decisions/." >&2
+    echo "These changes need a review:" >&2
+    printf '%s' "$outside" >&2
+    echo "Start a change cycle instead: ./scripts/start-planning.sh <name> --change <file>" >&2
+    exit 1
+  fi
+  echo "Amendment to the approved planning on $branch:"
+  echo
+  GIT_INDEX_FILE="$tmp_work/fingerprint-files.index" git -C "$root" --no-pager diff --cached --no-color "$base" -- "${PLANNING_SCOPE[@]}"
+  echo
+  echo "Reason: $amend_reason"
+  echo "Changed: $files"
+  echo
+  echo "No agent reviews an amendment; your approval is the only check."
+  printf "Approve this amendment? [y/N] "
+  read -r answer || true
+  case "$answer" in
+    y | Y | yes | YES) ;;
+    *)
+      echo "Declined; the planning approval was not changed."
+      exit 0
+      ;;
+  esac
+
+  [[ "$(fingerprint_files "$root" "$tmp_work" "${PLANNING_SCOPE[@]}")" == "$fingerprint" ]] ||
+    fail "a planning document changed while you were deciding; the amendment was not recorded."
+
+  entry="- $(date -u +'%Y-%m-%dT%H:%M:%SZ'), $branch: $amend_reason (changed: $files). Approved by the project owner with \`finish-planning.sh --amend\`, without an independent planning review."
+  {
+    sed "s/^Planning fingerprint: .*/Planning fingerprint: $fingerprint/" "$approval"
+    if ! grep -Fqx "## Amendments after the approval" "$approval"; then
+      echo
+      echo "## Amendments after the approval"
+      echo
+      echo "The review rounds above cover the planning as it was first approved. Each"
+      echo "amendment below changed only the architecture or the ADRs."
+      echo
+    fi
+    printf '%s\n' "$entry"
+  } >"$tmp_work/approval"
+  cp "$tmp_work/approval" "$approval"
+
+  echo
+  echo "Recorded the amendment in $PLANNING_APPROVAL_FILE."
+  echo
+  echo "Next steps:"
+  echo "  ./scripts/verify.sh"
+  echo "  git add ${files//, / } $PLANNING_APPROVAL_FILE"
+  echo "  git commit -m \"Amend planning: $name\""
+  echo "  git push -u origin \"$branch\""
+  echo
+  echo "Open the planning PR and merge it; then, from the primary checkout:"
+  echo "  ./scripts/cleanup-worktree.sh $branch"
+}
+
 # 1. The planning documents exist and the requirements are approved.
 for required in docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.md; do
   [[ -f "$root/$required" && ! -L "$root/$required" && -s "$root/$required" ]] ||
@@ -54,6 +191,12 @@ for required in docs/PROJECT_REQUIREMENTS.md docs/architecture.md docs/roadmap.m
 done
 grep -Fqx "Status: Approved" "$root/docs/PROJECT_REQUIREMENTS.md" ||
   fail "the project requirements are not approved."
+
+# An amendment replaces the review of steps 2 to 4 by its own checks.
+if [[ -n "$amend_reason" ]]; then
+  amend
+  exit 0
+fi
 
 # 2. The latest planning review exists, is valid, and is current.
 shopt -s nullglob
