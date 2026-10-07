@@ -191,6 +191,16 @@ git -C "$project" rm -q tools/tool.sh
 git -C "$project" commit -qm "Remove a workflow file"
 expect_ran "$project" "a workflow file was removed in a commit"
 
+# A path entry can exclude a file from a guarded directory.
+project="$(setup_workflow_project workflow-excluded)"
+printf 'paths: tools :(exclude)tools/tool.sh\nself-test: pytest\n' >"$project/scripts/verify-workflow.conf"
+git -C "$project" commit -qam "Exclude a file"
+git -C "$project" branch -q -f main
+printf 'two\n' >>"$project/tools/tool.sh"
+expect_skipped "$project" "only an excluded file changed"
+printf 'new\n' >"$project/tools/other.sh"
+expect_ran "$project" "another file in the guarded directory is new"
+
 # Without a base branch the change cannot be determined, so the self-tests run.
 project="$(setup_workflow_project workflow-no-base)"
 git -C "$project" branch -q -D main

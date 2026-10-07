@@ -58,10 +58,12 @@ untracked files, or when it cannot tell, for example outside a Git repository.
 Otherwise the summary reports them as `SKIP`. `./scripts/verify.sh --all`
 always runs them, and CI uses it, so every pull request runs the self-tests.
 
-Narrow `paths:` when the project keeps its own files in one of the listed
-places, such as project scripts in `scripts/`; a broader list only makes the
-self-tests run more often. Delete `scripts/verify-workflow.conf` when the
-project removes the workflow scripts.
+`scripts` is listed as a whole, so a new script is guarded until it is
+excluded with an entry `:(exclude)<path>`. `scripts/verify.conf` is excluded:
+a project adds its checks there, and no self-test reads it. Exclude a
+project's own scripts the same way, after checking that no self-test reads or
+copies them; a broader list only makes the self-tests run more often. Delete
+`scripts/verify-workflow.conf` when the project removes the workflow scripts.
 
 The self-tests start `jq`, `git`, and `bash` thousands of times. On an Apple
 Silicon Mac an x86_64 `jq`, such as the one Anaconda installs, runs under
@@ -336,6 +338,23 @@ of role `implementer` inside that worktree. Untracked files in the checkout do
 not matter; modified tracked files do, because they would not be part of the
 new worktree. After the session it prints the worktree path and the next
 commands.
+
+A new worktree has none of the project's ignored files, such as installed
+dependencies or a build cache. To prepare them, add an executable
+`scripts/worktree-setup.sh` to the project. `start-feature.sh` runs it in the
+new worktree before the agent starts, with the path of the primary checkout as
+its argument, for example to copy a cache from there:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+primary="$1"
+# On macOS (APFS), -c copies without using extra disk space.
+[[ ! -d "$primary/node_modules" ]] || cp -Rc "$primary/node_modules" node_modules
+```
+
+The script is optional and only saves time: when it fails, the script reports
+that and starts the agent anyway.
 
 After the implementation agent exits, enter the feature worktree and verify:
 
