@@ -26,7 +26,7 @@ If a material conflict remains, stop and report it.
 - `./scripts/verify.sh` passes.
 - No unrelated changes are included.
 - Docs/ADRs are updated when architecture or behavior changed.
-- Verification evidence is recorded in the active plan or PR.
+- Verification evidence is recorded in the commit message and the pull request, which `finish-feature.sh` and `publish-feature.sh` write.
 - Required independent review is complete and no Critical or Major findings
   remain unresolved.
 - Required review findings have an approved triage, published on the feature

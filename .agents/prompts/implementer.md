@@ -86,13 +86,22 @@ the human.
 
 Before declaring the issue complete:
 
-1. Run `./scripts/verify.sh`.
-2. Inspect `git diff`.
-3. Verify every acceptance criterion in the GitHub Issue.
-4. Check for unrelated changes.
-5. Record compact verification evidence.
-6. Report unresolved issues or risks.
-7. Record the manual steps, as described below.
+1. Inspect `git diff`.
+2. Verify every acceptance criterion in the GitHub Issue.
+3. Check for unrelated changes.
+4. Record the manual steps, as described below.
+5. Finish every edit to a file that Git tracks, including the plan.
+6. Run `./scripts/verify.sh` as the last thing that touches the repository.
+7. Report the result, with compact verification evidence and unresolved
+   issues or risks, in your final message.
+
+The order of the last steps matters. A pass is recorded for exactly the
+content it verified, and the scripts that follow reuse it instead of running
+every check again. Any later change to a tracked file, also a note in the
+plan about the verification itself, makes the record stale and costs another
+full run. Evidence of the final run therefore belongs in your final message
+or in the handoff note, which Git ignores, not in a tracked file. While you
+work, run the single checks you need; the full run is for the end.
 
 A manual step is something only the human can do and without which the
 feature does not work after the merge: a repository or account setting, a

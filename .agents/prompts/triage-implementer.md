@@ -71,6 +71,10 @@ Report:
 - checks performed
 - unresolved findings or risks
 
+Run `./scripts/verify.sh` after your last change. A pass is recorded for
+exactly the content it verified, and the script that follows reuses it; a
+change after the run costs another full run.
+
 `scripts/apply-triage.sh` is waiting for this session to end. Ask the human to
-exit the session; the script then checks the protected artifacts and runs the
-repository verification command.
+exit the session; the script then checks the protected artifacts and verifies
+the result, unless your run already verified exactly this content.

@@ -242,18 +242,56 @@ if MOCK_AGENT_ACTION="rm '$repo/$review'" run_apply "$repo" y "$triage"; then
   fail "a deleted review artifact returned success"
 fi
 
-# A verification record written by the agent is not relied on: the script
-# verifies the fixed content itself.
-repo="$(setup_repo forged-record)"
+# When the agent verified exactly the content it leaves behind, the script
+# does not verify it again. Each run leaves one line in an ignored file.
+verification_runs() {
+  grep -c . "$1/verify-count.log" 2>/dev/null || true
+}
+
+setup_counting_repo() {
+  local repo
+
+  repo="$(setup_repo "$1")"
+  printf '*.log\n.agents/verification/\n' >"$repo/.gitignore"
+  printf 'count: echo run >>verify-count.log\n' >"$repo/scripts/verify.conf"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm "Count verification runs"
+  record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+  printf '%s\n' "$repo"
+}
+
+repo="$(setup_counting_repo session-verified)"
+MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt' && (cd '$repo' && ./scripts/verify.sh >/dev/null)" \
+  run_apply "$repo" y "$triage" || {
+  cat "$repo.out" >&2
+  fail "applying fixes that the agent verified failed"
+}
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "the script verified again what the agent had verified"
+grep -Fq "already passed" "$repo.out" || fail "the reused verification was not reported"
+
+# A change after the agent's run, or no run at all, is verified by the script.
+repo="$(setup_counting_repo session-changed-after)"
+MOCK_WRITE_ACTION="(cd '$repo' && ./scripts/verify.sh >/dev/null) && printf 'fixed later\n' >>'$repo/feature.txt'" \
+  run_apply "$repo" y "$triage" || fail "applying fixes changed after the agent's verification failed"
+[[ "$(verification_runs "$repo")" -eq 2 ]] || fail "content changed after the agent's verification was not verified again"
+
+repo="$(setup_counting_repo session-unverified)"
+MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" run_apply "$repo" y "$triage" ||
+  fail "applying unverified fixes failed"
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "fixes that the agent did not verify were not verified"
+
+# A record that does not match the content does not replace the verification.
+repo="$(setup_repo mismatched-record)"
+printf '.agents/verification/\n' >"$repo/.gitignore"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"
-git -C "$repo" commit -qam "Break verification"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Break verification"
 record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
-if MOCK_WRITE_ACTION="mkdir -p '$repo/.agents/verification' && printf 'tree: forged\n' >'$repo/.agents/verification/passed'" \
+if MOCK_WRITE_ACTION="mkdir -p '$repo/.agents/verification' && printf 'tree: 0123456789012345678901234567890123456789\nworkflow-tests: none\n' >'$repo/.agents/verification/passed'" \
   run_apply "$repo" y "$triage"; then
-  fail "a forged verification record replaced the verification"
+  fail "a record for other content replaced the verification"
 fi
-grep -Fq "FAIL  broken" "$repo.out" || fail "verification did not run after a forged record"
-[[ ! -e "$repo/.agents/verification/passed" ]] || fail "a forged verification record was kept"
+grep -Fq "FAIL  broken" "$repo.out" || fail "verification did not run for a record that does not match"
 
 # A failing verification fails the run.
 repo="$(setup_repo verification-fails)"

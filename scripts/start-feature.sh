@@ -4,7 +4,6 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
-source "$script_dir/lib/verification.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>]"
@@ -56,10 +55,6 @@ run_session() {
   echo
   agent_run write "$agent" "$model" "$session_worktree" "$2" || agent_status=$?
 
-  # A verification record from inside the agent session is not relied on;
-  # review-feature.sh verifies the result itself.
-  verification_forget "$session_worktree"
-
   echo
   if [[ "$agent_status" -ne 0 ]]; then
     echo "Error: the implementation agent exited with status $agent_status." >&2
@@ -71,7 +66,7 @@ run_session() {
   echo
   echo "Next, in the feature worktree:"
   echo "  cd \"$session_worktree\""
-  echo "  ./scripts/review-feature.sh $issue    # runs the verification first"
+  echo "  ./scripts/review-feature.sh $issue    # verifies first, unless the session verified this content"
   echo
   echo "When the work is not complete, continue it with: $0 $issue --resume"
 }

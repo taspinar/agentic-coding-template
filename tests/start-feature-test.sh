@@ -137,13 +137,14 @@ run_start "$repo" 8 thing || fail "a non-executable setup script stopped the fea
 grep -Fq "worktree-setup.sh is not executable" "$repo.out" || fail "the skipped setup was not reported"
 [[ ! -e "$tmp/setup-not-executable-8-thing/prepared.txt" ]] || fail "a non-executable setup script ran"
 
-# A verification record written during the agent session does not survive it.
-repo="$(setup_repo forged)"
-worktree="$tmp/forged-9-thing"
-MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: forged\n' >'$worktree/.agents/verification/passed'" \
+# A verification record that the agent session leaves is kept, so the review
+# that follows can reuse it.
+repo="$(setup_repo session-record)"
+worktree="$tmp/session-record-9-thing"
+MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: recorded\n' >'$worktree/.agents/verification/passed'" \
   run_start "$repo" 9 thing || fail "starting a feature failed"
-[[ ! -e "$worktree/.agents/verification/passed" ]] ||
-  fail "a verification record from the agent session was kept"
+grep -Fqx "tree: recorded" "$worktree/.agents/verification/passed" ||
+  fail "the verification record of the agent session was discarded"
 
 # --resume starts a new implementer session in the existing worktree of the
 # Issue, without creating a branch or a worktree, and tells it to read the
@@ -200,11 +201,7 @@ run_start "$repo" 10 --resume || fail "resuming with a current handoff note fail
 grep -Fq "handoff note: .agents/handoffs/10.md" "$repo.log" || fail "the session was not pointed at the current note"
 if grep -Fq "STALE" "$repo.log"; then fail "a current note was reported as stale"; fi
 
-# A verification record from a resumed session is discarded too, and a failed
-# resumed session is reported with the way to continue.
-MOCK_WRITE_ACTION="mkdir -p '$worktree/.agents/verification' && printf 'tree: forged\n' >'$worktree/.agents/verification/passed'" \
-  run_start "$repo" 10 --resume || fail "resuming failed"
-[[ ! -e "$worktree/.agents/verification/passed" ]] || fail "a verification record from a resumed session was kept"
+# A failed resumed session is reported with the way to continue.
 if MOCK_WRITE_EXIT=6 run_start "$repo" 10 --resume; then fail "a failed resumed session returned success"; fi
 grep -Fq "10 --resume" "$repo.out" || fail "a failed session did not say how to continue"
 
