@@ -127,7 +127,7 @@ flowchart TD
   triage["triage-review.sh<br/>your approval, report on the Issue"]
   apply["apply-triage.sh<br/>fix only FIX_NOW findings"]
   finish["finish-feature.sh<br/>checks, commit in your editor"]
-  publish["publish-feature.sh<br/>push, pull request, wait for CI"]
+  publish["publish-feature.sh<br/>push and pull request"]
 
   start --> review
   review -- findings --> triage
@@ -149,9 +149,11 @@ flowchart TD
   previous round.
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
-- `publish-feature.sh` pushes the branch, opens the pull request that closes
-  the Issue, and waits for CI. You merge the pull request yourself, after its
-  checks passed. A failed check means a fix in the worktree and another round:
+- `publish-feature.sh` pushes the branch and opens the pull request that
+  closes the Issue. You merge the pull request yourself, after its checks
+  passed. When `main` requires a passing check, GitHub enforces that and the
+  script does not wait; otherwise the script waits for CI and reports the
+  result. A failed check means a fix in the worktree and another round:
   review, finish, publish.
 - After the merge, remove the worktree and its branch with
   `cleanup-worktree.sh <issue>`.
@@ -264,7 +266,7 @@ tools.
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
 | `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it |
-| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. It exits non-zero when a check of the pull request fails |
+| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. When it waits for the checks, it exits non-zero when one fails |
 
 ### Helper scripts
 

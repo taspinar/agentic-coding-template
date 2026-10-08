@@ -50,7 +50,7 @@ flowchart LR
    ./scripts/apply-triage.sh .agents/triage/feature-12-recipes-review-01-triage.json
    ./scripts/review-feature.sh 12    # again after fixes; --changes reviews only the fix
    ./scripts/finish-feature.sh 12 "Add recipes"
-   ./scripts/publish-feature.sh 12   # push, pull request, wait for CI
+   ./scripts/publish-feature.sh 12   # push and open the pull request
    ```
 
    Merge the pull request after its checks passed, and remove the

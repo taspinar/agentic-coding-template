@@ -9,6 +9,7 @@ script_dir="${BASH_SOURCE[0]%/*}"
 [[ "$script_dir" != "${BASH_SOURCE[0]}" ]] || script_dir="."
 root="$script_dir/.."
 source "$script_dir/lib/agent.sh"
+source "$script_dir/lib/github.sh"
 
 failed=0
 gh_ready=0
@@ -39,14 +40,7 @@ check_main_protection() {
   local count
 
   [[ "$gh_ready" -eq 1 ]] || return 0
-  count="$(gh api "repos/{owner}/{repo}/rules/branches/main" \
-    --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]] | length' 2>/dev/null)" ||
-    count=""
-  if [[ "$count" == "0" ]]; then
-    count="$(gh api "repos/{owner}/{repo}/branches/main" \
-      --jq '[(.protection.required_status_checks.contexts // [])[], (.protection.required_status_checks.checks // [])[]] | length' 2>/dev/null)" ||
-      count=""
-  fi
+  count="$(github_required_checks main)"
 
   if [[ "$count" =~ ^[0-9]+$ && "$count" -gt 0 ]]; then
     ok "branch 'main' requires a passing status check before a merge"

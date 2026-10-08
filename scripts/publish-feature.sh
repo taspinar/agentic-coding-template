@@ -3,15 +3,18 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <issue-number> [--no-wait]"
+  echo "Usage: $0 <issue-number> [--wait | --no-wait]"
   echo
-  echo "Run in the feature worktree after finish-feature.sh. Pushes the branch,"
-  echo "opens the pull request that closes the Issue, and waits for its checks. The"
-  echo "description is the latest commit message and the manual steps; an open pull"
-  echo "request gets it again, replacing its description. It never merges."
+  echo "Run in the feature worktree after finish-feature.sh. Pushes the branch and"
+  echo "opens the pull request that closes the Issue. The description is the latest"
+  echo "commit message and the manual steps; an open pull request gets it again,"
+  echo "replacing its description. It never merges."
   echo
-  echo "Exits 0 when the checks pass, and 1 when a check fails. --no-wait stops"
-  echo "after the pull request is open."
+  echo "When the base branch requires a passing status check, GitHub refuses a merge"
+  echo "while a check fails, so the script stops once the pull request is open."
+  echo "Otherwise it waits for the checks, so that a failure is seen before the"
+  echo "merge: it exits 0 when they pass and 1 when one fails. --wait always waits;"
+  echo "--no-wait never does."
   exit 1
 }
 
@@ -20,13 +23,18 @@ fail() {
   exit 1
 }
 
-[[ $# -eq 1 || ( $# -eq 2 && "$2" == "--no-wait" ) ]] || usage
+[[ $# -eq 1 || ( $# -eq 2 && ( "$2" == "--no-wait" || "$2" == "--wait" ) ) ]] || usage
 issue="$1"
-wait_for_checks=1
-[[ $# -eq 1 ]] || wait_for_checks=0
+# 'auto' waits unless the base branch requires a passing status check.
+wait_mode="auto"
+case "${2:-}" in
+  --wait) wait_mode="yes" ;;
+  --no-wait) wait_mode="no" ;;
+esac
 
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/github.sh"
 
 root="$(git rev-parse --show-toplevel)"
 branch="$(git branch --show-current)"
@@ -85,7 +93,31 @@ print_manual_steps() {
   printf '%s\n' "$manual_steps" | sed 's/^/  /'
 }
 
-if [[ "$wait_for_checks" -eq 0 ]]; then
+if [[ "$wait_mode" == "auto" ]]; then
+  # Waiting shows a failed check before the merge. A base branch that requires
+  # a passing check makes GitHub refuse that merge, so the wait adds nothing.
+  base_branch="$(gh pr view "$url" --json baseRefName --jq '.baseRefName' 2>/dev/null)" || base_branch=""
+  required=""
+  [[ -z "$base_branch" ]] || required="$(github_required_checks "$base_branch")"
+  if [[ "$required" =~ ^[0-9]+$ && "$required" -gt 0 ]]; then
+    echo "Branch '$base_branch' requires a passing status check, so GitHub refuses a merge"
+    echo "while a check fails. Not waiting for the checks; follow them with:"
+    echo "  gh pr checks $branch --watch"
+    echo "The pull request: $url"
+    print_manual_steps
+    echo
+    echo "After the merge, from the primary checkout:"
+    echo "  ./scripts/cleanup-worktree.sh $issue"
+    exit 0
+  fi
+  if [[ "$required" == "0" ]]; then
+    echo "Branch '$base_branch' does not require a status check, so nothing stops a merge"
+    echo "while a check fails. Waiting for the checks; see docs/repository-setup.md."
+  else
+    echo "Could not read whether the base branch requires a status check; waiting for the checks."
+  fi
+  echo
+elif [[ "$wait_mode" == "no" ]]; then
   echo "Not waiting for the checks. Merge only after they pass:"
   echo "  gh pr checks $branch --watch"
   print_manual_steps

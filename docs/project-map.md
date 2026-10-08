@@ -52,7 +52,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/triage-review.sh` | Classifies review findings, creates follow-up Issues, and publishes the reports on the Issue |
 | `scripts/apply-triage.sh` | Lets an implementer resolve only the `FIX_NOW` findings |
 | `scripts/finish-feature.sh` | Checks the feature and creates the commit |
-| `scripts/publish-feature.sh` | Pushes the feature branch, opens its pull request, and waits for CI; never merges |
+| `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request; waits for CI when the base branch does not require it; never merges |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
@@ -66,6 +66,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write` or `read-only` profile |
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
+| `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions |

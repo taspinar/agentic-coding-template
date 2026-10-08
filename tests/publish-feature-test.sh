@@ -24,6 +24,8 @@ fail() {
 #   MOCK_OPEN_PR       URL of a pull request that is already open
 #   MOCK_CHECKS        'pass' (default), 'fail', or 'none' (no checks reported)
 #   MOCK_CREATE_EXIT   exit status of 'pr create'
+#   MOCK_REQUIRED      number of status checks the base branch requires
+#                      (default 0); 'unreadable' makes the question fail
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
@@ -40,6 +42,17 @@ case "${1:-} ${2:-}" in
       if [[ "${args[$i]}" == "--body-file" ]]; then cp "${args[$((i + 1))]}" "$MOCK_GH_LOG.body"; fi
     done
     [[ "$2" != "create" ]] || echo "https://github.com/example/project/pull/7"
+    ;;
+  "pr view")
+    echo "main"
+    ;;
+  "api repos/{owner}/{repo}/rules/branches/main")
+    [[ "${MOCK_REQUIRED:-0}" != "unreadable" ]] || exit 1
+    echo "${MOCK_REQUIRED:-0}"
+    ;;
+  "api repos/{owner}/{repo}/branches/main")
+    [[ "${MOCK_REQUIRED:-0}" != "unreadable" ]] || exit 1
+    echo "0"
     ;;
   "pr checks")
     case "${MOCK_CHECKS:-pass}" in
@@ -64,8 +77,9 @@ setup_repo() {
 
   git init -q --bare -b main "$remote"
   git clone -q "$remote" "$repo" 2>/dev/null
-  mkdir -p "$repo/scripts"
+  mkdir -p "$repo/scripts/lib"
   cp "$source_root/scripts/publish-feature.sh" "$repo/scripts/"
+  cp "$source_root/scripts/lib/github.sh" "$repo/scripts/lib/"
   printf '.agents/manual-steps/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
   git -C "$repo" config user.email "publish-test@example.com"
@@ -111,6 +125,7 @@ for line in "Issue: #12" "Review: round 1, PASS, by claude (model-r)" "## Manual
   grep -Fqx -- "$line" "$repo.gh.body" || fail "the pull request description lacks: $line"
 done
 grep -Fq "pr checks feature/12-marker --watch" "$repo.gh" || fail "the checks were not awaited"
+grep -Fq "does not require a status check" "$repo.out" || fail "the reason for waiting was not given"
 grep -Fq "All checks passed" "$repo.out" || fail "passing checks were not reported"
 grep -Fq "https://github.com/example/project/pull/7" "$repo.out" || fail "the pull request was not named"
 grep -Fq "Enable GitHub Pages" "$repo.out" || fail "the manual steps were not shown"
@@ -152,6 +167,33 @@ grep -Fqx -- "- Add the secret API_KEY." "$repo.gh.body" || fail "the updated de
 grep -Fqx "Closes #12" "$repo.gh.body" || fail "the updated description no longer closes the Issue"
 if grep -Fq "pr checks" "$repo.gh"; then fail "--no-wait waited for the checks"; fi
 grep -Fq "gh pr checks feature/12-marker --watch" "$repo.out" || fail "--no-wait did not say how to watch the checks"
+
+# When the base branch requires a passing status check, GitHub refuses a merge
+# while a check fails, so the script does not wait. --wait waits anyway.
+repo="$(setup_repo required-check)"
+MOCK_REQUIRED=1 MOCK_CHECKS=fail run_publish "$repo" 12 || {
+  cat "$repo.out" >&2
+  fail "publishing to a branch with a required check failed"
+}
+grep -Fq "pr create" "$repo.gh" || fail "the pull request was not opened"
+if grep -Fq "pr checks" "$repo.gh"; then fail "the script waited although the base branch requires a check"; fi
+grep -Fq "requires a passing status check" "$repo.out" || fail "the reason for not waiting was not given"
+grep -Fq "gh pr checks feature/12-marker --watch" "$repo.out" || fail "the command to follow the checks was not printed"
+grep -Fq "./scripts/cleanup-worktree.sh 12" "$repo.out" || fail "the next step was not printed"
+
+repo="$(setup_repo required-but-wait)"
+if MOCK_REQUIRED=1 MOCK_CHECKS=fail run_publish "$repo" 12 --wait; then
+  fail "--wait did not wait for a failing check"
+fi
+grep -Fq "Do not merge" "$repo.out" || fail "--wait did not report the failed check"
+
+# Without a required check, and when the rules cannot be read, it waits.
+repo="$(setup_repo rules-unreadable)"
+if MOCK_REQUIRED=unreadable MOCK_CHECKS=fail run_publish "$repo" 12; then
+  fail "unreadable rules were treated as a required check"
+fi
+grep -Fq "Could not read" "$repo.out" || fail "the unreadable rules were not reported"
+grep -Fq -- "--watch" "$repo.gh" || fail "the script did not wait with unreadable rules"
 
 # A pull request that cannot be opened fails after the push and says so.
 repo="$(setup_repo create-fails)"
