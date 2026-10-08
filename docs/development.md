@@ -903,6 +903,88 @@ The files in `.agents/run/` are working files, ignored by Git. A Codex
 session also writes its complete output to a file next to its final message,
 with `.log` added to the name; it is shown when the session fails.
 
+### Running a feature with one command
+
+`run-feature.sh` runs the steps of a feature one after the other, from the
+implementation to the open pull request, without asking anything:
+
+```bash
+./scripts/run-feature.sh 12
+```
+
+```text
+./scripts/run-feature.sh <issue> [slug] [base-branch] [--implemented]
+```
+
+From the primary checkout it runs:
+
+1. `start-feature.sh <issue> [slug] [base-branch] --unattended`: the worktree
+   and the implementation.
+2. `review-feature.sh`, and for a review with findings `triage-review.sh
+   --unattended` and, when the triage has `FIX_NOW` findings,
+   `apply-triage.sh --unattended`, followed by the next review round. This
+   repeats until a review has no findings or its triage has nothing to fix.
+3. `finish-feature.sh --unattended`, with the title of the Issue as the
+   summary of the commit, and `publish-feature.sh`.
+
+It uses at most five review rounds. The first round reviews the complete
+feature; a later round reviews only what changed since the round before it
+(`review-feature.sh --changes`). That review knows what was decided about
+the earlier findings, so a finding that was deferred or accepted is not
+reported, triaged, and turned into a follow-up Issue again in every round.
+When the base of the branch changed between two rounds, for example because
+you merged `main` into it while the run was stopped, the next round reviews
+the complete feature.
+The agents and models are those of the roles in `.agents/agents.conf`.
+
+What stays with you: choosing the feature and creating its Issue, reading the
+pull request, following its checks, merging, and `cleanup-worktree.sh`. The
+run never merges, never pushes to `main`, and never removes a worktree.
+
+The run stops with a non-zero status, and keeps the worktree, when:
+
+| Stop | Status |
+|---|---|
+| An agent needs a decision of yours, or reports a conflict with the Issue's scope, the architecture, or an ADR. Its question is in the handoff note | 3 |
+| The implementer, the reviewer, the triage, or the fixing agent fails, for example on a usage limit | 1 |
+| Verification fails after the implementation or after the fixes | 1 |
+| The proposed triage is invalid, for example because it defers a critical or major finding | 1 |
+| Five rounds are used and the last one still has a finding that must be fixed | 1 |
+| The fixes changed nothing, the commit fails, or the pull request cannot be opened | 1 |
+
+It then says why it stopped and which command resolves it. After that, run
+the same command again: `./scripts/run-feature.sh <issue>`. The run reads
+where the feature stands from the worktree, so every step that is done is
+skipped: a current review is not repeated, a stored triage is not made again,
+and a committed feature is only published. The one thing it records itself is
+that the implementation was completed, in `.agents/run/<issue>-state`. As long
+as that is missing, the next run resumes the implementer, as
+`start-feature.sh <issue> --resume` does. The same happens after a fixing
+agent stopped for a decision of yours: the implementer reads your answer in
+the handoff note and continues, and a review follows. When you completed the
+implementation in a session of your own, say so with `--implemented`, and the
+run continues with the review. You can also take over by hand at any point:
+the single scripts work on the same files.
+
+Know what you hand over before you use it:
+
+- An unattended agent runs commands on your machine while nobody watches.
+  Codex stays inside its workspace sandbox; Claude decides with its own
+  permission check. Neither gets the tools of your configuration. See
+  "Configuring agents".
+- Nobody approves the triage. The validation still refuses to defer or
+  accept a critical or major finding, but a minor finding or a suggestion
+  can be accepted or deferred wrongly. You see that in the pull request and
+  on the Issue, where every finding is published with its decision, instead
+  of before the fixes. Read that record before you merge.
+- A part of the feature that no fix touched is reviewed once, in round 1.
+  After a large fix you can run a complete review by hand in the worktree,
+  `./scripts/review-feature.sh <issue>`, before the run continues.
+- Up to five review rounds, each with a triage and a fix session, use the
+  usage limits of your agents without a moment at which you can stop them.
+- The commit message is not edited: its summary is the title of the Issue
+  and its list of changes is what the implementer wrote.
+
 ## Linking a feature plan
 
 To add or update the plan reference in an existing Issue:

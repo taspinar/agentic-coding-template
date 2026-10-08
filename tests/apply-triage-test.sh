@@ -319,6 +319,17 @@ grep -Fq "Correctness regression" "$repo.log" || fail "the unattended agent was 
 grep -Fq "C1 is fixed." "$repo.out" || fail "the final message of the fixes was not shown"
 grep -Fq "verification passed" "$repo.out" || fail "the unattended fixes were not verified"
 
+# A handoff note, which may hold your answer to an earlier question, is named
+# to the agent; without a note nothing is said about one.
+if grep -Fq ".agents/handoffs/13.md" "$repo.log"; then fail "a handoff note that does not exist was named"; fi
+repo="$(setup_repo with-note)"
+printf '.agents/handoffs/\n' >>"$repo/.gitignore"
+mkdir -p "$repo/.agents/handoffs"
+printf 'Answer: use JSON.\n' >"$repo/.agents/handoffs/13.md"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" run_apply "$repo" y "$triage" || fail "applying fixes with a handoff note failed"
+grep -Fq "There is a handoff note: .agents/handoffs/13.md" "$repo.log" || fail "the handoff note was not named to the agent"
+
 # Without the option, no answer still means that nothing starts.
 repo="$(setup_repo no-answer)"
 run_apply "$repo" "" "$triage" || fail "declining by an empty answer returned an error"
