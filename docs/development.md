@@ -478,6 +478,11 @@ not matter; modified tracked files do, because they would not be part of the
 new worktree. After the session it prints the worktree path and the next
 commands.
 
+The implementer verifies its result itself: it finishes every edit to a
+tracked file and then runs `./scripts/verify.sh`. That pass is recorded and
+reused by the review that follows, so you do not run the verification by hand
+between the two.
+
 A new worktree has none of the project's ignored files, such as installed
 dependencies or a build cache. To prepare them, add an executable
 `scripts/worktree-setup.sh` to the project. `start-feature.sh` runs it in the
@@ -739,7 +744,8 @@ The fingerprint depends on content, not on commits. Committing the reviewed
 content keeps the review current; changing, adding, or deleting a covered file
 makes it stale. `triage-review.sh` and `apply-triage.sh` refuse a stale review
 before they start an agent. After `apply-triage.sh` changes the code, the
-review is stale by design: run a new review when the fixes need confirmation.
+review is stale by design: run a new review round, complete or with
+`--changes`, to confirm the fixes.
 
 Check a review yourself with:
 
@@ -761,7 +767,8 @@ worktree:
 ```
 
 The script refuses another branch than `feature/12-*` or a tree without
-changes, runs `./scripts/verify.sh`, and checks the latest review of the
+changes, verifies the result with `./scripts/verify.sh --reuse`, and checks the
+latest review of the
 feature: it must be current and have no critical or major finding. Every
 review round with findings needs an approved triage that was published on the
 Issue (the newest triage of that round counts), and the latest round may have

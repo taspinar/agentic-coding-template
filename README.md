@@ -48,7 +48,7 @@ flowchart LR
    ./scripts/review-feature.sh 12
    ./scripts/triage-review.sh .agents/reviews/feature-12-recipes-review-01.json
    ./scripts/apply-triage.sh .agents/triage/feature-12-recipes-review-01-triage.json
-   ./scripts/review-feature.sh 12    # again after fixes, until it is resolved
+   ./scripts/review-feature.sh 12    # again after fixes; --changes reviews only the fix
    ./scripts/finish-feature.sh 12 "Add recipes"
    ./scripts/publish-feature.sh 12   # push, pull request, wait for CI
    ```
@@ -57,6 +57,20 @@ flowchart LR
    worktree from the primary checkout with
    `./scripts/cleanup-worktree.sh 12`, or all merged worktrees at once with
    `./scripts/cleanup-worktree.sh --merged`.
+
+## While a project runs
+
+- **A session ended early:** `./scripts/start-feature.sh 12 --resume` starts a
+  new implementer session in the existing worktree.
+- **A new feature, a changed requirement, another technical direction:**
+  `./scripts/start-planning.sh <name> --change <file>` runs a change cycle on
+  the approved planning, with the same review and approval.
+- **A small amendment of the architecture or an ADR:**
+  `./scripts/finish-planning.sh --amend "<reason>"` approves it without a
+  review round.
+
+See "Changing an approved planning" and "Resuming an interrupted feature" in
+[Development](docs/development.md).
 
 ## Keep a project up to date
 

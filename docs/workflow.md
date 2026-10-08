@@ -16,7 +16,8 @@ the repository is for is in `docs/project-map.md`.
 ### Overview
 
 The project planning happens once. Every roadmap feature then goes through its
-own Issue, feature work, and pull request.
+own Issue, feature work, and pull request. A later change to the planning goes
+through a change cycle, described under "Changing an approved planning".
 
 ```mermaid
 flowchart TD
@@ -24,11 +25,12 @@ flowchart TD
   planning["Project planning<br/>start-planning.sh … finish-planning.sh"]
   planpr["Planning PR merged<br/>docs/ and PLANNING_APPROVAL.md"]
   issue["Feature Issue<br/>create-feature-issue.sh F01"]
-  feature["Feature work<br/>start-feature.sh … finish-feature.sh"]
+  feature["Feature work<br/>start-feature.sh … publish-feature.sh"]
   featurepr["Feature PR merged<br/>Closes the feature Issue"]
 
   idea --> planning --> planpr --> issue --> feature --> featurepr
   featurepr -- next roadmap feature --> issue
+  featurepr -. the planning changes .-> planning
 
   classDef plan fill:#E1F5EE,stroke:#0F6E56,color:#085041
   classDef feat fill:#EEEDFE,stroke:#534AB7,color:#3C3489
@@ -159,15 +161,16 @@ flowchart TD
 Every step writes to one of three places:
 
 - **Repository**: committed with the planning or feature pull request.
-- **Working file**: under `.agents/reviews/` or `.agents/triage/`, read by the
-  scripts and ignored by Git.
+- **Working file**: under `.agents/`, read by the scripts and ignored by Git:
+  reviews, triage, the handoff note and the manual steps of a feature, and the
+  record of the last passed verification.
 - **GitHub**: Issues, comments, and pull requests.
 
 ### Planning phase
 
 ```mermaid
 flowchart LR
-  sp["start-planning.sh"] --> docs["PROJECT_DESCRIPTION.md<br/>PROJECT_REQUIREMENTS.md<br/>architecture.md, roadmap.md, ADRs"]
+  sp["start-planning.sh"] --> docs["PROJECT_DESCRIPTION.md or changes/NAME.md<br/>PROJECT_REQUIREMENTS.md<br/>architecture.md, roadmap.md, ADRs"]
   rp["review-planning.sh"] --> prv["planning-NAME-review-NN.json and .md"]
   rv["revise-planning.sh"] --> rvd["…-review-NN-revision.json and .md"]
   rv --> rdocs["architecture.md, roadmap.md, ADRs<br/>for adopted findings"]
@@ -194,25 +197,28 @@ planning PR description.
 ```mermaid
 flowchart LR
   sf["start-feature.sh"] --> code["code and tests"]
+  sf --> notes["handoff note, manual steps<br/>verification record"]
   rf["review-feature.sh"] --> rev["feature-ISSUE-SLUG-review-NN.json and .md"]
   tr["triage-review.sh"] --> tri["…-review-NN-triage.json and .md"]
   tr --> gh["follow-up Issues for DEFER<br/>comment with both reports"]
-  at["apply-triage.sh<br/>runs verify.sh"] --> fixes["fixes for FIX_NOW"]
-  ff["finish-feature.sh<br/>runs verify.sh"] --> commit["commit with review round<br/>and a reference to the Issue"]
+  at["apply-triage.sh<br/>verifies the result"] --> fixes["fixes for FIX_NOW"]
+  ff["finish-feature.sh<br/>verifies the result"] --> commit["commit with review round, manual steps,<br/>and a reference to the Issue"]
   pr["publish-feature.sh<br/>CI runs verify.sh"] --> prgh["pull request that closes the Issue"]
 
   classDef repo fill:#E1F5EE,stroke:#0F6E56,color:#085041
   classDef local fill:#F1EFE8,stroke:#5F5E5A,color:#444441
   classDef github fill:#FAECE7,stroke:#993C1D,color:#712B13
   class code,fixes,commit repo
-  class rev,tri local
+  class rev,tri,notes local
   class gh,prgh github
   classDef step fill:#FFFFFF,stroke:#888780,color:#2C2C2A
   class sf,rf,tr,at,ff,pr step
 ```
 
 Code, tests, and fixes stay uncommitted until `finish-feature.sh`, so every
-review covers the complete change. The lasting record of each review round is
+review covers the complete change. A step that verifies the result reuses a
+pass that was recorded for exactly that content, also one from the agent's own
+run, instead of running every check again. The lasting record of each review round is
 the comment on the feature Issue and the follow-up Issues, each of which names
 its source finding.
 
@@ -234,10 +240,10 @@ tools.
 | `revise-planning.sh` | `project-planner` (read-only, then write) | Approve the decisions | Revision JSON and report; architecture, roadmap, ADRs | Documents yes, revision no | No |
 | `finish-planning.sh` | None | Confirm earlier escalations; approve the planning | `docs/PLANNING_APPROVAL.md` | Yes | No |
 | `create-feature-issue.sh` | None | Create the Issue | Feature Issue on GitHub | Not applicable | No |
-| `start-feature.sh` | `implementer` (write) | None | Code and tests | Yes, by `finish-feature.sh` | No |
+| `start-feature.sh` | `implementer` (write) | None | Code and tests; the handoff note and manual steps as working files | Code and tests, by `finish-feature.sh` | By the agent, after its last change |
 | `review-feature.sh` | `reviewer` (read-only) | None | Review JSON and report | No | Yes, unless it already passed for this content |
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
-| `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes |
+| `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes, unless it already passed for this content |
 | `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes, unless it already passed for this content |
 | `publish-feature.sh` | None | Merge after the checks passed | The pushed branch and the pull request | Not applicable | Yes, in CI |
 
@@ -250,7 +256,9 @@ tools.
 | `review-planning.sh` | Not on a planning branch, a planning document is missing, or the requirements are not approved |
 | `revise-planning.sh` | The planning review is stale, or the planner leaves its file scope, commits, or changes nothing for adopted findings |
 | `finish-planning.sh` | No current review, a critical or major finding in the latest round, an undecided or unapplied finding, or an unresolved escalation |
+| `finish-planning.sh --amend` | Anything but the architecture and the ADRs changed, an ADR was deleted, the planning on `main` has no current approval, the branch lacks the latest `main`, or a required planning document is missing |
 | `create-feature-issue.sh` | The planning approval is missing or stale, the feature ID is unknown, duplicated, or empty, or the feature already has an Issue |
+| `start-feature.sh` | Tracked files in the checkout are modified, or the feature branch or worktree exists. With `--resume`: no worktree, or more than one, is on a branch of the Issue |
 | `review-feature.sh` | Not on `feature/<issue>-*`, nothing to review, or verification fails (unless `--unverified "<reason>"` is given) |
 | `review-feature.sh --changes` | Also: there is no previous round, nothing changed since it, the base of the branch changed, or the content of the previous round is no longer known |
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |

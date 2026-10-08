@@ -47,5 +47,5 @@ decline the proposed decisions.
 The approved `.agents/triage/*.json` artifact is the source of truth for these
 decisions. Use `./scripts/apply-triage.sh` to hand only its `FIX_NOW` scope to a
 write-capable implementation agent. The helper verifies the result but does not
-commit it. Inspect the diff and run a new independent review/triage when needed
-before committing.
+commit it. The fixes make the review stale, so run a new review round before
+committing: complete, or with `--changes` after a small, local fix.
