@@ -33,3 +33,7 @@ credentials*.json
 .agents/manual-steps/
 # The record of the last passed verification of this working tree.
 .agents/verification/
+# The summary of a feature's changes for its commit message, written by the
+# implementer, and the final messages of unattended agent sessions.
+.agents/summaries/
+.agents/run/

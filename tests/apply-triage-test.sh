@@ -47,6 +47,7 @@ setup_repo() {
   printf 'triage-implementer: codex model-i\n' >"$repo/.agents/agents.conf"
   printf 'marker: test -f AGENTS.md\n' >"$repo/scripts/verify.conf"
   printf '# Agents\n' >"$repo/AGENTS.md"
+  printf '.agents/run/\n' >"$repo/.gitignore"
 
   jq -n '{
     schema: "review/v1", issue: 13, round: 1, branch: "feature/13-apply-test", base: "main",
@@ -301,5 +302,60 @@ record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
 if run_apply "$repo" y "$triage"; then
   fail "a failed verification returned success"
 fi
+
+# --unattended asks nothing: the agent runs without a terminal, its final
+# message is stored and shown, and the result is verified as usual.
+repo="$(setup_repo unattended)"
+MOCK_OUTPUT="C1 is fixed." MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" \
+  run_apply "$repo" "" "$triage" --unattended || {
+  cat "$repo.out" >&2
+  fail "applying fixes unattended failed"
+}
+if grep -Fq "Start a write-capable" "$repo.out"; then fail "an unattended run asked for confirmation"; fi
+grep -Fq -- "exec --ignore-user-config" "$repo.log" || fail "the unattended fixes did not run without a terminal"
+grep -Fq "This session is unattended" "$repo.log" || fail "the unattended agent was not told to ask nothing"
+grep -Fq "Correctness regression" "$repo.log" || fail "the unattended agent was not given the FIX_NOW finding"
+[[ "$(cat "$repo/.agents/run/13-fixes.md")" == "C1 is fixed." ]] || fail "the final message of the fixes was not stored"
+grep -Fq "C1 is fixed." "$repo.out" || fail "the final message of the fixes was not shown"
+grep -Fq "verification passed" "$repo.out" || fail "the unattended fixes were not verified"
+
+# Without the option, no answer still means that nothing starts.
+repo="$(setup_repo no-answer)"
+run_apply "$repo" "" "$triage" || fail "declining by an empty answer returned an error"
+[[ ! -e "$repo.log" ]] || fail "an agent started without confirmation"
+
+# An agent that reports it needs the human stops the run with status 3.
+repo="$(setup_repo blocked)"
+status=0
+MOCK_OUTPUT="BLOCKED: fixing C1 needs a decision about the data format" \
+  run_apply "$repo" "" "$triage" --unattended || status=$?
+[[ "$status" -eq 3 ]] || fail "blocked unattended fixes exited with $status instead of 3"
+grep -Fq "needs you: fixing C1 needs a decision about the data format" "$repo.out" ||
+  fail "the reason of the blocked fixes was not reported"
+
+# A failed unattended agent is a failure, not a blocked one.
+repo="$(setup_repo unattended-fails)"
+status=0
+MOCK_WRITE_EXIT=6 run_apply "$repo" "" "$triage" --unattended || status=$?
+[[ "$status" -eq 6 ]] || fail "failed unattended fixes exited with $status instead of 6"
+status=0
+MOCK_WRITE_EXIT=3 run_apply "$repo" "" "$triage" --unattended || status=$?
+[[ "$status" -eq 1 ]] || fail "an agent that failed with status 3 was reported as blocked ($status)"
+
+# A blocked run also says when the content no longer verifies.
+repo="$(setup_repo blocked-unverified)"
+status=0
+MOCK_OUTPUT="BLOCKED: undecided" MOCK_WRITE_ACTION="rm '$repo/AGENTS.md'" \
+  run_apply "$repo" "" "$triage" --unattended || status=$?
+[[ "$status" -eq 3 ]] || fail "blocked fixes that fail verification exited with $status instead of 3"
+grep -Fq "verification also failed" "$repo.out" || fail "a blocked run did not report the failed verification"
+
+# The stored final message and the session log may not end up in the feature.
+repo="$(setup_repo not-ignored)"
+rm "$repo/.gitignore"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+if run_apply "$repo" "" "$triage" --unattended; then fail "unattended fixes ran although .agents/run/ is not ignored"; fi
+grep -Fq "does not ignore .agents/run/" "$repo.out" || fail "the missing ignore rule was not named"
+[[ ! -e "$repo.log" ]] || fail "an agent started although .agents/run/ is not ignored"
 
 echo "apply-triage tests passed"

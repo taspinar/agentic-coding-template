@@ -40,6 +40,7 @@ fail() {
 }
 
 agent_parse_args "$@"
+agent_reject_unattended
 
 description_source=""
 change_source=""

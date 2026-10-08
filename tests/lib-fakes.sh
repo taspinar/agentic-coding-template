@@ -41,6 +41,7 @@ fi
 
 output_file=""
 structured=0
+[[ "$*" != *"--output-format json"* ]] || structured=1
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in

@@ -24,6 +24,10 @@ be limited to the changes since the previous one.
   session that resumes the work. A working file, ignored by Git.
 - `.agents/manual-steps/`: per Issue, the steps a feature needs from the
   human; copied into the commit message and the pull request. Working files.
+- `.agents/summaries/`: per Issue, the implementer's summary of the changes,
+  which becomes the list of changes in the commit message. Working files.
+- `.agents/run/`: the final messages of agents that ran unattended. Working
+  files.
 - `.agents/verification/`: the record of the last passed verification of the
   working tree. A working file.
 - `docs/changes/`: one change request per change cycle of the approved

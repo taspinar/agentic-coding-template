@@ -363,16 +363,20 @@ if [[ "$deferred_count" -gt 0 ]]; then
 fi
 echo "Approval will publish the review and triage reports as a comment on Issue #$source_issue."
 
-printf "Proceed with this triage? [y/N] "
-approval=""
-read -r approval || true
-case "$approval" in
-  y | Y | yes | YES) ;;
-  *)
-    echo "Triage declined; no artifact or GitHub issues were created."
-    exit 0
-    ;;
-esac
+if [[ "$AGENT_UNATTENDED" -eq 1 ]]; then
+  echo "Approved without a question (--unattended)."
+else
+  printf "Proceed with this triage? [y/N] "
+  approval=""
+  read -r approval || true
+  case "$approval" in
+    y | Y | yes | YES) ;;
+    *)
+      echo "Triage declined; no artifact or GitHub issues were created."
+      exit 0
+      ;;
+  esac
+fi
 
 triage_dir="$root/.agents/triage"
 mkdir -p "$triage_dir"
@@ -408,7 +412,8 @@ jq -n \
   --arg source_review "$review_relative" \
   --arg agent "$agent" \
   --arg model "$model" \
-  --arg approved_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" '
+  --arg approved_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --argjson unattended "$([[ "$AGENT_UNATTENDED" -eq 1 ]] && echo true || echo false)" '
   {
     schema: "triage/v1",
     source_review: $source_review,
@@ -418,7 +423,7 @@ jq -n \
     triage: {agent: $agent, model: $model},
     approved_at: $approved_at,
     decisions: $decisions[0]
-  }' >"$pending"
+  } + (if $unattended then {unattended: true} else {} end)' >"$pending"
 
 record_issue() {
   local finding_id="$1"

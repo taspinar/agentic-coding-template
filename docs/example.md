@@ -227,7 +227,8 @@ Add recipes
 Issue: #12
 
 Changes:
-- TODO: summarize the main changes
+- Adds a page that lists the recipes, sorted by name.
+- Stores recipes in the browser, so the list survives a reload.
 
 Verification:
 - ./scripts/verify.sh passed
@@ -240,7 +241,8 @@ Review: round 2, PASS, by claude (fable); triage published on #12
 Refs #12
 ```
 
-Replace the TODO, save, and close the editor. Then:
+The list of changes is the summary the implementer wrote; adjust it when you
+want to, save, and close the editor. Then:
 
 ```bash
 ./scripts/publish-feature.sh 12
