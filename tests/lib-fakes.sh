@@ -41,6 +41,7 @@ fi
 
 output_file=""
 structured=0
+[[ "$*" != *"--output-format json"* ]] || structured=1
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
@@ -53,7 +54,8 @@ if [[ -n "${MOCK_AGENT_ACTION:-}" ]]; then
   eval "$MOCK_AGENT_ACTION"
 fi
 # MOCK_WRITE_ACTION and MOCK_WRITE_EXIT apply only to write-capable sessions.
-if [[ "$*" == *"--sandbox workspace-write"* || "$*" == *"--permission-mode acceptEdits"* ]]; then
+if [[ "$*" == *"--sandbox workspace-write"* || "$*" == *"--permission-mode acceptEdits"* ||
+  "$*" == *"--permission-mode auto"* ]]; then
   if [[ -n "${MOCK_WRITE_ACTION:-}" ]]; then
     eval "$MOCK_WRITE_ACTION"
   fi

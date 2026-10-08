@@ -62,6 +62,13 @@ repository or account setting, a secret, a service to enable), update
 `.agents/manual-steps/<issue-number>.md` to match: one step per line starting
 with `- `, and nothing else. Delete the file when no step remains.
 
+## Summary of the changes
+
+When a fix changes what the feature does, update
+`.agents/summaries/<issue-number>.md`, the list the commit message is built
+from: lines that each start with `- `. Leave it as it is for a fix that only
+corrects what was already described.
+
 ## Completion
 
 Report:

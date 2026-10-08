@@ -198,12 +198,12 @@ planning PR description.
 ```mermaid
 flowchart LR
   sf["start-feature.sh"] --> code["code and tests"]
-  sf --> notes["handoff note, manual steps<br/>verification record"]
+  sf --> notes["handoff note, manual steps,<br/>summary of the changes,<br/>verification record"]
   rf["review-feature.sh"] --> rev["feature-ISSUE-SLUG-review-NN.json and .md"]
   tr["triage-review.sh"] --> tri["…-review-NN-triage.json and .md"]
   tr --> gh["follow-up Issues for DEFER<br/>comment with both reports"]
   at["apply-triage.sh<br/>verifies the result"] --> fixes["fixes for FIX_NOW"]
-  ff["finish-feature.sh<br/>verifies the result"] --> commit["commit with review round, manual steps,<br/>and a reference to the Issue"]
+  ff["finish-feature.sh<br/>verifies the result"] --> commit["commit with the changes, review round,<br/>manual steps, and a reference to the Issue"]
   pr["publish-feature.sh<br/>CI runs verify.sh"] --> prgh["pull request that closes the Issue"]
 
   classDef repo fill:#E1F5EE,stroke:#0F6E56,color:#085041
@@ -229,7 +229,12 @@ Agent roles and models come from `.agents/agents.conf`; every agent script
 accepts `--agent` and `--model` to override them for one run. Profiles are
 described in `docs/development.md`: `write` sessions may change files in their
 worktree, `read-only` sessions cannot and get no MCP servers or other remote
-tools.
+tools. A third profile, `unattended`, has the reach of `write` without a
+terminal and without those tools. A feature step uses it when it is run with
+`--unattended`, which also answers the step's own question: the triage is
+approved, the fixes start, and the commit message is not opened in an editor.
+A session that needs your decision ends with a `BLOCKED:` line, and the step
+exits with status 3.
 
 ### Steps
 
@@ -241,7 +246,7 @@ tools.
 | `revise-planning.sh` | `project-planner` (read-only, then write) | Approve the decisions | Revision JSON and report; architecture, roadmap, ADRs | Documents yes, revision no | No |
 | `finish-planning.sh` | None | Confirm earlier escalations; approve the planning | `docs/PLANNING_APPROVAL.md` | Yes | No |
 | `create-feature-issue.sh` | None | Create the Issue | Feature Issue on GitHub | Not applicable | No |
-| `start-feature.sh` | `implementer` (write) | None | Code and tests; the handoff note and manual steps as working files | Code and tests, by `finish-feature.sh` | By the agent, after its last change |
+| `start-feature.sh` | `implementer` (write) | None | Code and tests; the handoff note, manual steps, and summary of the changes as working files | Code and tests, by `finish-feature.sh` | By the agent, after its last change |
 | `review-feature.sh` | `reviewer` (read-only) | None | Review JSON and report | No | Yes, unless it already passed for this content |
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes, unless it already passed for this content |

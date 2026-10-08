@@ -252,6 +252,74 @@ run_finish "$repo" 12 "Fix a typo" --no-review "documentation typo" || {
 message "$repo" | grep -Fqx "Review: no independent review (low risk: documentation typo)" ||
   fail "the commit message does not record the missing review"
 
+# The list of changes comes from the implementer's summary: its list items,
+# and nothing else. The file is a working file and is not committed.
+changes_of() {
+  message "$1" | sed -n '/^Changes:$/,/^$/p'
+}
+
+repo="$(setup_repo summary PASS "[]")"
+mkdir -p "$repo/.agents/summaries"
+printf 'Summary of the feature:\n\n- Adds the marker file.\n  - Explains why it matters.\n-not an item\n- \n' \
+  >"$repo/.agents/summaries/12.md"
+printf -- '- A change of another Issue.\n' >"$repo/.agents/summaries/99.md"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing a feature with a summary failed"
+}
+[[ "$(changes_of "$repo")" == "Changes:
+- Adds the marker file.
+- Explains why it matters." ]] || fail "the commit message does not list exactly the summarized changes"
+if git -C "$repo" show --name-only --format= HEAD | grep -Fq "summaries"; then
+  fail "the summary file was committed"
+fi
+
+# Without a summary you fill in the list yourself, in the editor.
+repo="$(setup_repo no-summary PASS "[]")"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature without a summary failed"
+[[ "$(changes_of "$repo")" == "Changes:
+- TODO: summarize the main changes" ]] || fail "the list of changes to fill in is missing"
+
+# --unattended commits without an editor, and says so when the implementer
+# left no summary.
+repo="$(setup_repo unattended PASS "[]")"
+EDITOR_COMMAND=false run_finish "$repo" 12 "Add the marker" --unattended || {
+  cat "$repo.out" >&2
+  fail "finishing unattended failed"
+}
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 2 ]] || fail "finishing unattended created no commit"
+[[ "$(changes_of "$repo")" == "Changes:
+- The implementer supplied no summary of the changes; see the diff and Issue #12." ]] ||
+  fail "an unattended commit without a summary does not say so"
+grep -Fq "Warning: the implementer supplied no summary" "$repo.out" || fail "the missing summary was not reported"
+message "$repo" | grep -Fqx "Review: round 1, PASS, by claude (model-r)" || fail "the unattended commit lacks its review"
+
+# The option may stand anywhere, and the checks before the commit still apply.
+repo="$(setup_repo unattended-no-review PASS "[]")"
+rm "$repo/$review"
+mkdir -p "$repo/.agents/summaries"
+printf -- '- Fixes a typo.\n' >"$repo/.agents/summaries/12.md"
+EDITOR_COMMAND=false run_finish "$repo" --unattended 12 "Fix a typo" --no-review "documentation typo" ||
+  fail "finishing unattended without a review failed"
+[[ "$(changes_of "$repo")" == "Changes:
+- Fixes a typo." ]] || fail "the unattended commit does not list the summarized changes"
+
+# A summary that Git does not ignore would be committed with the feature.
+repo="$(setup_repo summary-not-ignored PASS "[]")"
+grep -v '^\.agents/summaries/$' "$repo/.gitignore" >"$tmp/gitignore" && cp "$tmp/gitignore" "$repo/.gitignore"
+mkdir -p "$repo/.agents/summaries"
+printf -- '- Adds the marker.\n' >"$repo/.agents/summaries/12.md"
+record_reviewed_tree "$repo" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then fail "a summary that is not ignored was accepted"; fi
+grep -Fq ".agents/summaries/" "$repo.out" || fail "the missing ignore rule for the summary was not named"
+
+repo="$(setup_repo unattended-major CHANGES_REQUIRED "$major")"
+expect_no_commit "$repo" "the review has a major finding, unattended" 12 "Add the marker" --unattended
+
+# With an editor, a failing editor creates no commit.
+repo="$(setup_repo editor-fails PASS "[]")"
+EDITOR_COMMAND=false expect_no_commit "$repo" "the editor failed" 12 "Add the marker"
+
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
 EDITOR_COMMAND='sh -c ": > \"\$0\""' expect_no_commit "$repo" "the commit message was emptied" 12 "Add the marker"

@@ -89,7 +89,8 @@ Before declaring the issue complete:
 1. Inspect `git diff`.
 2. Verify every acceptance criterion in the GitHub Issue.
 3. Check for unrelated changes.
-4. Record the manual steps, as described below.
+4. Record the manual steps and the summary of the changes, as described
+   below.
 5. Finish every edit to a file that Git tracks, including the plan.
 6. Run `./scripts/verify.sh` as the last thing that touches the repository.
 7. Report the result, with compact verification evidence and unresolved
@@ -114,6 +115,11 @@ request.
 
 
 Do not claim completion when verification fails.
+
+The summary of the changes goes into the commit message. Write it to
+`.agents/summaries/<issue-number>.md`: two to six lines that each start with
+`- ` and say what changed and why it matters, in plain words, not a list of
+files. Git ignores the file, so writing it does not change what was verified.
 
 `scripts/start-feature.sh` is waiting for this session to end. When you are
 done, report the result and ask the human to exit the session. The script then

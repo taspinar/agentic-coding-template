@@ -320,7 +320,9 @@ triage_artifact_errors() {
       "the file is not a triage/v1 artifact"
     else
       unexpected(["approved_at", "decisions", "issue", "published_at", "review_verdict", "reviewed_tree",
-                  "schema", "source_review", "triage"]; "the triage"),
+                  "schema", "source_review", "triage", "unattended"]; "the triage"),
+      (if .unattended == null or .unattended == true then empty
+       else "unattended must be true or absent" end),
       (if .published_at == null or ((.published_at | type) == "string"
           and (.published_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))) then empty
        else "published_at must be a UTC timestamp" end),
@@ -465,7 +467,7 @@ triage_render_markdown() {
     "Source feature Issue: #\(.issue)\n\n" +
     "Reviewer verdict: \(.review_verdict | gsub("_"; " "))\n\n" +
     "Triage agent: \(.triage.agent) (\(.triage.model))\n\n" +
-    "Approved at: \(.approved_at)\n\n" +
+    "Approved at: \(.approved_at)\(if .unattended == true then ", by an unattended run; no human approved these decisions" else "" end)\n\n" +
     group("FIX_NOW"; "Fix now") + "\n" +
     group("DEFER"; "Deferred") + "\n" +
     group("ACCEPT"; "Accepted")

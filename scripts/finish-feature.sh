@@ -7,7 +7,7 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 
 usage() {
-  echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"]"
+  echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended]"
   echo
   echo "Run in the feature worktree. Checks that verification passes and that the"
   echo "latest independent review is current and resolved, then commits the feature"
@@ -15,6 +15,10 @@ usage() {
   echo
   echo "--no-review is only for changes that .agents/policies/autonomy.md classifies"
   echo "as low risk; the reason is recorded in the commit message."
+  echo
+  echo "The list of changes in the message comes from .agents/summaries/<issue>.md,"
+  echo "which the implementer writes. --unattended commits that message as it is,"
+  echo "without opening an editor."
   exit 1
 }
 
@@ -22,6 +26,17 @@ fail() {
   echo "Error: $*" >&2
   exit 1
 }
+
+unattended=0
+arguments=()
+for argument in "$@"; do
+  if [[ "$argument" == "--unattended" ]]; then
+    unattended=1
+  else
+    arguments+=("$argument")
+  fi
+done
+set -- ${arguments[@]+"${arguments[@]}"}
 
 [[ $# -eq 2 || ( $# -eq 4 && "$3" == "--no-review" ) ]] || usage
 issue="$1"
@@ -136,6 +151,21 @@ if [[ -f "$manual_file" ]] && grep -q '[^[:space:]]' "$manual_file"; then
   echo
 fi
 
+# The implementer's summary of the changes. Lines that are not list items are
+# left out, so the message keeps its shape.
+changes="- TODO: summarize the main changes"
+summary_file="$root/.agents/summaries/$issue.md"
+if [[ -f "$summary_file" ]]; then
+  git -C "$root" check-ignore -q ".agents/summaries/$issue.md" ||
+    fail "Git does not ignore .agents/summaries/$issue.md, so it would be committed. Add '.agents/summaries/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
+fi
+if [[ -f "$summary_file" ]] && grep -q '^[[:space:]]*- [^[:space:]]' "$summary_file"; then
+  changes="$(grep '^[[:space:]]*- [^[:space:]]' "$summary_file" | sed 's/^[[:space:]]*//')"
+elif [[ "$unattended" -eq 1 ]]; then
+  echo "Warning: the implementer supplied no summary of the changes (.agents/summaries/$issue.md); the commit message says so." >&2
+  changes="- The implementer supplied no summary of the changes; see the diff and Issue #$issue."
+fi
+
 # 4. Stage everything and commit with an editable, structured message.
 git -C "$root" add -A
 echo "Changes to commit:"
@@ -150,7 +180,7 @@ $summary
 Issue: #$issue
 
 Changes:
-- TODO: summarize the main changes
+$changes
 
 Verification:
 - ./scripts/verify.sh passed
@@ -163,7 +193,9 @@ $review_line
 Refs #$issue
 EOF
 
-if ! git -C "$root" commit --edit -F "$message_file"; then
+commit_options=(--edit)
+[[ "$unattended" -eq 0 ]] || commit_options=(--quiet)
+if ! git -C "$root" commit "${commit_options[@]}" -F "$message_file"; then
   echo "Error: the commit was not created. The changes remain staged." >&2
   exit 1
 fi

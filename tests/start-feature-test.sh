@@ -46,6 +46,7 @@ setup_repo() {
   copy_workflow "$seed"
   printf 'implementer: codex model-i\n' >"$seed/.agents/agents.conf"
   printf '# Project\n' >"$seed/README.md"
+  printf '.agents/run/\n' >"$seed/.gitignore"
   git -C "$seed" init -q -b main
   git -C "$seed" config user.name "Start Feature Test"
   git -C "$seed" config user.email "start-feature-test@example.com"
@@ -237,5 +238,69 @@ if compgen -G "$tmp/refused-5-*" >/dev/null; then fail "a refused start created 
 repo="$(setup_repo agent-fails)"
 if MOCK_WRITE_EXIT=6 run_start "$repo" 6 thing; then fail "a failed implementer returned success"; fi
 [[ -d "$tmp/agent-fails-6-thing" ]] || fail "the worktree was removed after a failed implementer"
+
+# --unattended runs the implementer without a terminal: it is told not to
+# ask, and its final message is stored in the worktree and shown.
+repo="$(setup_repo unattended)"
+MOCK_OUTPUT="The feature is implemented." run_start "$repo" 7 thing --unattended || {
+  cat "$repo.out" >&2
+  fail "an unattended start failed"
+}
+worktree="$tmp/unattended-7-thing"
+grep -Fq -- "exec --ignore-user-config" "$repo.log" || fail "the unattended implementer did not run without a terminal"
+grep -Fq "This session is unattended" "$repo.log" || fail "the unattended implementer was not told to ask nothing"
+grep -Fq "GitHub Issue #7" "$repo.log" || fail "the unattended implementer was not given its Issue"
+[[ "$(cat "$worktree/.agents/run/7-implementer.md")" == "The feature is implemented." ]] ||
+  fail "the final message of the unattended implementer was not stored"
+grep -Fq "The feature is implemented." "$repo.out" || fail "the final message of the unattended implementer was not shown"
+
+# A resumed session can run unattended too, with the other provider.
+rm -f "$repo.log"
+MOCK_OUTPUT="Continued." run_start "$repo" 7 --resume --unattended --agent claude --model model-c || {
+  cat "$repo.out" >&2
+  fail "an unattended resume failed"
+}
+grep -Fq -- "--permission-mode auto --permission-prompts none" "$repo.log" ||
+  fail "the unattended claude implementer did not run without prompts"
+[[ "$(cat "$worktree/.agents/run/7-implementer.md")" == "Continued." ]] ||
+  fail "the final message of the resumed session did not replace the previous one"
+
+# An agent that reports it needs the human stops the run with status 3.
+status=0
+MOCK_OUTPUT="I stopped.
+BLOCKED: the Issue contradicts ADR 002" run_start "$repo" 7 --resume --unattended || status=$?
+[[ "$status" -eq 3 ]] || fail "a blocked unattended session exited with $status instead of 3"
+grep -Fq "needs you: the Issue contradicts ADR 002" "$repo.out" || fail "the reason of a blocked session was not reported"
+grep -Fq "7 --resume" "$repo.out" || fail "a blocked session did not say how to continue"
+if grep -Fq "review-feature.sh 7" "$repo.out"; then fail "a blocked session was followed by the next steps"; fi
+
+# A failed unattended session is a failure, not a blocked one.
+status=0
+MOCK_WRITE_EXIT=6 run_start "$repo" 7 --resume --unattended || status=$?
+[[ "$status" -eq 6 ]] || fail "a failed unattended session exited with $status"
+status=0
+MOCK_WRITE_EXIT=3 run_start "$repo" 7 --resume --unattended || status=$?
+[[ "$status" -eq 1 ]] || fail "an agent that failed with status 3 was reported as blocked ($status)"
+if grep -Fq "needs you" "$repo.out"; then fail "a failed session was reported as blocked"; fi
+
+# The stored final message and the session log may not end up in the feature.
+repo="$(setup_repo not-ignored)"
+git -C "$repo" rm -q .gitignore
+git -C "$repo" -c user.name="Start Feature Test" -c user.email="start-feature-test@example.com" \
+  commit -qm "Remove the ignore rules"
+git -C "$repo" push -q origin main
+if run_start "$repo" 8 thing --unattended; then fail "an unattended start ran although .agents/run/ is not ignored"; fi
+grep -Fq ".agents/run/" "$repo.out" || fail "the missing ignore rule was not named"
+grep -Fq "8 --resume --unattended" "$repo.out" || fail "a refused unattended start did not say how to continue"
+[[ ! -e "$repo.log" ]] || fail "an agent started although .agents/run/ is not ignored"
+printf '.agents/run/\n' >"$tmp/not-ignored-8-thing/.gitignore"
+MOCK_OUTPUT="Done." run_start "$repo" 8 --resume --unattended || fail "the refused start could not be continued after adding the rule"
+
+# A session with a terminal is not told that it is unattended, and a line
+# that starts with BLOCKED in its output does not stop anything.
+repo="$(setup_repo attended)"
+MOCK_OUTPUT="BLOCKED: nothing" run_start "$repo" 7 thing || fail "an attended start failed"
+if grep -Fq "This session is unattended" "$repo.log"; then fail "an attended session was told it is unattended"; fi
+[[ ! -e "$tmp/attended-7-thing/.agents/run" ]] || fail "an attended session stored a final message"
 
 echo "start-feature tests passed"

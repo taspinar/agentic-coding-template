@@ -1094,6 +1094,8 @@ expect_change_refused() {
 expect_change_refused "the change request does not exist" missing "$change_repo" --change "$tmp/no-such-change.md"
 expect_change_refused "the change request is empty" empty "$change_repo" --change "$tmp/empty-change.md"
 expect_change_refused "a description was given too" both "$change_repo" --change "$change_request" --description "$change_request"
+expect_change_refused "planning cannot run unattended" unattended "$change_repo" --change "$change_request" --unattended
+grep -Fq "cannot run with --unattended" "$tmp/refused.out" || fail "the refusal of an unattended planning gave no reason"
 fresh_repo="$(setup_repo change-unapproved)"
 expect_change_refused "no planning was approved yet" early "$fresh_repo" --change "$change_request"
 

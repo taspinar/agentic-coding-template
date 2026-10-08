@@ -63,7 +63,7 @@ What each part of the template is for. The workflow that connects them is in
 
 | Path | Purpose |
 |---|---|
-| `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write` or `read-only` profile |
+| `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write`, `unattended`, or `read-only` profile |
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
@@ -97,6 +97,8 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/triage/` | Approved triage results (JSON and generated reports) | No |
 | `.agents/verification/` | The record of the last passed verification, written by `verify.sh` | No |
 | `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
+| `.agents/summaries/` | Per Issue, the implementer's summary of the changes; becomes the list of changes in the commit message | No |
+| `.agents/run/` | The final messages, and for Codex the session logs, of agents that ran with `--unattended` | No |
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |

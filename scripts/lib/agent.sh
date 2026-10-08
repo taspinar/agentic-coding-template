@@ -18,13 +18,21 @@ agent_fail() {
 # agent_parse_args "$@"
 # Separates --agent/--model from the other arguments of a workflow script.
 # Sets AGENT_CLI_PROVIDER, AGENT_CLI_MODEL, and the AGENT_POSITIONAL array.
+# --unattended sets AGENT_UNATTENDED to 1: the script asks nothing and runs
+# its writing agent with the 'unattended' profile. A script that cannot run
+# that way calls agent_reject_unattended.
 agent_parse_args() {
   AGENT_CLI_PROVIDER=""
   AGENT_CLI_MODEL=""
+  AGENT_UNATTENDED=0
   AGENT_POSITIONAL=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --unattended)
+        AGENT_UNATTENDED=1
+        shift
+        ;;
       --agent | --model)
         [[ $# -ge 2 && -n "$2" ]] || agent_fail "$1 requires a value."
         if [[ "$1" == "--agent" ]]; then
@@ -40,6 +48,36 @@ agent_parse_args() {
         ;;
     esac
   done
+}
+
+agent_reject_unattended() {
+  [[ "${AGENT_UNATTENDED:-0}" -eq 0 ]] ||
+    agent_fail "this step needs your decisions and cannot run with --unattended."
+}
+
+# agent_require_ignored <root> <path>
+# Fails unless Git ignores <path> in the working tree at <root>. A working
+# file that is not ignored would be committed with the feature, and would
+# change the content that a verification or review was recorded for.
+agent_require_ignored() {
+  git -C "$1" check-ignore -q "$2" 2>/dev/null ||
+    agent_fail "Git does not ignore $2 in $1. Add '$(dirname "$2")/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
+}
+
+# What an unattended writing agent is told, in addition to its task.
+AGENT_UNATTENDED_PROMPT="This session is unattended: nobody reads along and nobody answers questions.
+Do not ask anything and do not wait for the human. When you cannot continue
+without a decision of the human, or the work conflicts with the Issue's scope,
+the architecture, or an ADR, stop: record the question under 'Open questions'
+in the handoff note, and end your final message with one line that starts with
+'BLOCKED: ' and gives the reason. Otherwise finish the work and end normally."
+
+# agent_blocked_reason <final-message-file>
+# Prints the reason of the last 'BLOCKED: ' line of an unattended session's
+# final message, or nothing when the session did not report one.
+agent_blocked_reason() {
+  [[ -f "$1" ]] || return 0
+  sed -n 's/^[[:space:]]*BLOCKED:[[:space:]]*//p' "$1" | tail -n 1
 }
 
 # agent_lookup <root> <role>
@@ -161,6 +199,19 @@ agent_session_notice() {
 #              use the network. What goes beyond that needs the user's
 #              permission: Claude asks before it runs a shell command, Codex
 #              before a command leaves its work-directory sandbox.
+#   unattended Non-interactive session with the reach of 'write': it may
+#              modify the work directory and use the network, needs no
+#              terminal, asks nothing, and ends by itself. The agent's final
+#              message is stored in <output-file>. What 'write' would ask the
+#              user is decided without them: Codex stays inside its
+#              work-directory sandbox and is refused what leaves it; Claude
+#              runs in its 'auto' permission mode, whose own check allows or
+#              denies each action, and anything that would still prompt is
+#              denied. Like a read-only session it gets no MCP servers, apps,
+#              or other tools from the user's configuration, because those
+#              act outside the sandbox: Codex runs without the user's
+#              config.toml and with apps, browser use, and computer use
+#              disabled; Claude runs without MCP configuration.
 #   read-only  Non-interactive session that cannot modify files. The agent's
 #              final message is stored in <output-file>. <context-file>, when
 #              given, is supplied to the agent on standard input. With a
@@ -200,12 +251,25 @@ agent_run() {
   local status
 
   case "$profile" in
-    write | read-only) ;;
-    *) agent_fail "unknown permission profile '$profile'. Known profiles: write, read-only." ;;
+    write | unattended | read-only) ;;
+    *) agent_fail "unknown permission profile '$profile'. Known profiles: write, unattended, read-only." ;;
   esac
 
-  if [[ "$profile" == "read-only" && -z "$output_file" ]]; then
-    agent_fail "permission profile 'read-only' requires an output file."
+  if [[ "$profile" != "write" && -z "$output_file" ]]; then
+    agent_fail "permission profile '$profile' requires an output file."
+  fi
+
+  # An unattended session gets its whole task in the prompt; a context or
+  # schema file would be dropped without notice.
+  if [[ "$profile" == "unattended" && ( "$context_file" != "/dev/null" || -n "$schema_file" ) ]]; then
+    agent_fail "permission profile 'unattended' takes no context file or schema file."
+  fi
+
+  if [[ "$profile" == "unattended" ]]; then
+    echo "An unattended $provider session starts now. It asks nothing and ends by itself;"
+    echo "this can take a long time. Its final message is stored in:"
+    echo "  $output_file"
+    echo
   fi
 
   if [[ "$profile" == "write" ]]; then
@@ -238,6 +302,67 @@ agent_run() {
           --model "$model" \
           "$prompt"
       )
+      ;;
+    codex:unattended)
+      # As a write session, but without a terminal: 'codex exec' never asks,
+      # so a command its sandbox blocks is refused instead of approved.
+      status=0
+      (
+        cd "$workdir"
+        codex exec \
+          --ignore-user-config \
+          -c sandbox_workspace_write.network_access=true \
+          --sandbox workspace-write \
+          --disable apps \
+          --disable browser_use \
+          --disable computer_use \
+          --color never \
+          --cd "$workdir" \
+          --output-last-message "$output_file" \
+          --model "$model" \
+          "$prompt"
+      ) </dev/null >"$output_file.log" 2>&1 || status=$?
+
+      # Nothing validates the result afterwards, so a session without a
+      # final message counts as failed. Its own output says why.
+      if [[ "$status" -ne 0 || ! -s "$output_file" ]]; then
+        echo "The unattended codex session failed or left no final message. The end of its log ($output_file.log):" >&2
+        tail -n 20 "$output_file.log" >&2
+        [[ "$status" -ne 0 ]] || status=1
+        return "$status"
+      fi
+      ;;
+    claude:unattended)
+      command -v jq >/dev/null 2>&1 || agent_fail "jq is required for an unattended Claude session."
+
+      # 'auto' lets Claude's own permission check decide each action; with no
+      # one to answer, whatever would still prompt is denied.
+      envelope="$output_file.envelope"
+      status=0
+      (
+        cd "$workdir"
+        claude \
+          --print \
+          --permission-mode auto \
+          --permission-prompts none \
+          --strict-mcp-config \
+          --output-format json \
+          --model "$model" \
+          "$prompt"
+      ) </dev/null >"$envelope" || status=$?
+
+      if [[ "$status" -ne 0 ]] || jq -e '.is_error == true' "$envelope" >/dev/null 2>&1; then
+        jq -r '.result // empty' "$envelope" >&2 2>/dev/null || cat "$envelope" >&2
+        [[ "$status" -ne 0 ]] || status=1
+        return "$status"
+      fi
+      # Nothing validates this result afterwards, so anything but a result
+      # envelope with a final message counts as a failed session.
+      if ! jq -er '.result | strings' "$envelope" >"$output_file" 2>/dev/null; then
+        echo "The unattended claude session returned no final message. Its output ($envelope):" >&2
+        head -c 2000 "$envelope" >&2
+        return 1
+      fi
       ;;
     codex:read-only)
       if [[ -n "$schema_file" ]]; then
