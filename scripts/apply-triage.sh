@@ -186,6 +186,12 @@ ${fix_scope}
 
 Do not implement any DEFER or ACCEPT finding.
 Do not commit, push, merge, deploy, or create/close Issues."
+if [[ -n "$source_issue" && -f "$root/.agents/handoffs/$source_issue.md" ]]; then
+  start_prompt+="
+
+There is a handoff note: .agents/handoffs/$source_issue.md. Read it first; it
+may hold the human's answer to a question of an earlier session."
+fi
 
 file_signature() {
   local path="$1"

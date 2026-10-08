@@ -53,6 +53,17 @@ flowchart LR
    ./scripts/publish-feature.sh 12   # push and open the pull request
    ```
 
+   Or let one command run those steps, from `start-feature.sh` up to the
+   open pull request, without questions:
+
+   ```bash
+   ./scripts/run-feature.sh 12
+   ```
+
+   Its agents run unattended and the triage is approved without you; read
+   "Running a feature with one command" in `docs/development.md` before you
+   use it.
+
    Merge the pull request after its checks passed, and remove the
    worktree from the primary checkout with
    `./scripts/cleanup-worktree.sh 12`, or all merged worktrees at once with
