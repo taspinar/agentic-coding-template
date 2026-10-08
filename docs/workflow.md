@@ -150,11 +150,10 @@ flowchart TD
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - `publish-feature.sh` pushes the branch and opens the pull request that
-  closes the Issue. You merge the pull request yourself, after its checks
-  passed. When `main` requires a passing check, GitHub enforces that and the
-  script does not wait; otherwise the script waits for CI and reports the
-  result. A failed check means a fix in the worktree and another round:
-  review, finish, publish.
+  closes the Issue. Follow its checks on the pull request and merge it
+  yourself, after they passed. When `main` requires a passing check, GitHub
+  enforces that; otherwise the script warns that nothing does. A failed check
+  means a fix in the worktree and another round: review, finish, publish.
 - After the merge, remove the worktree and its branch with
   `cleanup-worktree.sh <issue>`.
 
@@ -247,7 +246,7 @@ tools.
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes, unless it already passed for this content |
 | `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes, unless it already passed for this content |
-| `publish-feature.sh` | None | Merge after the checks passed | The pushed branch and the pull request | Not applicable | Yes, in CI |
+| `publish-feature.sh` | None | Merge after the checks passed, which you follow on the pull request | The pushed branch and the pull request | Not applicable | Yes, in CI |
 
 ### Checks that stop a step
 
@@ -266,7 +265,7 @@ tools.
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
 | `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it |
-| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. When it waits for the checks, it exits non-zero when one fails |
+| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. With `--wait` it exits non-zero when a check fails |
 
 ### Helper scripts
 

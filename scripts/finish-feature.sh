@@ -171,6 +171,6 @@ fi
 echo
 echo "Committed $(git -C "$root" rev-parse --short HEAD) on $branch."
 echo
-echo "Next: push the branch, open the pull request, and wait for CI:"
+echo "Next: push the branch and open the pull request; follow its checks there:"
 echo "  ./scripts/publish-feature.sh $issue"
 echo "After the merge, from the primary checkout: ./scripts/cleanup-worktree.sh $issue"

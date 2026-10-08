@@ -808,26 +808,22 @@ the commit message, the manual steps, and `Closes #12`. For a pull request
 that is already open it pushes and replaces the description with the current
 one, since a fix round can change the manual steps. It never merges.
 
-Local verification during a feature never runs on a clean checkout, and may
-run on another operating system than CI, so a failure can appear in CI only.
-A pull request must therefore not be merged while a check fails. What the
-script does about that depends on the base branch:
+The script ends once the pull request is open and prints its address. Follow
+the checks there and merge after they passed. Local verification during a
+feature never runs on a clean checkout, and may run on another operating
+system than CI, so a failure can appear in CI only; a pull request must not be
+merged while a check fails.
 
-- **The base branch requires a passing status check** (a ruleset or branch
-  protection): GitHub refuses the merge while a check fails. The script stops
-  once the pull request is open and prints the command to follow the checks,
-  so the terminal is free.
-- **It does not, or the rules cannot be read:** nothing stops the merge, so
-  the script waits for the checks and ends with the result. All checks
-  passed: the pull request is ready to merge. A check failed: it exits
-  non-zero and tells you not to merge; fix the cause in the worktree, then
-  review, finish, and publish again. No checks were reported: the repository
-  has no CI for pull requests, and the script says that nothing verified the
-  change on GitHub.
+- When the base branch requires a passing status check, through a ruleset or
+  branch protection, GitHub refuses that merge, and the script says so.
+- When it does not, the script warns: nothing but your own look at the checks
+  stops the merge. `docs/repository-setup.md` describes how to add the rule,
+  and `./scripts/doctor.sh` reports a `main` without one.
 
-`--wait` always waits, for example to see the result in the terminal;
-`--no-wait` never does. `./scripts/doctor.sh` warns when `main` requires no
-status check; `docs/repository-setup.md` describes how to add one.
+`--wait` keeps the script running until the checks finish, to have the result
+in the terminal: all checks passed, or a non-zero exit and the advice not to
+merge when one failed. After a failed check, fix the cause in the worktree,
+then review, finish, and publish again.
 
 After the merge GitHub closes the linked Issue. From the primary checkout,
 remove the merged worktree and its branch:

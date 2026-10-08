@@ -109,11 +109,12 @@ pushed() {
 }
 
 # The branch is pushed, the pull request closes the Issue and carries the
-# commit message and the manual steps, and passing checks end successfully.
+# commit message and the manual steps, and with --wait passing checks end
+# successfully.
 repo="$(setup_repo pass)"
 mkdir -p "$repo/.agents/manual-steps"
 printf -- '- Enable GitHub Pages under Settings, Pages.\n' >"$repo/.agents/manual-steps/12.md"
-run_publish "$repo" 12 || {
+run_publish "$repo" 12 --wait || {
   cat "$repo.out" >&2
   fail "publishing a committed feature failed"
 }
@@ -125,7 +126,6 @@ for line in "Issue: #12" "Review: round 1, PASS, by claude (model-r)" "## Manual
   grep -Fqx -- "$line" "$repo.gh.body" || fail "the pull request description lacks: $line"
 done
 grep -Fq "pr checks feature/12-marker --watch" "$repo.gh" || fail "the checks were not awaited"
-grep -Fq "does not require a status check" "$repo.out" || fail "the reason for waiting was not given"
 grep -Fq "All checks passed" "$repo.out" || fail "passing checks were not reported"
 grep -Fq "https://github.com/example/project/pull/7" "$repo.out" || fail "the pull request was not named"
 grep -Fq "Enable GitHub Pages" "$repo.out" || fail "the manual steps were not shown"
@@ -138,22 +138,22 @@ run_publish "$repo" 12 || fail "publishing a feature without manual steps failed
 grep -A2 -Fx "## Manual steps" "$repo.gh.body" | grep -Fqx "None." ||
   fail "the description does not say that there are no manual steps"
 
-# A failing check fails the run and tells the user not to merge.
+# With --wait a failing check fails the run and tells the user not to merge.
 repo="$(setup_repo checks-fail)"
-if MOCK_CHECKS=fail run_publish "$repo" 12; then fail "a failed check returned success"; fi
+if MOCK_CHECKS=fail run_publish "$repo" 12 --wait; then fail "a failed check returned success"; fi
 grep -Fq "Do not merge" "$repo.out" || fail "a failed check did not warn against merging"
 if grep -Fq "All checks passed" "$repo.out"; then fail "a failed check was reported as passed"; fi
 
 # A repository without checks is reported as unverified, not as passed.
 repo="$(setup_repo no-checks)"
-MOCK_CHECKS=none run_publish "$repo" 12 || fail "a pull request without checks failed the run"
+MOCK_CHECKS=none run_publish "$repo" 12 --wait || fail "a pull request without checks failed the run"
 grep -Fq "No checks were reported" "$repo.out" || fail "missing checks were not reported"
 if grep -Fq "All checks passed" "$repo.out"; then fail "missing checks were reported as passed"; fi
 if grep -Fq -- "--watch" "$repo.gh"; then fail "checks that never started were awaited"; fi
 
 # An open pull request is reused and gets the current description, so manual
-# steps that a fix round changed are not left outdated. --no-wait stops before
-# the checks.
+# steps that a fix round changed are not left outdated. --no-wait, from before
+# waiting became optional, is still accepted.
 repo="$(setup_repo reuse)"
 mkdir -p "$repo/.agents/manual-steps"
 printf -- '- Add the secret API_KEY.\n' >"$repo/.agents/manual-steps/12.md"
@@ -166,34 +166,35 @@ grep -Fq "pr edit https://github.com/example/project/pull/3 --body-file" "$repo.
 grep -Fqx -- "- Add the secret API_KEY." "$repo.gh.body" || fail "the updated description lacks the manual steps"
 grep -Fqx "Closes #12" "$repo.gh.body" || fail "the updated description no longer closes the Issue"
 if grep -Fq "pr checks" "$repo.gh"; then fail "--no-wait waited for the checks"; fi
-grep -Fq "gh pr checks feature/12-marker --watch" "$repo.out" || fail "--no-wait did not say how to watch the checks"
 
-# When the base branch requires a passing status check, GitHub refuses a merge
-# while a check fails, so the script does not wait. --wait waits anyway.
-repo="$(setup_repo required-check)"
+# Without --wait the script ends once the pull request is open, whatever the
+# checks do, and names the pull request and the next step.
+repo="$(setup_repo no-wait-default)"
 MOCK_REQUIRED=1 MOCK_CHECKS=fail run_publish "$repo" 12 || {
   cat "$repo.out" >&2
-  fail "publishing to a branch with a required check failed"
+  fail "publishing without waiting failed"
 }
 grep -Fq "pr create" "$repo.gh" || fail "the pull request was not opened"
-if grep -Fq "pr checks" "$repo.gh"; then fail "the script waited although the base branch requires a check"; fi
-grep -Fq "requires a passing status check" "$repo.out" || fail "the reason for not waiting was not given"
-grep -Fq "gh pr checks feature/12-marker --watch" "$repo.out" || fail "the command to follow the checks was not printed"
+if grep -Fq "pr checks" "$repo.gh"; then fail "the script waited for the checks without --wait"; fi
+grep -Fq "https://github.com/example/project/pull/7" "$repo.out" || fail "the pull request was not named"
+grep -Fq "requires a passing status check" "$repo.out" || fail "the required check was not mentioned"
+if grep -Fq "Warning" "$repo.out"; then fail "a protected base branch gave a warning"; fi
 grep -Fq "./scripts/cleanup-worktree.sh 12" "$repo.out" || fail "the next step was not printed"
 
-repo="$(setup_repo required-but-wait)"
-if MOCK_REQUIRED=1 MOCK_CHECKS=fail run_publish "$repo" 12 --wait; then
-  fail "--wait did not wait for a failing check"
-fi
-grep -Fq "Do not merge" "$repo.out" || fail "--wait did not report the failed check"
+# A base branch without a required check lets a failing pull request be
+# merged, so the script warns; it still does not wait.
+repo="$(setup_repo unprotected)"
+MOCK_REQUIRED=0 run_publish "$repo" 12 || fail "publishing to an unprotected branch failed"
+grep -Fq "Warning: branch 'main' does not require a passing status check" "$repo.out" ||
+  fail "the unprotected base branch was not reported"
+if grep -Fq "pr checks" "$repo.gh"; then fail "the script waited for the checks without --wait"; fi
 
-# Without a required check, and when the rules cannot be read, it waits.
+# Rules that cannot be read give neither a claim nor a warning.
 repo="$(setup_repo rules-unreadable)"
-if MOCK_REQUIRED=unreadable MOCK_CHECKS=fail run_publish "$repo" 12; then
-  fail "unreadable rules were treated as a required check"
+MOCK_REQUIRED=unreadable run_publish "$repo" 12 || fail "publishing with unreadable rules failed"
+if grep -Fq "Warning" "$repo.out" || grep -Fq "requires a passing status check" "$repo.out"; then
+  fail "unreadable rules were reported as known"
 fi
-grep -Fq "Could not read" "$repo.out" || fail "the unreadable rules were not reported"
-grep -Fq -- "--watch" "$repo.gh" || fail "the script did not wait with unreadable rules"
 
 # A pull request that cannot be opened fails after the push and says so.
 repo="$(setup_repo create-fails)"
