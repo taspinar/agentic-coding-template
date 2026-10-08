@@ -803,24 +803,27 @@ Then publish the feature:
 ./scripts/publish-feature.sh 12
 ```
 
-The script pushes the branch, opens a pull request whose description is the
-commit message, the manual steps, and `Closes #12`, and waits for its checks.
-For a pull request that is already open it pushes and replaces the
-description with the current one, since a fix round can change the manual
-steps. It never merges. It ends with the result:
+The script pushes the branch and opens a pull request whose description is
+the commit message, the manual steps, and `Closes #12`. For a pull request
+that is already open it pushes and replaces the description with the current
+one, since a fix round can change the manual steps. It never merges.
 
-- all checks passed: the pull request is ready for you to merge;
-- a check failed: it exits non-zero and tells you not to merge. Fix the cause
-  in the worktree, then review, finish, and publish again;
-- no checks were reported: the repository has no CI for pull requests, and the
-  script says that nothing verified the change on GitHub.
-
-`--no-wait` stops after the pull request is open. Local verification during a
+The script ends once the pull request is open and prints its address. Follow
+the checks there and merge after they passed. Local verification during a
 feature never runs on a clean checkout, and may run on another operating
-system than CI, so a failure can appear in CI only; wait for it before
-merging. A ruleset that requires the CI status check on `main` makes GitHub
-refuse a merge while a check fails; `./scripts/doctor.sh` warns when `main`
-has no such rule.
+system than CI, so a failure can appear in CI only; a pull request must not be
+merged while a check fails.
+
+- When the base branch requires a passing status check, through a ruleset or
+  branch protection, GitHub refuses that merge, and the script says so.
+- When it does not, the script warns: nothing but your own look at the checks
+  stops the merge. `docs/repository-setup.md` describes how to add the rule,
+  and `./scripts/doctor.sh` reports a `main` without one.
+
+`--wait` keeps the script running until the checks finish, to have the result
+in the terminal: all checks passed, or a non-zero exit and the advice not to
+merge when one failed. After a failed check, fix the cause in the worktree,
+then review, finish, and publish again.
 
 After the merge GitHub closes the linked Issue. From the primary checkout,
 remove the merged worktree and its branch:

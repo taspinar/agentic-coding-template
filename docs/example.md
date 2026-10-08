@@ -246,9 +246,9 @@ Replace the TODO, save, and close the editor. Then:
 ./scripts/publish-feature.sh 12
 ```
 
-It pushes the branch, opens a pull request that closes Issue #12, and waits
-for CI. Merge the pull request when it reports that all checks passed. Remove
-the worktree from the primary checkout:
+It pushes the branch, opens a pull request that closes Issue #12, and prints
+its address. Follow the checks on the pull request and merge it when they
+passed. Remove the worktree from the primary checkout:
 
 ```bash
 ./scripts/cleanup-worktree.sh 12

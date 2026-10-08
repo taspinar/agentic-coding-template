@@ -108,8 +108,8 @@ check only after it ran once, so open a first pull request before adding it.
 
 Without a required check a pull request can be merged while CI fails.
 `./scripts/doctor.sh` warns when `main` has no such rule, and
-`./scripts/publish-feature.sh` waits for the checks and tells you not to merge
-when one fails, but only the ruleset refuses the merge.
+`./scripts/publish-feature.sh` warns when it opens a pull request into a
+branch without one, but only the ruleset refuses the merge.
 
 A project that splits its CI into more jobs adds those checks as well.
 
@@ -318,7 +318,7 @@ Commit (finish-feature.sh)
     ↓
 Push and Pull Request (publish-feature.sh)
     ↓
-GitHub Actions, awaited by publish-feature.sh
+GitHub Actions; the required check keeps a failure from being merged
     ↓
 Merge, by you
     ↓
