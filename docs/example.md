@@ -159,7 +159,9 @@ the Issue it would create from the `F01` block, and asks
 ```
 
 This creates `feature/12-recipes` in `../recipe-box-12-recipes` and starts the
-implementer there. It writes code and tests and does not commit.
+implementer there. It writes code and tests, runs the verification at the end,
+and does not commit. If the session ends before the work is complete, continue
+it with `./scripts/start-feature.sh 12 --resume`.
 
 ## 5. Review, triage, and fix
 
@@ -170,8 +172,9 @@ cd ../recipe-box-12-recipes
 ./scripts/review-feature.sh 12
 ```
 
-The script first runs `./scripts/verify.sh` and starts the reviewer only when
-it passes.
+The script starts the reviewer only on content that passes
+`./scripts/verify.sh`. The implementer's own run at the end of its session
+counts, so the checks do not run a second time for unchanged content.
 
 The reviewer receives the Issue and the complete diff, including uncommitted
 files, and cannot change anything. The report of round 1 might list:
@@ -199,8 +202,9 @@ Fix the approved scope:
 ```
 
 After `Start a write-capable codex agent for this scope? [y/N]`, the
-implementer resolves only `M1`, and the script runs `./scripts/verify.sh`. The
-code changed, so review round 1 is stale; run round 2:
+implementer resolves only `M1` and verifies the result; the script runs the
+verification itself only when the agent did not verify exactly that content.
+The code changed, so review round 1 is stale; run round 2:
 
 ```bash
 ./scripts/review-feature.sh 12
@@ -260,4 +264,5 @@ The next feature starts again at step 4 with `create-feature-issue.sh F02`.
 | Planning reviews and revisions | `.agents/reviews/` in the planning worktree, not committed; summarized in `PLANNING_APPROVAL.md` |
 | Feature Issue `#12` and follow-up Issue for `MIN1` | GitHub |
 | Feature reviews and triage | `.agents/` in the feature worktree, not committed; published as a comment on `#12` |
+| Handoff note, manual steps, verification record | `.agents/` in the feature worktree, not committed; the manual steps are copied into the commit message and the pull request |
 | Code, tests, and the fix for `M1` | The commit made by `finish-feature.sh`, merged with the feature PR |

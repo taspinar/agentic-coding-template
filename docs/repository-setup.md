@@ -101,10 +101,17 @@ Human approval can be added later for:
 
 ## 4. Required status checks
 
-Do not configure required status checks until the project's CI jobs
-exist.
+The template ships one CI job, `verify`, which runs
+`./scripts/verify.sh --all`. Add it to the `main` ruleset as a required status
+check: enable "Require status checks to pass" and add `verify`. GitHub lists a
+check only after it ran once, so open a first pull request before adding it.
 
-Once CI is configured, add the relevant checks to the `main` ruleset.
+Without a required check a pull request can be merged while CI fails.
+`./scripts/doctor.sh` warns when `main` has no such rule, and
+`./scripts/publish-feature.sh` waits for the checks and tells you not to merge
+when one fails, but only the ruleset refuses the merge.
+
+A project that splits its CI into more jobs adds those checks as well.
 
 Typical required checks:
 
@@ -307,15 +314,13 @@ Apply approved FIX_NOW findings
     ↓
 Verification
     ↓
-Commit
+Commit (finish-feature.sh)
     ↓
-Push
+Push and Pull Request (publish-feature.sh)
     ↓
-Pull Request
+GitHub Actions, awaited by publish-feature.sh
     ↓
-GitHub Actions
-    ↓
-Merge
+Merge, by you
     ↓
 Automatic Issue closure
     ↓

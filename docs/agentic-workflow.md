@@ -10,7 +10,9 @@ Independent review happens before the implementation commit so it can include
 uncommitted working-tree changes. Reviewers run read-only; their results are
 validated JSON, and the reports of each feature review round are published on
 the feature Issue. Critical and major findings must be fixed and confirmed by
-a newer review round before a feature or the planning can be finished.
+a newer review round before a feature or the planning can be finished. A
+review starts only on content that passes verification, and a later round may
+be limited to the changes since the previous one.
 
 ## Persistent state
 - GitHub Issue: what/why, acceptance criteria, priority/status.
@@ -18,7 +20,14 @@ a newer review round before a feature or the planning can be finished.
 - `docs/architecture.md`: current system design.
 - ADRs: why significant architecture decisions were made.
 - `.agents/plans/`: active implementation state for complex work.
-- `.agents/handoffs/`: compressed continuation context.
+- `.agents/handoffs/`: per Issue, the implementer's continuation note for a
+  session that resumes the work. A working file, ignored by Git.
+- `.agents/manual-steps/`: per Issue, the steps a feature needs from the
+  human; copied into the commit message and the pull request. Working files.
+- `.agents/verification/`: the record of the last passed verification of the
+  working tree. A working file.
+- `docs/changes/`: one change request per change cycle of the approved
+  planning.
 - `.agents/reviews/`: independent-review results as validated JSON, each with a
   generated Markdown report. Working files, ignored by Git.
 - `.agents/triage/`: approved finding decisions and deferred-Issue traceability
