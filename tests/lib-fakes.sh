@@ -53,7 +53,8 @@ if [[ -n "${MOCK_AGENT_ACTION:-}" ]]; then
   eval "$MOCK_AGENT_ACTION"
 fi
 # MOCK_WRITE_ACTION and MOCK_WRITE_EXIT apply only to write-capable sessions.
-if [[ "$*" == *"--sandbox workspace-write"* || "$*" == *"--permission-mode acceptEdits"* ]]; then
+if [[ "$*" == *"--sandbox workspace-write"* || "$*" == *"--permission-mode acceptEdits"* ||
+  "$*" == *"--permission-mode auto"* ]]; then
   if [[ -n "${MOCK_WRITE_ACTION:-}" ]]; then
     eval "$MOCK_WRITE_ACTION"
   fi

@@ -229,7 +229,8 @@ Agent roles and models come from `.agents/agents.conf`; every agent script
 accepts `--agent` and `--model` to override them for one run. Profiles are
 described in `docs/development.md`: `write` sessions may change files in their
 worktree, `read-only` sessions cannot and get no MCP servers or other remote
-tools.
+tools. A third profile, `unattended`, has the reach of `write` without a
+terminal and without those tools; no step uses it yet.
 
 ### Steps
 

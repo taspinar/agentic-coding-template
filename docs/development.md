@@ -132,9 +132,11 @@ as Codex, and is never replaced: an unknown provider, missing CLI, missing
 model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
-Agents run with one of two permission profiles. The profile follows from the
-role, not from the provider or model configured for it: a reviewing role is
-always read-only, a writing role always gets `write`.
+Agents run with one of three permission profiles. The profile follows from
+the role and from how the script is run, not from the provider or model: a
+reviewing role is always read-only; a writing role gets `write`. The
+`unattended` profile is there for scripts that run a writing role without
+you; no script uses it yet.
 
 - `write`: an interactive session that may modify its worktree and use the
   network, for example to install dependencies and run builds. Anything beyond
@@ -144,6 +146,18 @@ always read-only, a writing role always gets `write`.
   needs to leave that sandbox, for example to write outside the worktree;
   Codex has no setting that asks per command without a sandbox. Used for
   planning, implementation, and applying triage.
+- `unattended`: the reach of `write` without a terminal. The session asks
+  nothing and ends by itself, and the script stores its final message. What
+  `write` would ask you is decided without you. Codex stays inside its
+  workspace-write sandbox and is refused a command that leaves it. Claude runs
+  in its `auto` permission mode, in which its own check allows or denies each
+  action, and anything that would still prompt is denied. As in a read-only
+  session, no MCP servers, apps, or other tools from your configuration are
+  loaded, since they act outside the sandbox: Codex runs without your
+  `config.toml` and with apps, browser use, and computer use disabled, and
+  Claude without MCP configuration. An unattended agent runs commands on your
+  machine while you are not watching: it is meant for work whose result you
+  read afterwards.
 - `read-only`: a non-interactive session that cannot modify files and gets no
   MCP servers, apps, or other tools from the user's configuration. Codex runs
   in a read-only sandbox without the user's `config.toml`, with apps, browser

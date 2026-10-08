@@ -32,7 +32,12 @@ set -euo pipefail
   echo "ARGS=$*"
 } >>"$MOCK_AGENT_LOG"
 if [[ "$(basename "$0")" == "claude" ]]; then
-  echo "claude report"
+  # With --output-format json the real CLI answers in a result envelope.
+  if [[ "$*" == *"--output-format json"* ]]; then
+    echo '{"is_error": false, "result": "claude report"}'
+  else
+    echo "claude report"
+  fi
 else
   while [[ $# -gt 0 ]]; do
     if [[ "$1" == "--output-last-message" ]]; then
@@ -180,6 +185,63 @@ agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/report.txt"
 grep -Fq -- "--strict-mcp-config --permission-mode dontAsk --tools Read,Glob,Grep" "$MOCK_AGENT_LOG" ||
   fail "claude read-only run was not restricted to read tools"
 
+# An unattended run has the reach of a write session without a terminal: it
+# gets the model, runs in the work directory, stores the final message, and
+# is never started without a sandbox or with every permission check bypassed.
+for provider in codex claude; do
+  : >"$MOCK_AGENT_LOG"
+  rm -f "$tmp/final.txt"
+  agent_run unattended "$provider" "model-$provider" "$workdir" "the prompt" "$tmp/final.txt" >/dev/null ||
+    fail "$provider unattended run failed"
+  grep -Fq -- "--model model-$provider" "$MOCK_AGENT_LOG" || fail "$provider did not receive the model in an unattended run"
+  grep -Fqx "PWD=$workdir" "$MOCK_AGENT_LOG" || fail "$provider did not run unattended in the work directory"
+  grep -Fqx "$provider report" "$tmp/final.txt" || fail "the final message of the unattended $provider run was not stored"
+  if grep -Eq -- "danger-full-access|bypass|dangerously" "$MOCK_AGENT_LOG"; then
+    fail "the unattended $provider run bypasses its sandbox or permission checks"
+  fi
+done
+: >"$MOCK_AGENT_LOG"
+agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null
+grep -Fq -- "exec --ignore-user-config -c sandbox_workspace_write.network_access=true --sandbox workspace-write" "$MOCK_AGENT_LOG" ||
+  fail "the unattended codex run is not a non-interactive run in the workspace sandbox"
+if grep -Fq -- "--ask-for-approval" "$MOCK_AGENT_LOG"; then fail "the unattended codex run can ask for approval"; fi
+# No tools from the user's configuration reach an unattended session.
+for flag in "--ignore-user-config" "--disable apps" "--disable browser_use" "--disable computer_use"; do
+  grep -Fq -- "$flag" "$MOCK_AGENT_LOG" || fail "the unattended codex run lacks: $flag"
+done
+: >"$MOCK_AGENT_LOG"
+agent_run unattended claude model-b "$workdir" "the prompt" "$tmp/final.txt" >/dev/null
+grep -Fq -- "--print --permission-mode auto --permission-prompts none --strict-mcp-config" "$MOCK_AGENT_LOG" ||
+  fail "the unattended claude run does not decide permissions without the user"
+status=0
+MOCK_AGENT_EXIT=9 agent_run unattended claude model-b "$workdir" "the prompt" "$tmp/final.txt" >/dev/null 2>&1 || status=$?
+[[ "$status" -eq 9 ]] || fail "the exit status of an unattended run was not propagated"
+# A failed unattended codex run says where its reason is, and shows it.
+status=0
+MOCK_AGENT_EXIT=4 agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null 2>"$tmp/codex.err" || status=$?
+[[ "$status" -eq 4 ]] || fail "the exit status of an unattended codex run was not propagated"
+grep -Fq "$tmp/final.txt.log" "$tmp/codex.err" || fail "a failed unattended codex run did not name its log"
+# A codex session that ends without a final message is a failure too.
+mkdir -p "$tmp/silent-bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/silent-bin/codex"
+chmod +x "$tmp/silent-bin/codex"
+rm -f "$tmp/final.txt"
+if (PATH="$tmp/silent-bin:$PATH" agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt") >/dev/null 2>&1; then
+  fail "an unattended codex run without a final message returned success"
+fi
+# The whole task is in the prompt: a context or schema file is refused.
+: >"$MOCK_AGENT_LOG"
+if (agent_run unattended claude model-b "$workdir" "the prompt" "$tmp/final.txt" "$tmp/agents.conf") 2>/dev/null; then
+  fail "an unattended run with a context file was accepted"
+fi
+if (agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt" /dev/null "$tmp/agents.conf") 2>/dev/null; then
+  fail "an unattended run with a schema file was accepted"
+fi
+[[ ! -s "$MOCK_AGENT_LOG" ]] || fail "an agent was started for an unattended run with a context or schema file"
+if (agent_run unattended claude model-b "$workdir" "the prompt") 2>/dev/null; then
+  fail "an unattended run without an output file was accepted"
+fi
+
 # An unknown profile, or a read-only run without an output file, starts no agent.
 : >"$MOCK_AGENT_LOG"
 if (agent_run admin claude model-b "$workdir" "the prompt") 2>/dev/null; then
@@ -207,6 +269,27 @@ exit "${MOCK_AGENT_EXIT:-0}"
 FAKE
 chmod +x "$tmp/envelope-bin/claude"
 printf '{"type": "object"}\n' >"$tmp/schema.json"
+
+# An unattended Claude session reports through the same envelope: an error
+# fails the run, and the final message is taken from the result.
+run_unattended_envelope() {
+  PATH="$tmp/envelope-bin:$PATH" agent_run unattended claude model-b "$workdir" "the prompt" "$tmp/unattended.txt" \
+    >/dev/null 2>"$tmp/unattended.err"
+}
+MOCK_ENVELOPE='{"is_error": false, "result": "All done."}' run_unattended_envelope ||
+  fail "a successful unattended envelope was reported as a failure"
+grep -Fqx "All done." "$tmp/unattended.txt" || fail "the final message was not taken from the envelope"
+if MOCK_ENVELOPE='{"is_error": true, "result": "Usage limit reached."}' run_unattended_envelope; then
+  fail "an unattended session that reported an error returned success"
+fi
+grep -Fq "Usage limit reached." "$tmp/unattended.err" || fail "the error of an unattended session was not shown"
+# Output that is not a result envelope with a final message is a failure, not
+# a final message.
+for envelope in 'not json at all' '{"is_error": false}' '{"is_error": false, "result": null}'; do
+  if MOCK_ENVELOPE="$envelope" run_unattended_envelope; then
+    fail "an unattended session without a final message returned success: $envelope"
+  fi
+done
 
 run_structured() {
   PATH="$tmp/envelope-bin:$PATH" agent_run read-only claude model-b "$workdir" "the prompt" \
