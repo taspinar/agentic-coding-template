@@ -24,6 +24,7 @@ fail() {
 }
 
 agent_parse_args "$@"
+agent_reject_unattended
 review_input=""
 set -- ${AGENT_POSITIONAL[@]+"${AGENT_POSITIONAL[@]}"}
 while [[ $# -gt 0 ]]; do

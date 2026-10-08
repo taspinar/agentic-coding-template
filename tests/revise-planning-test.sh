@@ -114,6 +114,12 @@ if run_revise "$repo" y --review "$review"; then
 fi
 grep -Fq "review-planning.sh" "$repo.out" || fail "the next review round was not suggested"
 
+# A revision is decided by you, so it cannot run unattended.
+repo="$(setup_repo unattended)"
+if run_revise "$repo" y --review "$review" --unattended; then fail "a revision ran unattended"; fi
+grep -Fq "cannot run with --unattended" "$repo.out" || fail "the refusal of an unattended revision gave no reason"
+[[ ! -e "$repo.log" ]] || fail "an agent started for an unattended revision"
+
 # Declining records nothing and changes nothing.
 repo="$(setup_repo decline)"
 run_revise "$repo" n --review "$review" || fail "declining returned an error"

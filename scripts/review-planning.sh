@@ -15,6 +15,7 @@ fail() {
 }
 
 agent_parse_args "$@"
+agent_reject_unattended
 if [[ "${#AGENT_POSITIONAL[@]}" -ne 0 ]]; then
   echo "Usage: $0 [--agent <agent>] [--model <model>]"
   echo

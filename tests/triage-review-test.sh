@@ -366,4 +366,41 @@ expect_no_triage "$repo" "the file is not a review artifact" ".agents/reviews/ot
 expect_no_triage "$repo" "the agent is unsupported" "$review" --agent copilot --model model-x
 [[ ! -e "$repo.log" ]] || fail "a triage agent was started despite failed preconditions"
 
+# --unattended approves the proposal without a question, and both the
+# artifact and the published record say that no human approved it.
+repo="$(setup_repo unattended)"
+run_triage "$repo" "" "$review" --unattended || {
+  cat "$repo.out" >&2
+  fail "an unattended triage failed"
+}
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage"
+if grep -Fq "Proceed with this triage?" "$repo.out"; then fail "an unattended triage asked for approval"; fi
+[[ "$(jq -r '.unattended' "$artifact.json")" == "true" ]] || fail "the artifact does not record the unattended approval"
+[[ "$(jq -r '.decisions[0].decision' "$artifact.json")" == "FIX_NOW" ]] || fail "the unattended triage lost its decisions"
+grep -Fq "by an unattended run; no human approved these decisions" "$artifact.md" ||
+  fail "the report does not say that no human approved the triage"
+grep -Fq "no human approved these decisions" "$repo.gh.comments" ||
+  fail "the published triage does not say that no human approved it"
+[[ "$(grep -c '^TITLE:' "$repo.gh")" -eq 1 ]] || fail "the unattended triage did not create the follow-up Issue"
+
+# The proposal must still be valid: nothing is approved otherwise.
+repo="$(setup_repo unattended-invalid)"
+if MOCK_OUTPUT="$downgraded_decisions" run_triage "$repo" "" "$review" --unattended; then
+  fail "an unattended triage approved invalid decisions"
+fi
+if compgen -G "$repo/.agents/triage/*.json" >/dev/null; then fail "invalid decisions were stored unattended"; fi
+
+# An approval that you gave says nothing about an unattended run, and the
+# field has no other value than true.
+repo="$(setup_repo attended)"
+run_triage "$repo" y "$review" || fail "an attended triage failed"
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage"
+[[ "$(jq 'has("unattended")' "$artifact.json")" == "false" ]] || fail "an attended triage was recorded as unattended"
+if grep -Fq "unattended" "$artifact.md"; then fail "the report of an attended triage mentions an unattended run"; fi
+jq '.unattended = false' "$artifact.json" >"$tmp/not-unattended.json"
+(
+  source "$source_root/scripts/lib/review-data.sh"
+  triage_artifact_errors "$tmp/not-unattended.json" "$repo/$review" | grep -Fq "unattended must be true or absent"
+) || fail "a triage with 'unattended: false' was accepted"
+
 echo "triage-review tests passed"

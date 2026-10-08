@@ -18,13 +18,21 @@ agent_fail() {
 # agent_parse_args "$@"
 # Separates --agent/--model from the other arguments of a workflow script.
 # Sets AGENT_CLI_PROVIDER, AGENT_CLI_MODEL, and the AGENT_POSITIONAL array.
+# --unattended sets AGENT_UNATTENDED to 1: the script asks nothing and runs
+# its writing agent with the 'unattended' profile. A script that cannot run
+# that way calls agent_reject_unattended.
 agent_parse_args() {
   AGENT_CLI_PROVIDER=""
   AGENT_CLI_MODEL=""
+  AGENT_UNATTENDED=0
   AGENT_POSITIONAL=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --unattended)
+        AGENT_UNATTENDED=1
+        shift
+        ;;
       --agent | --model)
         [[ $# -ge 2 && -n "$2" ]] || agent_fail "$1 requires a value."
         if [[ "$1" == "--agent" ]]; then
@@ -40,6 +48,36 @@ agent_parse_args() {
         ;;
     esac
   done
+}
+
+agent_reject_unattended() {
+  [[ "${AGENT_UNATTENDED:-0}" -eq 0 ]] ||
+    agent_fail "this step needs your decisions and cannot run with --unattended."
+}
+
+# agent_require_ignored <root> <path>
+# Fails unless Git ignores <path> in the working tree at <root>. A working
+# file that is not ignored would be committed with the feature, and would
+# change the content that a verification or review was recorded for.
+agent_require_ignored() {
+  git -C "$1" check-ignore -q "$2" 2>/dev/null ||
+    agent_fail "Git does not ignore $2 in $1. Add '$(dirname "$2")/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
+}
+
+# What an unattended writing agent is told, in addition to its task.
+AGENT_UNATTENDED_PROMPT="This session is unattended: nobody reads along and nobody answers questions.
+Do not ask anything and do not wait for the human. When you cannot continue
+without a decision of the human, or the work conflicts with the Issue's scope,
+the architecture, or an ADR, stop: record the question under 'Open questions'
+in the handoff note, and end your final message with one line that starts with
+'BLOCKED: ' and gives the reason. Otherwise finish the work and end normally."
+
+# agent_blocked_reason <final-message-file>
+# Prints the reason of the last 'BLOCKED: ' line of an unattended session's
+# final message, or nothing when the session did not report one.
+agent_blocked_reason() {
+  [[ -f "$1" ]] || return 0
+  sed -n 's/^[[:space:]]*BLOCKED:[[:space:]]*//p' "$1" | tail -n 1
 }
 
 # agent_lookup <root> <role>

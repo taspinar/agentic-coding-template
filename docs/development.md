@@ -134,9 +134,9 @@ worktree, or file, and a model the provider rejects fails the run.
 
 Agents run with one of three permission profiles. The profile follows from
 the role and from how the script is run, not from the provider or model: a
-reviewing role is always read-only; a writing role gets `write`. The
-`unattended` profile is there for scripts that run a writing role without
-you; no script uses it yet.
+reviewing role is always read-only; a writing role gets `write`, or
+`unattended` when you run the step with `--unattended`, as described under
+"Running feature steps without questions".
 
 - `write`: an interactive session that may modify its worktree and use the
   network, for example to install dependencies and run builds. Anything beyond
@@ -792,10 +792,16 @@ publication can be repeated with `./scripts/triage-review.sh --publish
 <triage-json>`.
 
 It then stages all changes (review and triage files are ignored) and opens a
-structured commit message in your editor: the summary, the Issue, a list of
-changes to fill in, the verification, the review round and verdict, and
-`Refs #12`. Emptying the message aborts the commit and leaves the changes
-staged. The script never pushes, opens a PR, or merges.
+structured commit message in your editor: the summary, the Issue, the list of
+changes, the verification, the review round and verdict, and `Refs #12`.
+Emptying the message aborts the commit and leaves the changes staged. The
+script never pushes, opens a PR, or merges.
+
+The list of changes comes from `.agents/summaries/<issue>.md`, which the
+implementer writes and keeps up to date when fixes change what the feature
+does: every line that starts with `- ` is taken over. Like the manual steps
+it is a working file and is not committed. Without it the message has a line
+for you to fill in.
 
 A change that `.agents/policies/autonomy.md` classifies as low risk may be
 finished without an independent review; the reason is recorded in the commit
@@ -857,6 +863,45 @@ is identical to `docs/PROJECT_DESCRIPTION.md`, such as the original idea file. A
 `./scripts/cleanup-worktree.sh planning/<name>`, every merged worktree at once
 with `--merged`, and an abandoned, unmerged one with `--discard` after
 confirmation.
+
+### Running feature steps without questions
+
+The steps of a feature that ask you something, or that start an agent in your
+terminal, accept `--unattended`. The step then asks nothing and ends by
+itself, so a script can run one step after the other.
+
+| Step | With `--unattended` |
+|---|---|
+| `start-feature.sh <issue> [--resume]` | The implementer runs with the `unattended` profile instead of in your terminal. Its final message is stored in `.agents/run/<issue>-implementer.md` in the feature worktree and shown. |
+| `triage-review.sh <review-json>` | The proposed triage is approved without a question. The proposal is validated as always: a critical or major finding cannot be deferred or accepted. |
+| `apply-triage.sh <triage-json>` | The fixes start without confirmation, with the `unattended` profile. The final message is stored in `.agents/run/<issue>-fixes.md` and shown. |
+| `finish-feature.sh <issue> "<summary>"` | The commit message is used as it is, without an editor. Without a summary of the changes, the message says that the implementer supplied none. |
+
+`review-feature.sh` and `publish-feature.sh` ask nothing as they are. The
+planning is yours to decide: its steps refuse the option.
+
+The option needs the working files to be ignored by Git, as the template's
+`.gitignore` does with `.agents/run/` and `.agents/summaries/`; a step stops
+when they are not. A project that was created from an earlier version of the
+template gets the rules with `./scripts/sync-template.sh`.
+
+An unattended agent cannot ask you anything. It is told to stop when it
+needs a decision of yours, or when the work conflicts with the Issue's scope,
+the architecture, or an ADR: it then records the question in the handoff note
+and ends its final message with a line `BLOCKED: <reason>`. The step shows
+the reason and exits with status 3, which it uses for nothing else, so a
+blocked session can be told apart from a failed one. Answer in the handoff note or change the Issue, and
+continue with `./scripts/start-feature.sh <issue> --resume`.
+
+A triage that was approved this way says so: the artifact has
+`"unattended": true`, and the report and the comment on the Issue state that
+no human approved the decisions. Deferred findings still become follow-up
+Issues, and accepted findings keep their rationale, so you can read
+afterwards what was decided without you.
+
+The files in `.agents/run/` are working files, ignored by Git. A Codex
+session also writes its complete output to a file next to its final message,
+with `.log` added to the name; it is shown when the session fails.
 
 ## Linking a feature plan
 

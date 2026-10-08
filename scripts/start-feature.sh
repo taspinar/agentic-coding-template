@@ -6,8 +6,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 
 usage() {
-  echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>]"
-  echo "       $0 <issue-number> --resume [--agent <agent>] [--model <model>]"
+  echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>] [--unattended]"
+  echo "       $0 <issue-number> --resume [--agent <agent>] [--model <model>] [--unattended]"
   echo
   echo "The slug names the branch (feature/<issue>-<slug>) and the worktree. Without"
   echo "one, it is derived from the Issue title. The agent and model come from role"
@@ -16,6 +16,10 @@ usage() {
   echo "--resume continues interrupted work: it starts a new implementer session in"
   echo "the existing worktree of the Issue, which reads the handoff note and the"
   echo "state of the worktree instead of an earlier conversation."
+  echo
+  echo "--unattended runs the implementer without a terminal: it asks nothing and ends"
+  echo "by itself, and its final message is stored and shown. The script exits 3 when"
+  echo "the agent reports that it cannot continue without you."
   echo
   echo "Examples:"
   echo "  $0 3"
@@ -51,15 +55,46 @@ run_session() {
   local session_worktree="$1"
   local agent_status=0
 
+  local final_message="$session_worktree/.agents/run/$issue-implementer.md"
+  local blocked=""
+
   echo "Starting $agent ($model)..."
   echo
-  agent_run write "$agent" "$model" "$session_worktree" "$2" || agent_status=$?
+  if [[ "$AGENT_UNATTENDED" -eq 1 ]]; then
+    if ! git -C "$session_worktree" check-ignore -q ".agents/run/$issue-implementer.md" 2>/dev/null; then
+      echo "Error: Git does not ignore .agents/run/ in $session_worktree, so the final message of an unattended session would become part of the feature." >&2
+      echo "Add '.agents/run/' to .gitignore there, or take over the template's .gitignore with ./scripts/sync-template.sh." >&2
+      echo "The feature worktree is preserved. Then continue with: $0 $issue --resume --unattended" >&2
+      exit 1
+    fi
+    mkdir -p "$(dirname "$final_message")"
+    rm -f "$final_message"
+    agent_run unattended "$agent" "$model" "$session_worktree" "$2
+
+$AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
+    if [[ -s "$final_message" ]]; then
+      echo "Final message of the implementer:"
+      echo
+      sed 's/^/  /' "$final_message"
+    fi
+    blocked="$(agent_blocked_reason "$final_message")"
+  else
+    agent_run write "$agent" "$model" "$session_worktree" "$2" || agent_status=$?
+  fi
 
   echo
+  if [[ "$agent_status" -eq 0 && -n "$blocked" ]]; then
+    echo "The implementer stopped because it needs you: $blocked" >&2
+    echo "The feature worktree is preserved at: $session_worktree" >&2
+    echo "Answer in the handoff note or change the Issue, then continue with: $0 $issue --resume" >&2
+    exit 3
+  fi
   if [[ "$agent_status" -ne 0 ]]; then
     echo "Error: the implementation agent exited with status $agent_status." >&2
     echo "The feature worktree is preserved at: $session_worktree" >&2
     echo "Continue the work with: $0 $issue --resume" >&2
+    # Status 3 is reserved for a session that reported it is blocked.
+    [[ "$agent_status" -ne 3 ]] || agent_status=1
     exit "$agent_status"
   fi
   echo "The implementation session ended. Nothing is committed yet."

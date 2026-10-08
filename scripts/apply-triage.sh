@@ -159,15 +159,20 @@ echo
 printf '%s\n' "$fix_scope"
 echo "Findings to resolve: $fix_count"
 echo
-printf "Start a write-capable $agent agent for this scope? [y/N] "
-read -r approval
-case "$approval" in
-  y | Y | yes | YES) ;;
-  *)
-    echo "Apply triage declined; no implementation agent was started."
-    exit 0
-    ;;
-esac
+if [[ "$AGENT_UNATTENDED" -eq 1 ]]; then
+  agent_require_ignored "$root" ".agents/run/$source_issue-fixes.md"
+  echo "Starting an unattended $agent agent for this scope (--unattended)."
+else
+  printf "Start a write-capable $agent agent for this scope? [y/N] "
+  read -r approval
+  case "$approval" in
+    y | Y | yes | YES) ;;
+    *)
+      echo "Apply triage declined; no implementation agent was started."
+      exit 0
+      ;;
+  esac
+fi
 
 start_prompt="Read and follow .agents/prompts/triage-implementer.md.
 
@@ -212,9 +217,26 @@ echo
 echo "Starting $agent implementation agent..."
 echo
 
+final_message="$root/.agents/run/$source_issue-fixes.md"
+blocked=""
 set +e
-agent_run write "$agent" "$model" "$root" "$start_prompt"
-agent_status=$?
+if [[ "$AGENT_UNATTENDED" -eq 1 ]]; then
+  mkdir -p "$(dirname "$final_message")"
+  rm -f "$final_message"
+  agent_run unattended "$agent" "$model" "$root" "$start_prompt
+
+$AGENT_UNATTENDED_PROMPT" "$final_message"
+  agent_status=$?
+  if [[ -s "$final_message" ]]; then
+    echo "Final message of the implementer:"
+    echo
+    sed 's/^/  /' "$final_message"
+  fi
+  blocked="$(agent_blocked_reason "$final_message")"
+else
+  agent_run write "$agent" "$model" "$root" "$start_prompt"
+  agent_status=$?
+fi
 set -e
 
 review_signature_after="$(file_signature "$source_review_path")"
@@ -247,12 +269,23 @@ if [[ "$protected_artifact_changed" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ "$agent_status" -eq 0 && -n "$blocked" ]]; then
+  echo "The implementer stopped because it needs you: $blocked" >&2
+  echo "Answer in the handoff note or change the triage, then continue with ./scripts/start-feature.sh $source_issue --resume, and review again." >&2
+  if [[ "$verification_status" -ne 0 ]]; then
+    echo "Repository verification also failed with status $verification_status." >&2
+  fi
+  exit 3
+fi
+
 if [[ "$agent_status" -ne 0 ]]; then
   echo "Error: implementation agent exited with status $agent_status."
   echo "Continue the fixes with ./scripts/start-feature.sh $source_issue --resume, then review again."
   if [[ "$verification_status" -ne 0 ]]; then
     echo "Repository verification also failed with status $verification_status."
   fi
+  # Status 3 is reserved for a session that reported it is blocked.
+  [[ "$agent_status" -ne 3 ]] || agent_status=1
   exit "$agent_status"
 fi
 
