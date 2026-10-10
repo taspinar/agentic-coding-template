@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
+source "$script_dir/lib/fingerprint.sh"
 
 MAX_ROUNDS=5
 
@@ -171,11 +172,11 @@ latest_review() {
 # Succeeds when a review of only the changes can build on <review>: the
 # branch has the same base as then, and the content it reviewed is known.
 changes_reviewable() {
-  local base_ref="$base"
   local merge_base
 
-  git -C "$worktree" rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null || base_ref="origin/$base"
-  merge_base="$(git -C "$worktree" merge-base HEAD "$base_ref" 2>/dev/null)" || return 1
+  # The same base as review-feature.sh uses.
+  merge_base="$(feature_base "$worktree" "$base" | sed -n 2p)"
+  [[ -n "$merge_base" ]] || return 1
   [[ "$(jq -r '.merge_base' "$1")" == "$merge_base" ]] || return 1
   git -C "$worktree" cat-file -e "$(jq -r '.reviewed_tree' "$1")^{tree}" 2>/dev/null
 }

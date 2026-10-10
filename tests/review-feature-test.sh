@@ -403,4 +403,47 @@ MOCK_GH_AUTH_EXIT=1 expect_no_review "$repo" "the GitHub CLI is not authenticate
 expect_no_review "$repo" "the base branch does not exist" 7 missing-base
 [[ ! -e "$repo.log" ]] || fail "a reviewer was started despite failed preconditions"
 
+# A feature is created from origin/<base>. When the local base branch is
+# behind it, the review still covers only what the feature changed, not what
+# was merged into the base before the feature started.
+repo="$(setup_repo stale-local-base)"
+git -C "$repo" stash -q --include-untracked
+git -C "$repo" switch -q -c merged-work main
+printf 'work of another feature\n' >"$repo/other.txt"
+git -C "$repo" add other.txt
+git -C "$repo" commit -qm "Another feature, merged on the remote"
+git -C "$repo" update-ref refs/remotes/origin/main merged-work
+git -C "$repo" switch -q feature/7-marker
+git -C "$repo" rebase -q merged-work
+git -C "$repo" branch -q -D merged-work
+git -C "$repo" stash pop -q >/dev/null
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review with a stale local base branch failed"
+}
+artifact="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -r '.base' "$artifact")" == "origin/main" ]] || fail "the review did not record the base it used"
+[[ "$(jq -r '.merge_base' "$artifact")" == "$(git -C "$repo" rev-parse origin/main)" ]] ||
+  fail "the review did not start from the point where the feature left its base"
+grep -Fqx "+committed change" "$repo.log.stdin" || fail "the feature's own change was not supplied"
+if grep -Fq "work of another feature" "$repo.log.stdin"; then
+  fail "work that was merged before the feature started was supplied as its change"
+fi
+
+# The other way around, a local base branch that is ahead of origin is used.
+repo="$(setup_repo stale-remote-base)"
+git -C "$repo" update-ref refs/remotes/origin/main "$(git -C "$repo" rev-parse main)"
+git -C "$repo" stash -q --include-untracked
+git -C "$repo" switch -q main
+printf 'local work\n' >"$repo/local.txt"
+git -C "$repo" add local.txt
+git -C "$repo" commit -qm "Local work on the base"
+git -C "$repo" switch -q feature/7-marker
+git -C "$repo" rebase -q main
+git -C "$repo" stash pop -q >/dev/null
+run_review "$repo" 7 || fail "a review with a local base ahead of origin failed"
+[[ "$(jq -r '.base' "$repo/.agents/reviews/feature-7-marker-review-01.json")" == "main" ]] ||
+  fail "the local base branch was not used although it is the more recent"
+if grep -Fq "local work" "$repo.log.stdin"; then fail "work on the base was supplied as the feature's change"; fi
+
 echo "review-feature tests passed"
