@@ -125,6 +125,9 @@ for line in "Issue: #12" "Review: round 1, PASS, by claude (model-r)" "## Manual
   "- Enable GitHub Pages under Settings, Pages." "Closes #12"; do
   grep -Fqx -- "$line" "$repo.gh.body" || fail "the pull request description lacks: $line"
 done
+if grep -Fq "merge approval above was decided" "$repo.gh.body"; then
+  fail "a commit without a decision of the gate got a commit for one"
+fi
 grep -Fq "pr checks feature/12-marker --watch" "$repo.gh" || fail "the checks were not awaited"
 grep -Fq "All checks passed" "$repo.out" || fail "passing checks were not reported"
 grep -Fq "https://github.com/example/project/pull/7" "$repo.out" || fail "the pull request was not named"
@@ -213,5 +216,16 @@ if run_publish "$repo" twelve; then fail "a non-numeric issue was accepted"; fi
 if run_publish "$repo" 12 --force; then fail "an unknown option was accepted"; fi
 if pushed "$repo"; then fail "a refused run pushed the branch"; fi
 [[ ! -e "$repo.gh" ]] || fail "a refused run called GitHub"
+
+# The decision of the merge approval gate is in the commit message; the pull
+# request names the commit it was made for, so it cannot be read as covering
+# a later one.
+repo="$(setup_repo approval)"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Merge approval:" -m "- required from the project owner, for exactly this commit"
+run_publish "$repo" 12 || fail "publishing a feature that needs approval failed"
+grep -Fqx -- "- required from the project owner, for exactly this commit" "$repo.gh.body" ||
+  fail "the pull request does not show that the owner must approve"
+grep -Fqx "The merge approval above was decided for commit \`$(git -C "$repo" rev-parse HEAD)\`." "$repo.gh.body" ||
+  fail "the pull request does not name the commit the decision was made for"
 
 echo "publish-feature tests passed"

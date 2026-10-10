@@ -66,7 +66,7 @@ mkdir -p .agents/summaries
 printf -- "- Adds the feature file.\n" >".agents/summaries/$RUN_ISSUE.md"
 reply="The feature is implemented."'
     ;;
-  reviewer) default='reply="{\"verdict\": \"PASS\", \"limitations\": \"\", \"findings\": []}"' ;;
+  reviewer) default='reply="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"PASS\", \"limitations\": \"\", \"findings\": []}"' ;;
   triage)
     default='reply="{\"decisions\": [
   {\"finding_id\": \"M1\", \"decision\": \"FIX_NOW\", \"rationale\": \"It is wrong.\", \"followup\": null},
@@ -222,12 +222,12 @@ expect_published() {
   [[ -d "$repo-2-thing" ]] || fail "$(basename "$repo"): the worktree was removed"
 }
 
-major_and_minor='reply="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [
+major_and_minor='reply="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [
   {\"severity\": \"major\", \"title\": \"Wrong content\", \"evidence\": \"feature.txt:1\", \"impact\": \"Bug.\", \"recommendation\": \"Fix.\"},
   {\"severity\": \"minor\", \"title\": \"Vague name\", \"evidence\": \"feature.txt:1\", \"impact\": \"Unclear.\", \"recommendation\": \"Rename.\"}
 ]}"'
 
-only_major='reply="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [
+only_major='reply="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [
   {\"severity\": \"major\", \"title\": \"Still wrong\", \"evidence\": \"feature.txt:1\", \"impact\": \"Bug.\", \"recommendation\": \"Fix.\"}
 ]}"'
 fix_major='if [[ "$count" -eq 1 ]]; then eval "$default"; else
@@ -244,6 +244,10 @@ grep -Fq -- "--sandbox workspace-write" "$repo.control/implementer.args" || fail
 git -C "$repo-2-thing" log -1 --format=%s | grep -Fqx "F02 — Feature file" || fail "the commit is not named after the Issue"
 git -C "$repo-2-thing" log -1 --format=%B | grep -Fqx -- "- Adds the feature file." ||
   fail "the commit message lacks the implementer's summary"
+
+if grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out"; then fail "ordinary work was reported as needing the owner's approval"; fi
+git -C "$repo-2-thing" log -1 --format=%B | grep -A1 -Fx "Merge approval:" | grep -Fqx -- "- not required" ||
+  fail "the commit does not record that no approval is needed"
 
 # A finished feature is not run again: a repeated command only publishes.
 run_feature "$repo" 2
@@ -264,6 +268,25 @@ grep -q '^issue comment 2 ' "$repo.control/gh.log" || fail "the triage was not p
 grep -q '^issue create ' "$repo.control/gh.log" || fail "the deferred finding got no follow-up Issue"
 git -C "$repo-2-thing" log -1 --format=%B | grep -q "^Review: round 2.*PASS" || fail "the commit does not name the confirming round"
 grep -Fqx "fixed" "$repo-2-thing/feature.txt" || fail "the fixes are not in the feature"
+
+# A feature that adds an ADR still gets its pull request, and the run says
+# that only the owner may merge it, although the reviewer calls it minor.
+repo="$(setup_repo adr)"
+printf '%s\n' 'eval "$default"; mkdir -p docs/decisions; printf "# ADR 002: Other\n\nStatus: Proposed\n" >docs/decisions/002-other.md' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out" || fail "the run did not say that the owner must approve the merge"
+git -C "$repo-2-thing" log -1 --format=%B | grep -Fq "docs/decisions/002-other.md: an ADR is added, changed, or removed" ||
+  fail "the commit does not record why the owner's approval is needed"
+
+# The same when the independent reviewer classifies the impact as major.
+repo="$(setup_repo impact-major)"
+printf '%s\n' 'reply="{\"architecture_impact\": {\"level\": \"major\", \"rationale\": \"Adds shared infrastructure.\", \"checked_against\": []}, \"verdict\": \"PASS\", \"limitations\": \"\", \"findings\": []}"' \
+  >"$repo.control/reviewer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out" || fail "a major impact did not need the owner's approval"
 
 # An unattended triage cannot let a major finding pass: the run stops.
 repo="$(setup_repo major-deferred)"

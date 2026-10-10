@@ -1023,6 +1023,81 @@ Know what you hand over before you use it:
 - The commit message is not edited: its summary is the title of the Issue
   and its list of changes is what the implementer wrote.
 
+### The merge approval gate
+
+A feature may update the architecture and add an ADR, and in an unattended
+run nobody reads a pull request before it could be merged. The gate decides
+which pull requests only you may merge. It rests on what the diff contains;
+the judgement of a model is a second line, never the only one.
+
+| Source | What it looks at | Who decides |
+|---|---|---|
+| Rules on the diff | ADRs, protected and sensitive paths, the verification configuration | `scripts/check-guardrails.sh` |
+| Independent review | The impact of the whole feature on the architecture | The reviewer, in `architecture_impact` of its result |
+
+The heaviest of the two decides. Your approval is needed when the diff
+changes a protected path, when the reviewer classifies the impact as `major`
+or `breaking`, or when there is no valid classification, as for a feature
+finished with `--no-review`.
+
+**The rules on the diff.** Always protected, in every project:
+
+- every ADR in `docs/decisions/` that is added, changed, or removed. A new
+  ADR can replace an accepted one without touching its file, so no ADR passes
+  without you. A feature writes a new ADR with the status `Proposed`;
+- the CI workflows, and the configuration, scripts, prompts, and schemas that
+  carry out the gate;
+- in `scripts/verify.conf` and `scripts/verify-workflow.conf`: a changed or
+  removed line. An added check is sensitive.
+
+What is fundamental in your project you list in
+`.agents/policies/guardrails.conf`, as Git pathspecs:
+
+```text
+protected: site/_quarto.yml .github/CODEOWNERS deploy
+sensitive: docs/architecture.md pyproject.toml
+```
+
+A protected path needs your approval. A sensitive path does not: it is named
+to the reviewer, who has to look at it. Keep the protected list short, or
+every feature waits for you.
+
+The rules are always read from the base branch as it is now, never from the
+feature itself, so a feature cannot relax the rules it is checked by; a
+change to them is protected. Locally the rules of your base branch and of
+`origin/<base>` both apply, whichever is behind; the script does not fetch,
+and CI checks every pull request against the base on GitHub.
+
+```bash
+./scripts/check-guardrails.sh                      # this worktree against its base
+./scripts/check-guardrails.sh --commits main HEAD  # two commits
+```
+
+**The reviewer's classification.** A feature review must return
+`architecture_impact`: `none`, `minor`, `major`, or `breaking`, with a
+rationale and the ADRs and rules it was checked against. The implementer does
+not classify its own change. A review without a valid classification is
+rejected.
+
+**What happens.** `finish-feature.sh` records the decision and its reasons in
+the commit message, under `Merge approval:`, and `publish-feature.sh` in the
+pull request. A feature that needs your approval still gets its pull request;
+`run-feature.sh` ends with `MERGE APPROVAL REQUIRED`. No script merges a pull
+request, and an agent or a queue that merges for you must skip one that says
+`required from the project owner`.
+
+**In CI.** The workflow `Guardrails` runs the gate on the actual diff of every
+pull request, with the script and the rules of the base branch and without
+running code of the pull request. It fails when the diff changes a protected
+path. It is a signal and not the required check, so that you can merge after
+reading what it lists.
+
+**Your approval is your own merge.** You merge the commit you see, so an
+approval never carries over to content that changed afterwards. This is an
+agreement that the scripts and agents keep, not a lock: the agent works with
+your GitHub account and could do what you can do. A lock needs a separate
+identity for the agent, with code owners and required reviews on GitHub.
+
 ## Linking a feature plan
 
 To add or update the plan reference in an existing Issue:

@@ -382,6 +382,83 @@ git -C "$repo" branch -q -m main trunk
 if run_finish "$repo" 12 "Add the marker"; then fail "a feature without a known base was committed in a planned project"; fi
 grep -Fq "could not determine the base" "$repo.out" || fail "the unknown base was not reported"
 
+# The merge approval gate. The commit message says whether the owner must
+# approve the merge, and why: the heaviest of the rules checked on the diff
+# and the reviewer's classification decides.
+approval_of() {
+  message "$1" | sed -n '/^Merge approval:$/,/^$/p'
+}
+
+set_impact() {
+  jq --arg level "$2" '.architecture_impact = {level: $level, rationale: "Because of the marker.", checked_against: ["ADR 001"]}' \
+    "$1/$review" >"$1/$review.tmp" && mv "$1/$review.tmp" "$1/$review"
+}
+
+repo="$(setup_repo gate-minor PASS "[]")"
+set_impact "$repo" minor
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature with a minor impact failed"
+approval_of "$repo" | grep -Fqx -- "- not required" || fail "a minor impact without a protected path needed approval"
+approval_of "$repo" | grep -Fqx -- "- decided for the reviewed content $(jq -r '.reviewed_tree' "$repo/$review")" ||
+  fail "the decision does not name the reviewed content it was made for"
+
+for level in major breaking; do
+  repo="$(setup_repo "gate-$level" PASS "[]")"
+  set_impact "$repo" "$level"
+  run_finish "$repo" 12 "Add the marker" || fail "finishing a feature with a $level impact failed"
+  approval_of "$repo" | grep -Fqx -- "- required from the project owner, for exactly this commit" ||
+    fail "a $level impact did not need the owner's approval"
+  approval_of "$repo" | grep -Fq "classified the impact on the architecture as $level: Because of the marker." ||
+    fail "the reason of the reviewer was not recorded for a $level impact"
+  grep -Fq "no script or agent may merge it" "$repo.out" || fail "the needed approval was not announced"
+done
+
+# A later round that reviews only the changes cannot lower what an earlier
+# round found: the heaviest classification of the chain counts.
+repo="$(setup_repo gate-chain PASS "[]")"
+set_impact "$repo" major
+second=".agents/reviews/feature-12-marker-review-02.json"
+jq '.round = 2 | .scope = {kind: "changes", since_round: 1, base_tree: .reviewed_tree}
+    | .architecture_impact = {level: "minor", rationale: "Only a typo changed.", checked_against: []}' \
+  "$repo/$review" >"$repo/$second"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing after a review of changes only failed"
+}
+approval_of "$repo" | grep -Fqx -- "- required from the project owner, for exactly this commit" ||
+  fail "a later review of changes only lowered an earlier major classification"
+approval_of "$repo" | grep -Fq "as major: found in an earlier review round" ||
+  fail "the earlier round was not given as the reason"
+
+# The rules on the diff outweigh a reviewer who calls the change minor.
+repo="$(setup_repo gate-adr PASS "[]")"
+set_impact "$repo" minor
+mkdir -p "$repo/docs/decisions"
+printf '# ADR 002: Another marker\n\nStatus: Proposed\n' >"$repo/docs/decisions/002-marker.md"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature with a new ADR failed"
+approval_of "$repo" | grep -Fqx -- "- required from the project owner, for exactly this commit" ||
+  fail "a new ADR did not need the owner's approval although the reviewer said minor"
+approval_of "$repo" | grep -Fq "docs/decisions/002-marker.md: an ADR is added, changed, or removed" ||
+  fail "the added ADR was not given as the reason"
+
+# No classification gives no permission: a review without one, an invalid
+# one, and a feature without a review.
+repo="$(setup_repo gate-unclassified PASS "[]")"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature with an unclassified review failed"
+approval_of "$repo" | grep -Fq "no valid classification of the impact" || fail "a review without a classification gave permission"
+
+repo="$(setup_repo gate-invalid PASS "[]")"
+jq '.architecture_impact = {level: "harmless"}' "$repo/$review" >"$repo/$review.tmp" && mv "$repo/$review.tmp" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then
+  approval_of "$repo" | grep -Fq "no valid classification of the impact" || fail "an invalid classification gave permission"
+fi
+
+repo="$(setup_repo gate-no-review PASS "[]")"
+rm "$repo/$review"
+run_finish "$repo" 12 "Fix a typo" --no-review "documentation typo" || fail "finishing without a review failed"
+approval_of "$repo" | grep -Fqx -- "- required from the project owner, for exactly this commit" ||
+  fail "a feature without a review did not need the owner's approval"
+
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
 EDITOR_COMMAND='sh -c ": > \"\$0\""' expect_no_commit "$repo" "the commit message was emptied" 12 "Add the marker"

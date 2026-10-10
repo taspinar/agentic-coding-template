@@ -67,6 +67,12 @@ trap 'rm -f "$body"' EXIT
   echo
   printf '%s\n' "${manual_steps:-None.}"
   echo
+  # The decision of the merge approval gate was made for this commit; a
+  # later commit on the branch needs a new decision by finish-feature.sh.
+  if git -C "$root" log -1 --format=%b | grep -Fqx "Merge approval:"; then
+    echo "The merge approval above was decided for commit \`$(git -C "$root" rev-parse HEAD)\`."
+    echo
+  fi
   echo "Closes #$issue"
 } >"$body"
 

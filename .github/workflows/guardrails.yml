@@ -1,0 +1,34 @@
+name: Guardrails
+
+# The merge approval gate on the actual diff of a pull request.
+#
+# pull_request_target runs this file and checks out the repository as they
+# are on the base branch, so the rules and the script that judge a pull
+# request are never the pull request's own. The head of the pull request is
+# fetched as Git data only: no step runs code from it.
+#
+# The job fails when the pull request changes something only the owner may
+# approve. It is a signal, not the required check: the owner merges after
+# reading what the job lists.
+
+on:
+  pull_request_target:
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the head of the pull request, as data only
+        env:
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "refs/pull/${PULL_REQUEST}/head:refs/remotes/pull-request/head"
+      - name: Check the merge approval gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: ./scripts/check-guardrails.sh --commits "$BASE_SHA" refs/remotes/pull-request/head --fail-on-protected

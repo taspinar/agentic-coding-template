@@ -54,6 +54,7 @@ What each part of the template is for. The workflow that connects them is in
 | `scripts/finish-feature.sh` | Checks the feature and creates the commit |
 | `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions, in at most five review rounds; never merges and never removes a worktree |
 | `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request; with `--wait` stays until CI finishes; never merges |
+| `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
@@ -86,7 +87,8 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/prompts/reviewer.md` | `review-feature.sh` |
 | `.agents/prompts/triage-reviewer.md` | `triage-review.sh` |
 | `.agents/prompts/triage-implementer.md` | `apply-triage.sh` |
-| `.agents/schemas/review.schema.json` | Results of feature and planning reviews |
+| `.agents/schemas/review.schema.json` | Results of planning reviews |
+| `.agents/schemas/feature-review.schema.json` | Results of feature reviews: the same, with the reviewer's classification of the impact on the architecture |
 | `.agents/schemas/triage.schema.json` | Triage decisions |
 | `.agents/schemas/revision.schema.json` | Planning revision decisions |
 

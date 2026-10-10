@@ -8,6 +8,7 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/review-run.sh"
+source "$script_dir/lib/guardrails.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -69,7 +70,7 @@ slug="${branch//\//-}"
 
 reviews_dir="$root/.agents/reviews"
 prompt_file="$root/.agents/prompts/reviewer.md"
-schema_file="$root/.agents/schemas/review.schema.json"
+schema_file="$root/.agents/schemas/feature-review.schema.json"
 
 # Ensure we're reviewing the expected feature branch.
 if [[ "$branch" != feature/${issue}-* ]]; then
@@ -249,6 +250,37 @@ else
   } >"$context_file"
 fi
 
+# The merge approval gate: what the feature changes that needs the owner's
+# approval or a closer look, by the rules of its base. The reviewer is told,
+# and the artifact records it.
+guardrail_rules="$(guardrails_rules_refs "$root" "$base")"
+guardrail_findings="$(guardrails_classify "$root" "$guardrail_rules" "$merge_base" | sort -u)"
+guardrails="$(printf '%s\n' "$guardrail_findings" |
+  jq -Rn --arg level "$(printf '%s\n' "$guardrail_findings" | guardrails_level)" \
+    '{level: $level, findings: [inputs | select(length > 0) | split("\t") | {kind: .[0], path: .[1], reason: .[2]}]}')"
+{
+  echo
+  echo "## Merge approval gate"
+  echo
+  echo "By the rules of the base branch, for the complete feature against its base:"
+  echo
+  if [[ -z "$guardrail_findings" ]]; then
+    echo "No protected or sensitive path is changed."
+  else
+    printf '%s\n' "$guardrail_findings" | awk -F '\t' '{ printf "- %s: %s (%s)\n", $1, $2, $3 }'
+  fi
+  echo
+  echo "Look at the sensitive and protected changes in particular, and classify the"
+  echo "impact of the whole feature on the architecture in architecture_impact."
+  if [[ "$changes_only" -eq 1 ]]; then
+    echo
+    echo "Round $previous_round and the rounds it builds on classified the impact as:"
+    echo "$(guardrails_review_level "$previous_review")."
+    echo "You see only what changed since then, so classify that. The heaviest"
+    echo "classification of the rounds counts: this round cannot lower an earlier one."
+  fi
+} >>"$context_file"
+
 echo "Preparing independent review:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
@@ -310,7 +342,8 @@ script validates and stores it."
 echo "Starting $agent reviewer ($model) with read-only permissions..."
 echo
 
-review_run_reviewer "$agent" "$model" "$root" "$START_PROMPT" "$context_file" "$schema_file" "$report_file" "$tmp_work"
+review_run_reviewer "$agent" "$model" "$root" "$START_PROMPT" "$context_file" "$schema_file" "$report_file" "$tmp_work" \
+  feature_review_result_errors
 
 metadata="$(jq -n \
   --argjson issue "$issue" \
@@ -325,9 +358,11 @@ metadata="$(jq -n \
   --arg created_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --argjson verification "$verification" \
   --argjson scope "$scope" \
+  --argjson guardrails "$guardrails" \
   '{
     schema: "review/v1",
     kind: "feature",
+    guardrails: $guardrails,
     verification: $verification,
     scope: $scope,
     issue: $issue,
@@ -342,6 +377,18 @@ metadata="$(jq -n \
     created_at: $created_at
   }')"
 review_store "$report_file" "$out" "$metadata"
+
+# The decision of the gate for the reviewed content: the rules on the diff
+# and the classification of this review, with the rounds it builds on.
+approval_lines="$(guardrails_decision "$root" "$guardrail_rules" "$merge_base" "$out.json")"
+jq --arg lines "$approval_lines" '
+  ($lines | split("\n") | map(select(length > 0))) as $l
+  | .merge_approval = {required: ($l[0] == "owner"), reasons: $l[1:]}' "$out.json" >"$out.json.tmp"
+mv "$out.json.tmp" "$out.json"
+if [[ "$(jq -r '.merge_approval.required' "$out.json")" == "true" ]]; then
+  echo "  Merge approval: required from the owner"
+  jq -r '.merge_approval.reasons[] | "    - \(.)"' "$out.json"
+fi
 echo "  $review_relative.json  (source of truth)"
 echo "  $review_relative.md    (generated report)"
 echo
