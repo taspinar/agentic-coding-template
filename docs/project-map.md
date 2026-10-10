@@ -101,7 +101,7 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/verification/` | The record of the last passed verification, written by `verify.sh` | No |
 | `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
 | `.agents/summaries/` | Per Issue, the implementer's summary of the changes; becomes the list of changes in the commit message | No |
-| `.agents/run/` | The final messages, and for Codex the session logs, of agents that ran with `--unattended`; the mark of `run-feature.sh` that the implementation was completed | No |
+| `.agents/run/` | The final messages, and for Codex the session logs, of agents that ran with `--unattended`; the mark of `run-feature.sh` that the implementation was completed, its log of interruptions (`<issue>-log`), and the output of a failed verification | No |
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |

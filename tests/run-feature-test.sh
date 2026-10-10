@@ -133,7 +133,7 @@ setup_repo() {
   cp "$source_root/.gitignore" "$seed/.gitignore"
   printf 'implementer: codex model-i\nreviewer: codex model-r\ntriage: codex model-t\ntriage-implementer: codex model-f\n' \
     >"$seed/.agents/agents.conf"
-  printf 'sound: test ! -e broken.txt\n' >"$seed/scripts/verify.conf"
+  printf '%s\n' "${VERIFY_CONF:-sound: test ! -e broken.txt}" >"$seed/scripts/verify.conf"
   printf '# Agents\n' >"$seed/AGENTS.md"
   git -C "$seed" init -q -b main
   git -C "$seed" config user.name "Run Feature Test"
@@ -157,6 +157,7 @@ run_feature() {
   (
     cd "$repo"
     PATH="$tmp/bin:/usr/bin:/bin" RUN_CONTROL="$repo.control" RUN_ISSUE="${1:-}" GIT_EDITOR=false \
+      RUN_FEATURE_RETRY_WAIT=0 \
       ./scripts/run-feature.sh "$@" </dev/null
   ) >"$repo.out" 2>&1 || status=$?
 }
@@ -321,49 +322,144 @@ run_feature "$repo" 2
 expect_stopped "$repo" 1 "5 review rounds are used"
 expect_sessions "$repo" 1 5 5 4
 
-# An implementer that needs a decision stops the run with status 3. After the
-# answer, the same command resumes the implementation and goes on.
+# What a fake agent runs to record a question in the handoff note.
+ask='mkdir -p .agents/handoffs; printf "**Done:** part.\n\n**Open questions:** %s\n" "$question" >".agents/handoffs/$RUN_ISSUE.md"'
+
+log_of() {
+  cat "$1-2-thing/.agents/run/2-log" 2>/dev/null || true
+}
+
+# An implementer that needs a decision, with its question in the handoff
+# note, stops the run with status 3. After the answer, the same command
+# resumes the implementation and goes on.
 repo="$(setup_repo blocked)"
-printf '%s\n' 'reply="BLOCKED: the Issue contradicts ADR 002"' >"$repo.control/implementer-1.sh"
+printf '%s\n' "question='does the Issue override ADR 002?'; $ask; reply=\"BLOCKED: the Issue contradicts ADR 002\"" \
+  >"$repo.control/implementer-1.sh"
 run_feature "$repo" 2 thing
 expect_stopped "$repo" 3 "the implementer needs a decision of yours"
 grep -Fq "the Issue contradicts ADR 002" "$repo.out" || fail "the question of the implementer was not shown"
 expect_sessions "$repo" 1 0 0 0
+log_of "$repo" | grep -Fq "| blocked |" || fail "the blocked session is not in the log of the feature"
+printf '**Open questions:** none.\n\nAnswer: the Issue overrides it.\n' >"$repo-2-thing/.agents/handoffs/2.md"
 run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 2 1 0 0
 grep -Fq "You are resuming interrupted work" "$repo.control/implementer.args" || fail "the second session did not resume the work"
 
-# A failing implementer stops the run; the next run resumes it.
-repo="$(setup_repo implementer-fails)"
+# BLOCKED without a question in the handoff note leaves nothing to answer:
+# the script goes by what is recorded, not by the line, and the run goes on.
+for note in "" "**Open questions:** none blocking."; do
+  repo="$(setup_repo "blocked-without-question-${#note}")"
+  printf '%s\n' "eval \"\$default\"; mkdir -p .agents/handoffs; printf '%s\n' '$note' >.agents/handoffs/\$RUN_ISSUE.md; reply=\"BLOCKED: the verification did not finish\"" \
+    >"$repo.control/implementer.sh"
+  run_feature "$repo" 2 thing
+  expect_published "$repo"
+  expect_sessions "$repo" 1 1 0 0
+  log_of "$repo" | grep -Fq "holds no open question" || fail "the ignored BLOCKED line is not in the log of the feature"
+done
+
+# A session that fails once, for example on a usage limit, is tried again by
+# the run itself: the implementer is resumed, a reviewer is started again.
+repo="$(setup_repo implementer-fails-once)"
 printf '%s\n' 'exit 9' >"$repo.control/implementer-1.sh"
 run_feature "$repo" 2 thing
-expect_stopped "$repo" 1 "the implementation failed"
-run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 2 1 0 0
+log_of "$repo" | grep -Fq "| temporary |" || fail "the failed session is not in the log of the feature"
 
-# A failing reviewer, for example on a usage limit, stops the run. The next
-# run does not implement again.
-repo="$(setup_repo reviewer-fails)"
+repo="$(setup_repo reviewer-fails-once)"
 printf '%s\n' 'exit 9' >"$repo.control/reviewer-1.sh"
 run_feature "$repo" 2 thing
-expect_stopped "$repo" 1 "the review did not complete"
-run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 1 2 0 0
+log_of "$repo" | grep -Eq "\| temporary \| the step exited with status [0-9]+ \| Retry 1 of 3" ||
+  fail "the retry of the review is not in the log of the feature"
 
-# Verification that fails after the implementation stops the run before a
-# review.
+# The retries are bounded: a session that keeps failing stops the run, and
+# the next run starts where it stopped.
+repo="$(setup_repo implementer-keeps-failing)"
+printf '%s\n' 'exit 9' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "the implementation failed"
+expect_sessions "$repo" 5 0 0 0
+
+repo="$(setup_repo reviewer-keeps-failing)"
+printf '%s\n' 'exit 9' >"$repo.control/reviewer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "the review did not complete"
+expect_sessions "$repo" 1 4 0 0
+log_of "$repo" | grep -Fq "also after 3 retries" || fail "the exhausted retries are not in the log of the feature"
+rm "$repo.control/reviewer.sh"
+run_feature "$repo" 2
+expect_published "$repo"
+expect_sessions "$repo" 1 5 0 0
+
+# A verification that fails once and passes when it is repeated is an
+# unstable check: the run records it and goes on.
+repo="$(VERIFY_CONF="unstable: sh -c 'test -e .agents/run/seen || { mkdir -p .agents/run; touch .agents/run/seen; false; }'" setup_repo unstable)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+log_of "$repo" | grep -Fq "unstable checks, failed in one of two verification runs: unstable" ||
+  fail "the unstable check is not named in the log of the feature"
+
+# Two checks that fail in turn, each in one run only, are unstable too: no
+# check failed twice, so nothing is repaired.
+alternating="first: sh -c 'n=\$(cat .agents/run/n 2>/dev/null || echo 0); mkdir -p .agents/run; echo \$((n + 1)) >.agents/run/n; test \$n -ne 0'
+second: sh -c 'test \$(cat .agents/run/n) -ne 2'"
+repo="$(VERIFY_CONF="$alternating" setup_repo alternating)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+log_of "$repo" | grep -Fq "unstable checks" || fail "checks that failed in turn were not recorded as unstable"
+if log_of "$repo" | grep -Fq "Repair attempt"; then fail "a repair was started although no check failed twice"; fi
+
+# A verification that fails twice is repaired by the implementer, which is
+# given the failing checks in the handoff note.
+repo="$(setup_repo repaired)"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; printf "x\n" >broken.txt
+else grep -q "FAIL  *sound" ".agents/handoffs/$RUN_ISSUE.md" && rm -f broken.txt; reply="Repaired."; fi' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+log_of "$repo" | grep -Fq "Repair attempt 1 of 3" || fail "the repair is not in the log of the feature"
+grep -Fq "## Verification failed" "$repo-2-thing/.agents/handoffs/2.md" || fail "the failing checks were not recorded for the implementer"
+
+# A repair session that fails once, for example on a usage limit, is tried
+# again like any other session.
+repo="$(setup_repo repair-fails-once)"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; printf "x\n" >broken.txt
+elif [[ "$count" -eq 2 ]]; then exit 9
+else rm -f broken.txt; reply="Repaired."; fi' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 3 1 0 0
+log_of "$repo" | grep -Eq "repair of the verification, attempt 1 of 3 \| temporary" ||
+  fail "the failed repair session is not in the log of the feature"
+
+# An agent that exits with the status the scripts keep for a failed
+# verification is a failed session, not a failed verification.
+for code in 4 5; do
+  repo="$(setup_repo "agent-exits-$code")"
+  printf '%s\n' "exit $code" >"$repo.control/implementer-1.sh"
+  run_feature "$repo" 2 thing
+  expect_published "$repo"
+  expect_sessions "$repo" 2 1 0 0
+  if log_of "$repo" | grep -Eq "Repair attempt|changed the review"; then
+    fail "an agent that exited with $code was taken for a failed verification or a changed review"
+  fi
+done
+
+# The repairs are bounded: after three the run stops and names the checks.
 repo="$(setup_repo unverified)"
 printf '%s\n' 'printf "x\n" >broken.txt; reply="Done. ./scripts/verify.sh did not finish in this session."' \
   >"$repo.control/implementer.sh"
 run_feature "$repo" 2 thing
-expect_stopped "$repo" 1 "the review did not complete"
-expect_sessions "$repo" 1 0 0 0
-# The agent reported no result of the verification; the step that verifies
-# names the check that fails.
-grep -Eq "FAIL +sound" "$repo.out" || fail "the failing check was not named when the run stopped"
+expect_stopped "$repo" 1 "the verification still fails"
+expect_sessions "$repo" 4 0 0 0
+grep -Eq "FAIL +sound" "$repo-2-thing/.agents/run/2-verify.log" || fail "the failing check is not in the kept output of the verification"
+log_of "$repo" | grep -Fq "fails after 3 repair attempts" || fail "the exhausted repairs are not in the log of the feature"
 
 # An implementer whose own verification did not finish reports that without
 # a BLOCKED line: the run goes on to the step that verifies, and passes when
@@ -377,19 +473,66 @@ expect_sessions "$repo" 1 1 0 0
 grep -Fq "do not write a BLOCKED line" "$repo.control/implementer.args" ||
   fail "the unattended implementer was not told that a verification is no reason to block"
 
-# Verification that still fails after the fixes stops the run.
+# A verification that fails after the fixes is repaired too, and a review
+# confirms the result.
 repo="$(setup_repo fixes-break)"
 printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
-printf '%s\n' 'printf "x\n" >broken.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; printf "x\n" >broken.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; else rm -f broken.txt; reply="Repaired."; fi' \
+  >"$repo.control/implementer.sh"
 run_feature "$repo" 2 thing
-expect_stopped "$repo" 1 "the fixes for round 1 failed"
+expect_published "$repo"
+expect_sessions "$repo" 2 2 1 1
+
+# A fixing agent that changed a file and then failed is continued with the
+# same triage and scope: apply-triage.sh would refuse a new session, because
+# the content changed since the review. No other agent takes over.
+repo="$(setup_repo fixes-interrupted)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "half fixed\n" >>feature.txt; exit 9' >"$repo.control/fixes-1.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; reply="Finished the fixes."' >"$repo.control/fixes.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 2 1 2
+log_of "$repo" | grep -Fq "Continuing the interrupted session with the same scope" ||
+  fail "the interrupted fix session is not in the log of the feature"
+[[ "$(grep -c "Wrong content" "$repo.control/fixes.args")" -eq 2 ]] ||
+  fail "the continued session was not given the FIX_NOW finding of the triage"
+[[ "$(grep -c "You are continuing a fix session that was interrupted" "$repo.control/fixes.args")" -eq 1 ]] ||
+  fail "only the continued session should be told that it continues"
+if grep -Fq "Vague name" "$repo.control/fixes.args"; then fail "a deferred finding was given to the fixing agent"; fi
+[[ ! -e "$repo-2-thing/.agents/run/2-fixes-started" ]] || fail "the mark of the unfinished session was kept after it finished"
+
+# An agent that changes the review it works from, validly, is not tried
+# again and not continued: the changed review must not become the baseline
+# of a next session.
+repo="$(setup_repo fixes-tamper)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "half fixed\n" >>feature.txt
+r=.agents/reviews/feature-2-thing-review-01.json
+jq ".findings[0].recommendation = \"Nothing to do.\"" "$r" >"$r.tmp" && mv "$r.tmp" "$r"
+reply="Done."' >"$repo.control/fixes.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "changed the review or the approved triage"
 expect_sessions "$repo" 1 1 1 1
+[[ ! -e "$repo-2-thing/.agents/run/2-fixes-started" ]] || fail "the mark of a rejected session was kept"
+log_of "$repo" | grep -Fq "nothing is tried again" || fail "the rejected session is not in the log of the feature"
+
+# A fixing agent that failed before it changed anything is started again.
+for code in 4 5; do
+  repo="$(setup_repo "fixes-fail-once-$code")"
+  printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+  printf '%s\n' "exit $code" >"$repo.control/fixes-1.sh"
+  run_feature "$repo" 2 thing
+  expect_published "$repo"
+  expect_sessions "$repo" 1 2 1 2
+done
 
 # A fixing agent that needs a decision stops the run with status 3, and one
 # that changes nothing stops it too, instead of reviewing the same content.
 repo="$(setup_repo fixes-blocked)"
 printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
-printf '%s\n' 'reply="BLOCKED: which format?"' >"$repo.control/fixes-1.sh"
+printf '%s\n' "question='which format?'; $ask; reply=\"BLOCKED: which format?\"" >"$repo.control/fixes-1.sh"
 # The implementer continues only with the answer from the handoff note.
 printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"
 elif grep -q "Answer: JSON" ".agents/handoffs/$RUN_ISSUE.md" 2>/dev/null && [[ "$*" == *"handoff note: .agents/handoffs/"* ]]; then
@@ -399,8 +542,7 @@ run_feature "$repo" 2 thing
 expect_stopped "$repo" 3 "the agent that applies the fixes needs a decision of yours"
 # The answer is given: the next run hands it to the implementer, which
 # resumes, and round 2 confirms the result.
-mkdir -p "$repo-2-thing/.agents/handoffs"
-printf 'Open questions\n\nWhich format?\nAnswer: JSON\n' >"$repo-2-thing/.agents/handoffs/2.md"
+printf '**Open questions:** none.\n\nWhich format?\nAnswer: JSON\n' >"$repo-2-thing/.agents/handoffs/2.md"
 run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 2 2 1 1
@@ -417,7 +559,7 @@ expect_sessions "$repo" 1 1 1 1
 # reviews the complete feature instead of being refused.
 repo="$(setup_repo base-changed)"
 printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
-printf '%s\n' 'reply="BLOCKED: wait"' >"$repo.control/fixes-1.sh"
+printf '%s\n' "question='wait for main?'; $ask; reply=\"BLOCKED: wait\"" >"$repo.control/fixes-1.sh"
 run_feature "$repo" 2 thing
 expect_stopped "$repo" 3 "needs a decision of yours"
 printf 'other work\n' >"$repo/other.txt"

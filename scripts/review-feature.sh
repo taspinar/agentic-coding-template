@@ -149,8 +149,12 @@ else
   # exactly this content, so a check that changes a file is detected.
   verified_tree="$(fingerprint_worktree "$root" "$tmp_work")" ||
     fail "could not compute the fingerprint of the working tree."
-  (cd "$root" && ./scripts/verify.sh --reuse) ||
-    fail "verification failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"."
+  # Status 4 tells a caller that the verification failed, apart from every
+  # other reason for which no review was stored.
+  (cd "$root" && ./scripts/verify.sh --reuse) || {
+    echo "Error: verification failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"." >&2
+    exit 4
+  }
   verification="$(jq -n --arg at "$(verification_field "$root" verified-at)" \
     '{status: "passed", verified_at: (if $at == "" then (now | todate) else $at end)}')"
 fi
