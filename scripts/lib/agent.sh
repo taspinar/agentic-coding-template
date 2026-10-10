@@ -70,7 +70,14 @@ Do not ask anything and do not wait for the human. When you cannot continue
 without a decision of the human, or the work conflicts with the Issue's scope,
 the architecture, or an ADR, stop: record the question under 'Open questions'
 in the handoff note, and end your final message with one line that starts with
-'BLOCKED: ' and gives the reason. Otherwise finish the work and end normally."
+'BLOCKED: ' and gives the reason. Otherwise finish the work and end normally.
+
+BLOCKED is only for that. A verification is not a decision: when
+./scripts/verify.sh fails on something outside your work, does not finish
+within your session, or cannot run here, do not write a BLOCKED line. Say in
+your final message and in the handoff note what happened and what you checked
+instead, and end normally. The script that started you verifies the result
+after your session and stops the run when the verification really fails."
 
 # agent_blocked_reason <final-message-file>
 # Prints the reason of the last 'BLOCKED: ' line of an unattended session's

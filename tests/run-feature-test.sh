@@ -333,10 +333,26 @@ expect_sessions "$repo" 1 2 0 0
 # Verification that fails after the implementation stops the run before a
 # review.
 repo="$(setup_repo unverified)"
-printf '%s\n' 'printf "x\n" >broken.txt; reply="Done."' >"$repo.control/implementer.sh"
+printf '%s\n' 'printf "x\n" >broken.txt; reply="Done. ./scripts/verify.sh did not finish in this session."' \
+  >"$repo.control/implementer.sh"
 run_feature "$repo" 2 thing
 expect_stopped "$repo" 1 "the review did not complete"
 expect_sessions "$repo" 1 0 0 0
+# The agent reported no result of the verification; the step that verifies
+# names the check that fails.
+grep -Eq "FAIL +sound" "$repo.out" || fail "the failing check was not named when the run stopped"
+
+# An implementer whose own verification did not finish reports that without
+# a BLOCKED line: the run goes on to the step that verifies, and passes when
+# the content is sound.
+repo="$(setup_repo verification-unfinished)"
+printf '%s\n' 'eval "$default"; reply="Implemented. ./scripts/verify.sh did not finish in this session; the unit tests pass."' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -Fq "do not write a BLOCKED line" "$repo.control/implementer.args" ||
+  fail "the unattended implementer was not told that a verification is no reason to block"
 
 # Verification that still fails after the fixes stops the run.
 repo="$(setup_repo fixes-break)"
