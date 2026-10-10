@@ -893,6 +893,15 @@ the reason and exits with status 3, which it uses for nothing else, so a
 blocked session can be told apart from a failed one. Answer in the handoff note or change the Issue, and
 continue with `./scripts/start-feature.sh <issue> --resume`.
 
+`BLOCKED` is only for a decision. The agent is told not to use it when its
+own run of `./scripts/verify.sh` fails on something outside its work, does not
+finish within the session, or cannot run on the machine: it reports that in
+its final message and ends normally. The step that follows verifies the
+result itself, and a verification that really fails stops the run there, with
+status 1 and the failing checks. Common causes on your side are a tool that
+is not in the `PATH` of the terminal you started from, and a verification
+that takes longer than one command of an agent session may.
+
 A triage that was approved this way says so: the artifact has
 `"unattended": true`, and the report and the comment on the Issue state that
 no human approved the decisions. Deferred findings still become follow-up
