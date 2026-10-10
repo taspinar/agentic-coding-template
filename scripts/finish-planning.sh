@@ -44,9 +44,22 @@ case "$#:${1:-}" in
     ;;
   1:--check)
     status=0
-    reason="$(planning_approval_status "$root" "$tmp_work")" || status=$?
+    reason_file="$tmp_work/approval-reason"
+    planning_approval_status "$root" "$tmp_work" >"$reason_file" || status=$?
+    reason="$(<"$reason_file")"
     case "$status" in
-      0) echo "Current: $PLANNING_APPROVAL_FILE matches the planning documents." ;;
+      0)
+        if [[ -z "$PLANNING_APPROVAL_UPDATED_SINCE" ]]; then
+          echo "Current: $PLANNING_APPROVAL_FILE matches the planning documents."
+        else
+          echo "Current: the description, the requirements, the change requests, and the roadmap are as approved."
+          echo "The architecture or the ADRs were updated since the approval, by:"
+          planning_feature_updates "$root" "$PLANNING_APPROVAL_UPDATED_SINCE" HEAD | sed 's/^/  /'
+          if ! git -C "$root" diff --quiet HEAD -- docs/architecture.md docs/decisions 2>/dev/null; then
+            echo "  (and uncommitted changes in this working tree)"
+          fi
+        fi
+        ;;
       1) echo "Not approved: $reason"; echo "Finish the planning again with ./scripts/finish-planning.sh in a planning worktree." ;;
       *) echo "Error: $reason" >&2 ;;
     esac
@@ -76,6 +89,8 @@ amend() {
   local fingerprint
   local answer=""
   local approval="$root/$PLANNING_APPROVAL_FILE"
+  local approved_commit
+  local feature_updates=""
   local entry
 
   if git -C "$root" rev-parse --verify --quiet "origin/main^{commit}" >/dev/null; then
@@ -105,8 +120,16 @@ amend() {
   git -C "$root" ls-tree -r "$base" -- "${PLANNING_SCOPE[@]}" |
     GIT_INDEX_FILE="$tmp_work/base.index" git -C "$root" update-index --index-info
   base_tree="$(GIT_INDEX_FILE="$tmp_work/base.index" git -C "$root" write-tree)"
-  [[ "$base_tree" == "$recorded" ]] ||
-    fail "the planning on $base_ref changed after its approval, so there is no current approval to amend. Approve it with a review first."
+  if [[ "$base_tree" != "$recorded" ]]; then
+    # Features may have updated the architecture or the ADRs on the base
+    # since; the approval is still current when nothing else changed.
+    approved_commit="$(planning_approval_commit "$root" "$tmp_work" "$recorded" "$base")"
+    [[ -n "$approved_commit" ]] &&
+      [[ "$(planning_tree_at "$root" "$tmp_work" "$approved_commit" "${PLANNING_PRODUCT_SCOPE[@]}")" == \
+      "$(planning_tree_at "$root" "$tmp_work" "$base" "${PLANNING_PRODUCT_SCOPE[@]}")" ]] ||
+      fail "the planning on $base_ref changed after its approval, so there is no current approval to amend. Approve it with a review first."
+    feature_updates="$(planning_feature_updates "$root" "$approved_commit" "$base")"
+  fi
 
   [[ -f "$approval" && ! -L "$approval" ]] && git -C "$root" diff --quiet "$base" -- "$PLANNING_APPROVAL_FILE" ||
     fail "$PLANNING_APPROVAL_FILE differs from $base_ref. The script updates it; restore it first."
@@ -166,6 +189,12 @@ amend() {
       echo "The review rounds above cover the planning as it was first approved. Each"
       echo "amendment below changed only the architecture or the ADRs."
       echo
+    fi
+    if [[ -n "$feature_updates" ]]; then
+      # The fingerprint now also covers what merged work changed since the
+      # approval; the record says which commits those were.
+      echo "- $(date -u +'%Y-%m-%dT%H:%M:%SZ'): before the amendment below, merged work had updated the architecture or the ADRs since the approval, each change under its own review:"
+      printf '%s\n' "$feature_updates" | sed 's/^/  - /'
     fi
     printf '%s\n' "$entry"
   } >"$tmp_work/approval"
@@ -306,6 +335,19 @@ fingerprint="$(fingerprint_files "$root" "$tmp_work" "${PLANNING_SCOPE[@]}")" ||
   fail "could not compute the fingerprint of the planning documents."
 [[ "$fingerprint" == "$reviewed_fingerprint" ]] ||
   fail "a planning document changed after the final review; the approval was not recorded. Run ./scripts/review-planning.sh again."
+
+# What merged work changed in the architecture and the ADRs since the
+# previous approval: this approval covers those changes too, so it names them.
+previous_updates=""
+recorded_updates="$(planning_recorded_updates "$root/$PLANNING_APPROVAL_FILE")"
+if [[ -f "$root/$PLANNING_APPROVAL_FILE" ]]; then
+  previous_recorded="$(sed -n 's/^Planning fingerprint: \([0-9a-f]\{40,64\}\)$/\1/p' "$root/$PLANNING_APPROVAL_FILE" | head -n 1)"
+  if [[ -n "$previous_recorded" ]]; then
+    previous_commit="$(planning_approval_commit "$root" "$tmp_work" "$previous_recorded")"
+    [[ -z "$previous_commit" ]] ||
+      previous_updates="$(planning_feature_updates "$root" "$previous_commit" HEAD)"
+  fi
+fi
 {
   echo "# Planning Approval"
   echo
@@ -317,12 +359,24 @@ fingerprint="$(fingerprint_files "$root" "$tmp_work" "${PLANNING_SCOPE[@]}")" ||
   echo "Planning fingerprint: $fingerprint"
   echo
   echo "Recorded by \`scripts/finish-planning.sh\`. The approval covers these planning"
-  echo "documents; any change to them invalidates it (\`./scripts/finish-planning.sh --check\`):"
+  echo "documents. A change to the description, the requirements, a change request, or the"
+  echo "roadmap makes it stale; the architecture and the ADRs may be updated by features"
+  echo "(\`./scripts/finish-planning.sh --check\`):"
   echo
   for path in "${PLANNING_SCOPE[@]}"; do
     echo "- \`$path\`"
   done
   echo
+  if [[ -n "$previous_updates" || -n "$recorded_updates" ]]; then
+    echo "## Updates by merged work"
+    echo
+    echo "These commits changed the architecture or the ADRs between approvals, each"
+    echo "under its own review. This approval covers the documents including them."
+    echo
+    [[ -z "$recorded_updates" ]] || printf '%s\n' "$recorded_updates"
+    [[ -z "$previous_updates" ]] || printf '%s\n' "$previous_updates" | sed 's/^/- /'
+    echo
+  fi
   echo "## Review rounds"
   echo
   for review in "${reviews[@]}"; do

@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/planning.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended]"
@@ -54,6 +55,33 @@ branch="$(git branch --show-current)"
 
 [[ -n "$(git -C "$root" status --porcelain)" ]] || fail "there are no changes to commit."
 review_data_require_jq
+
+# A feature keeps the architecture and the ADRs up to date, but it does not
+# change what the product is or which features it gets, nor the approval
+# itself: that makes the planning approval stale and needs a planning cycle.
+# Checked in a project with an approved planning, on the feature's base or
+# in the working tree.
+feature_base_branch="$(git -C "$root" config --get "branch.$branch.workflow-base" || true)"
+if feature_base_lines="$(feature_base "$root" "${feature_base_branch:-main}")"; then
+  feature_merge_base="$(printf '%s\n' "$feature_base_lines" | sed -n 2p)"
+  if [[ -f "$root/$PLANNING_APPROVAL_FILE" ]] ||
+    git -C "$root" cat-file -e "$feature_merge_base:$PLANNING_APPROVAL_FILE" 2>/dev/null; then
+    planning_changes="$(
+      git -C "$root" diff --name-only "$feature_merge_base" -- "${PLANNING_PRODUCT_SCOPE[@]}" "$PLANNING_APPROVAL_FILE"
+      git -C "$root" ls-files --others --exclude-standard -- "${PLANNING_PRODUCT_SCOPE[@]}" "$PLANNING_APPROVAL_FILE"
+    )"
+    if [[ -n "$planning_changes" ]]; then
+      echo "Error: this feature changes planning documents that only a planning cycle may change:" >&2
+      printf '%s\n' "$planning_changes" | sort -u | sed 's/^/  /' >&2
+      echo "Take these changes out of the feature, and make them through a change cycle:" >&2
+      echo "  ./scripts/start-planning.sh <name> --change <file>" >&2
+      echo "The architecture and the ADRs may be updated in a feature. Nothing was committed." >&2
+      exit 1
+    fi
+  fi
+elif [[ -f "$root/$PLANNING_APPROVAL_FILE" ]] || git -C "$root" cat-file -e "HEAD:$PLANNING_APPROVAL_FILE" 2>/dev/null; then
+  fail "could not determine the base of $branch, so it cannot be checked that the feature leaves the approved planning as it is. Nothing was committed."
+fi
 
 # 1. Verification passes. A pass that was already recorded for exactly this
 # content, by apply-triage.sh or review-feature.sh, is not repeated.

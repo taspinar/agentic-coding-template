@@ -320,6 +320,68 @@ expect_no_commit "$repo" "the review has a major finding, unattended" 12 "Add th
 repo="$(setup_repo editor-fails PASS "[]")"
 EDITOR_COMMAND=false expect_no_commit "$repo" "the editor failed" 12 "Add the marker"
 
+# In a project with an approved planning, a feature may update the
+# architecture and the ADRs, but not the roadmap or the requirements.
+setup_planned() {
+  local repo
+
+  repo="$(setup_repo "$1" PASS "[]")"
+  git -C "$repo" stash -q --include-untracked
+  git -C "$repo" switch -q main
+  mkdir -p "$repo/docs/decisions"
+  printf '# Roadmap\n' >"$repo/docs/roadmap.md"
+  printf '# Requirements\n' >"$repo/docs/PROJECT_REQUIREMENTS.md"
+  printf '# Architecture\n' >"$repo/docs/architecture.md"
+  printf '# Planning Approval\n\nStatus: Approved\n' >"$repo/docs/PLANNING_APPROVAL.md"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm "Approved planning"
+  git -C "$repo" switch -q feature/12-marker
+  git -C "$repo" rebase -q main
+  git -C "$repo" stash pop -q >/dev/null
+  printf '%s\n' "$repo"
+}
+
+repo="$(setup_planned architecture-update)"
+printf '\nThe marker is a file.\n' >>"$repo/docs/architecture.md"
+printf '# ADR 001: Marker\n' >"$repo/docs/decisions/001-marker.md"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a feature that updates the architecture and an ADR was refused"
+}
+[[ "$(git -C "$repo" rev-list --count main..HEAD)" -eq 1 ]] || fail "the feature with an architecture update was not committed"
+
+for document in docs/roadmap.md docs/PROJECT_REQUIREMENTS.md docs/changes/later.md; do
+  repo="$(setup_planned "changes-$(basename "$document" .md)")"
+  mkdir -p "$repo/docs/changes"
+  printf '\nChanged by a feature.\n' >>"$repo/$document"
+  record_reviewed_tree "$repo" "$repo/$review"
+  if run_finish "$repo" 12 "Add the marker"; then fail "a feature that changes $document was committed"; fi
+  [[ "$(git -C "$repo" rev-list --count main..HEAD)" -eq 0 ]] || fail "a commit was created although the feature changes $document"
+  grep -Fq "$document" "$repo.out" || fail "the changed planning document was not named: $document"
+  grep -Fq "start-planning.sh <name> --change <file>" "$repo.out" || fail "the change cycle was not named"
+done
+
+# The guard cannot be passed by removing or changing the approval itself.
+repo="$(setup_planned removes-approval)"
+git -C "$repo" rm -q docs/PLANNING_APPROVAL.md
+printf '\nChanged by a feature.\n' >>"$repo/docs/roadmap.md"
+record_reviewed_tree "$repo" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then fail "a feature that removes the approval and changes the roadmap was committed"; fi
+grep -Fq "docs/PLANNING_APPROVAL.md" "$repo.out" || fail "the removed approval was not named"
+grep -Fq "docs/roadmap.md" "$repo.out" || fail "the changed roadmap was not named after the approval was removed"
+
+repo="$(setup_planned edits-approval)"
+printf '\nA note by a feature.\n' >>"$repo/docs/PLANNING_APPROVAL.md"
+record_reviewed_tree "$repo" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then fail "a feature that edits the approval was committed"; fi
+
+# Without a base to compare with, a planned project is not committed blind.
+repo="$(setup_planned no-base)"
+git -C "$repo" branch -q -m main trunk
+if run_finish "$repo" 12 "Add the marker"; then fail "a feature without a known base was committed in a planned project"; fi
+grep -Fq "could not determine the base" "$repo.out" || fail "the unknown base was not reported"
+
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
 EDITOR_COMMAND='sh -c ": > \"\$0\""' expect_no_commit "$repo" "the commit message was emptied" 12 "Add the marker"
