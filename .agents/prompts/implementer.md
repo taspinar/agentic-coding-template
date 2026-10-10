@@ -43,6 +43,14 @@ Do not:
 - make unrelated refactors
 - change accepted architecture without surfacing the conflict
 
+Some changes only the human may approve, and a script checks the diff for
+them: any ADR that is added, changed, or removed, the CI workflows, the files
+of the workflow itself, a changed or removed check in `scripts/verify.conf`,
+and the paths listed as protected in `.agents/policies/guardrails.conf`. Make
+such a change only when the Issue asks for it. A new ADR gets the status
+`Proposed`; the human accepts it by merging. Do not change the gate's
+configuration or scripts to get a change through.
+
 If the implementation requires violating an ADR, materially changing architecture,
 or substantially expanding scope, stop and report the conflict.
 

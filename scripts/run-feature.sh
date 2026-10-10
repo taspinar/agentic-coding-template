@@ -296,5 +296,12 @@ step "pull request" ./scripts/publish-feature.sh "$issue"
 
 echo
 echo "run-feature.sh is done: the pull request of Issue #$issue is open."
+if git -C "$worktree" log -1 --format=%b | grep -Fqx -- "- required from the project owner, for exactly this commit"; then
+  echo
+  echo "MERGE APPROVAL REQUIRED. This pull request changes what only the owner may"
+  echo "approve; the reasons are in its description. Nothing may merge it for you:"
+  echo "read it and merge it yourself. A queue that merges pull requests skips it."
+  echo
+fi
 echo "Read it, also the triage decisions that were approved without you, follow its"
 echo "checks, and merge it. Then clean up with: ./scripts/cleanup-worktree.sh $issue"

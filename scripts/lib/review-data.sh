@@ -39,12 +39,28 @@ _review_data_rules='
     ($required - keys) as $absent
     | if ($absent | length) > 0 then "\($where) lacks required fields: \($absent | join(", "))" else empty end;
 
-  # Input: {verdict, findings, limitations}.
+  # The impact of a feature on the architecture, as the reviewer classifies
+  # it. Input: the value of architecture_impact.
+  def architecture_impact_rules:
+    if type != "object" then
+      "architecture_impact must be an object with level, rationale, and checked_against"
+    else
+      unexpected(["checked_against", "level", "rationale"]; "architecture_impact"),
+      (if (.level | IN("none", "minor", "major", "breaking")) then empty
+       else "architecture_impact.level must be none, minor, major, or breaking" end),
+      (if (.rationale | nonempty) then empty else "architecture_impact needs a rationale" end),
+      (if (.checked_against | type) == "array" and (.checked_against | all(nonempty)) then empty
+       else "architecture_impact.checked_against must be a list of the ADRs and rules it was checked against" end)
+    end;
+
+  # Input: {verdict, findings, limitations}, and for a feature review
+  # architecture_impact.
   def review_result_rules:
     if type != "object" then
       "the result is not a JSON object"
     else
-      unexpected(["findings", "limitations", "verdict"]; "the result"),
+      unexpected(["architecture_impact", "findings", "limitations", "verdict"]; "the result"),
+      (if has("architecture_impact") then (.architecture_impact | architecture_impact_rules) else empty end),
       (if (.verdict | IN("PASS", "PASS_WITH_MINOR_FINDINGS", "CHANGES_REQUIRED")) then empty
        else "verdict must be PASS, PASS_WITH_MINOR_FINDINGS, or CHANGES_REQUIRED" end),
       (if (.limitations | type) == "string" then empty
@@ -164,6 +180,15 @@ review_result_errors() {
   jq -r "$_review_data_rules"' review_result_rules' "$1"
 }
 
+# feature_review_result_errors <result-file>: rules for the result of a
+# feature review, which must classify the impact on the architecture.
+feature_review_result_errors() {
+  review_result_errors "$1"
+  if review_data_is_json "$1" && jq -e 'type == "object" and (has("architecture_impact") | not)' "$1" >/dev/null 2>&1; then
+    echo "the result lacks architecture_impact"
+  fi
+}
+
 # review_result_with_ids <result-file>
 # Prints the validated result, reduced to its known fields, with a stable
 # identifier per finding: C1, M1, MIN1, S1.
@@ -186,7 +211,7 @@ review_result_with_ids() {
             }]
         ) | .out
       )
-    }
+    } + (if has("architecture_impact") then {architecture_impact} else {} end)
   ' "$1"
 }
 
@@ -201,9 +226,18 @@ review_artifact_errors() {
     if type != "object" or .schema != "review/v1" then
       "the file is not a review/v1 artifact"
     else
-      unexpected(["base", "branch", "created_at", "findings", "head", "issue", "kind", "limitations",
-                  "merge_base", "reviewed_paths", "reviewed_tree", "reviewer", "round", "schema", "scope",
-                  "verdict", "verification"]; "the review"),
+      unexpected(["architecture_impact", "base", "branch", "created_at", "findings", "guardrails", "head",
+                  "issue", "kind", "limitations", "merge_approval", "merge_base", "reviewed_paths", "reviewed_tree", "reviewer",
+                  "round", "schema", "scope", "verdict", "verification"]; "the review"),
+      (if has("architecture_impact") then (.architecture_impact | architecture_impact_rules) else empty end),
+      (if has("guardrails") | not then empty
+       elif (.guardrails | type) == "object" and (.guardrails.level | IN("none", "sensitive", "protected"))
+            and (.guardrails.findings | type) == "array" then empty
+       else "guardrails must hold the level and the findings of the gate" end),
+      (if has("merge_approval") | not then empty
+       elif (.merge_approval | type) == "object" and (.merge_approval.required | type) == "boolean"
+            and (.merge_approval.reasons | type) == "array" then empty
+       else "merge_approval must hold whether the owner must approve and the reasons" end),
       (if .scope == null or ((.scope | type) == "object" and .scope.kind == "full")
           or ((.scope | type) == "object" and .scope.kind == "changes" and (.scope.since_round | positive_integer)
               and (.scope.since_round < .round) and (.scope.base_tree | nonempty)) then empty

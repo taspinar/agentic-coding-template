@@ -42,9 +42,9 @@ chmod +x "$tmp/bin/gh"
 finding() {
   printf '{"severity": "%s", "title": "%s", "evidence": "marker.txt:1", "impact": "The marker is never read.", "recommendation": "Read the marker."}' "$1" "$2"
 }
-valid_result="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"Tests were not run.\", \"findings\": [$(finding minor "Marker name is vague"), $(finding major "Marker content is unchecked")]}"
+valid_result="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"Tests were not run.\", \"findings\": [$(finding minor "Marker name is vague"), $(finding major "Marker content is unchecked")]}"
 # A verdict that does not follow from the findings.
-inconsistent_result="{\"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
+inconsistent_result="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"CHANGES_REQUIRED\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
 export MOCK_OUTPUT="$valid_result"
 
 # Creates a repository on feature/7-marker with one committed, one modified,
@@ -141,7 +141,7 @@ fi
 
 # A review without findings is valid.
 repo="$(setup_repo no-findings)"
-MOCK_OUTPUT='{"verdict": "PASS", "limitations": "", "findings": []}' run_review "$repo" 7 || {
+MOCK_OUTPUT='{"architecture_impact": {"level": "minor", "rationale": "Stays within the accepted architecture.", "checked_against": []}, "verdict": "PASS", "limitations": "", "findings": []}' run_review "$repo" 7 || {
   cat "$repo.out" >&2
   fail "a review without findings was rejected"
 }
@@ -190,14 +190,14 @@ grep -Fq "requires a critical or major finding" "$repo.log" || fail "the retry p
 
 # The reviewer may not supply script-owned fields or more than one result.
 owned_fields_result="$(jq '. + {issue: 999} | .findings[0].id = "agent-id"' <<<"$valid_result")"
-pass_result='{"verdict": "PASS", "limitations": "", "findings": []}'
-minor_only_result="{\"verdict\": \"PASS_WITH_MINOR_FINDINGS\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
+pass_result='{"architecture_impact": {"level": "minor", "rationale": "Stays within the accepted architecture.", "checked_against": []}, "verdict": "PASS", "limitations": "", "findings": []}'
+minor_only_result="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"PASS_WITH_MINOR_FINDINGS\", \"limitations\": \"\", \"findings\": [$(finding minor "Marker name is vague")]}"
 
 # One invalid result per rule, each derived from a valid result.
 invalid_results=(
   "not json"
   "$pass_result $pass_result"
-  '{"verdict": "PASS"}'
+  '{"architecture_impact": {"level": "minor", "rationale": "Stays within the accepted architecture.", "checked_against": []}, "verdict": "PASS"}'
   "$owned_fields_result"
   "$inconsistent_result"
   "$(jq '.verdict = "APPROVED"' <<<"$valid_result")"
@@ -206,6 +206,12 @@ invalid_results=(
   "$(jq '.verdict = "PASS"' <<<"$minor_only_result")"
   "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$valid_result")"
   "$(jq '.verdict = "PASS_WITH_MINOR_FINDINGS"' <<<"$pass_result")"
+  # A feature review must classify the impact on the architecture, validly.
+  "$(jq 'del(.architecture_impact)' <<<"$pass_result")"
+  "$(jq '.architecture_impact.level = "small"' <<<"$pass_result")"
+  "$(jq '.architecture_impact.rationale = " "' <<<"$pass_result")"
+  "$(jq 'del(.architecture_impact.checked_against)' <<<"$pass_result")"
+  "$(jq '.architecture_impact = "minor"' <<<"$pass_result")"
 )
 for index in "${!invalid_results[@]}"; do
   invalid_result="${invalid_results[$index]}"
@@ -445,5 +451,38 @@ run_review "$repo" 7 || fail "a review with a local base ahead of origin failed"
 [[ "$(jq -r '.base' "$repo/.agents/reviews/feature-7-marker-review-01.json")" == "main" ]] ||
   fail "the local base branch was not used although it is the more recent"
 if grep -Fq "local work" "$repo.log.stdin"; then fail "work on the base was supplied as the feature's change"; fi
+
+# The review records the reviewer's classification of the impact on the
+# architecture and what the gate found in the diff, and the reviewer is told
+# which paths are protected or sensitive.
+repo="$(setup_repo gate)"
+git -C "$repo" stash -q --include-untracked
+git -C "$repo" switch -q main
+mkdir -p "$repo/.agents/policies"
+printf 'sensitive: feature.txt\n' >"$repo/.agents/policies/guardrails.conf"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Add the gate configuration"
+git -C "$repo" switch -q feature/7-marker
+git -C "$repo" rebase -q main
+git -C "$repo" stash pop -q >/dev/null
+mkdir -p "$repo/docs/decisions"
+printf '# ADR 009: Another storage\n\nStatus: Proposed\n' >"$repo/docs/decisions/009-storage.md"
+MOCK_OUTPUT="$(jq '.architecture_impact = {level: "major", rationale: "Adds a storage.", checked_against: ["ADR 001"]}' <<<"$pass_result")" \
+  run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review with a classified impact failed"
+}
+artifact="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -r '.architecture_impact.level' "$artifact")" == "major" ]] || fail "the classification of the reviewer was not stored"
+[[ "$(jq -r '.guardrails.level' "$artifact")" == "protected" ]] || fail "the level of the gate was not stored"
+[[ "$(jq -r '[.guardrails.findings[] | "\(.kind) \(.path)"] | sort | join(", ")' "$artifact")" == \
+  "protected docs/decisions/009-storage.md, sensitive feature.txt" ]] || fail "the findings of the gate were not stored"
+[[ "$(jq -r '.merge_approval.required' "$artifact")" == "true" ]] || fail "the decision of the gate was not stored"
+[[ "$(jq -r '.merge_approval.reasons | length' "$artifact")" -eq 2 ]] ||
+  fail "the stored decision lacks the reasons: the added ADR and the classification"
+grep -Fq "Merge approval: required from the owner" "$repo.out" || fail "the needed approval was not shown after the review"
+grep -Fq "## Merge approval gate" "$repo.log.stdin" || fail "the reviewer was not told about the gate"
+grep -Fq -- "- protected: docs/decisions/009-storage.md" "$repo.log.stdin" || fail "the reviewer was not told about the added ADR"
+grep -Fq -- "- sensitive: feature.txt" "$repo.log.stdin" || fail "the reviewer was not told about the sensitive path"
 
 echo "review-feature tests passed"

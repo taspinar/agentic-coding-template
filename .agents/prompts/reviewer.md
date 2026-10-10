@@ -27,7 +27,7 @@ instead of the complete feature diff. Then:
 
 ## Result
 
-Return the review as JSON that matches the schema supplied by the calling script (`.agents/schemas/review.schema.json`). Do not write it to a file and do not add text around it.
+Return the review as JSON that matches the schema supplied by the calling script (`.agents/schemas/feature-review.schema.json` for a feature, `.agents/schemas/review.schema.json` for a planning). Do not write it to a file and do not add text around it.
 
 - `findings`: one entry per finding; an empty array when there are none.
   - `severity`: `critical`, `major`, `minor`, or `suggestion`.
@@ -39,6 +39,15 @@ Return the review as JSON that matches the schema supplied by the calling script
   - `PASS`: no findings.
   - `PASS_WITH_MINOR_FINDINGS`: only minor or suggestion findings.
   - `CHANGES_REQUIRED`: at least one critical or major finding.
+- `architecture_impact`, in a feature review: your classification of what the feature does to the architecture. It decides, together with the rules the script checks, whether the owner must approve the merge, so judge it from the code and the diff, not from what the implementer says about it.
+  - `level`:
+    - `none`: no architectural effect.
+    - `minor`: stays within the accepted architecture and ADRs, for example a new module, an internal refactoring, a new check, documentation.
+    - `major`: adds or changes something other features build on or that reaches beyond the Issue's scope, for example shared infrastructure, a public interface, the data model, a new kind of dependency, the build or deployment.
+    - `breaking`: replaces or contradicts an accepted decision, for example another framework, generator, storage, or deployment. Also report this as a critical finding.
+  - `rationale`: why this level, with the files that decide it.
+  - `checked_against`: the ADRs and architecture rules you compared the change with, by name; an empty list only when the project has none.
+  - A new ADR must have the status `Proposed`. Say in the rationale which accepted ADR it replaces, amends, or contradicts, also when it does not say so itself. When in doubt between two levels, choose the heavier.
 - `limitations`: anything you could not verify, such as checks you could not run. Use an empty string when there is nothing to report. A limitation is not a finding and does not change the verdict.
 
 Do not number the findings; the calling script assigns the identifiers that review triage and follow-up Issues use. A result that breaks these rules is rejected.
