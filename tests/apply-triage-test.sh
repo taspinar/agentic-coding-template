@@ -369,4 +369,36 @@ if run_apply "$repo" "" "$triage" --unattended; then fail "unattended fixes ran 
 grep -Fq "does not ignore .agents/run/" "$repo.out" || fail "the missing ignore rule was not named"
 [[ ! -e "$repo.log" ]] || fail "an agent started although .agents/run/ is not ignored"
 
+# --continue takes up only a session of this triage that was started and
+# left unfinished; any other stale review is refused, with or without it.
+repo="$(setup_repo continue-without-session)"
+printf '.agents/run/\n' >>"$repo/.gitignore"
+git -C "$repo" commit -qam "Ignore the run files"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+printf 'changed by hand\n' >>"$repo/AGENTS.md"
+if run_apply "$repo" y "$triage" --continue; then fail "--continue was accepted without an unfinished session"; fi
+grep -Fq "found no unfinished fix session" "$repo.out" || fail "the missing session was not reported"
+[[ ! -e "$repo.log" ]] || fail "an agent started for --continue without an unfinished session"
+
+mkdir -p "$repo/.agents/run"
+printf '.agents/triage/another-triage.json\n' >"$repo/.agents/run/13-fixes-started"
+if run_apply "$repo" y "$triage" --continue; then fail "--continue was accepted for the session of another triage"; fi
+
+# The mark must also hold the review and the triage as they are: a session is
+# not continued on a review or a triage that changed since it started.
+printf '%s\n%s\n%s\n' "$triage" "0000000000000000000000000000000000000000" "$(git -C "$repo" hash-object "$repo/$triage")" \
+  >"$repo/.agents/run/13-fixes-started"
+if run_apply "$repo" y "$triage" --continue; then fail "--continue was accepted although the review changed since the session started"; fi
+[[ ! -e "$repo.log" ]] || fail "an agent started on a review that changed since the session started"
+
+printf '%s\n%s\n%s\n' "$triage" "$(git -C "$repo" hash-object "$repo/$review")" "$(git -C "$repo" hash-object "$repo/$triage")" \
+  >"$repo/.agents/run/13-fixes-started"
+MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" run_apply "$repo" y "$triage" --continue || {
+  cat "$repo.out" >&2
+  fail "continuing an interrupted fix session failed"
+}
+grep -Fq "You are continuing a fix session that was interrupted" "$repo.log" || fail "the continued session was not told that it continues"
+grep -Fq "Correctness regression" "$repo.log" || fail "the continued session lost its FIX_NOW scope"
+[[ ! -e "$repo/.agents/run/13-fixes-started" ]] || fail "the mark was kept after the continued session finished"
+
 echo "apply-triage tests passed"

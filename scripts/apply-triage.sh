@@ -8,7 +8,13 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 
 usage() {
-  echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>]"
+  echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>] [--unattended] [--continue]"
+  echo
+  echo "--continue takes up a fix session of this triage that was interrupted after"
+  echo "it had changed files. The review is then no longer current, which is refused"
+  echo "otherwise; everything else is as for a new session: the same findings, the"
+  echo "same contract, the same protection of the review and the triage. It is"
+  echo "refused when no session of this triage was started and left unfinished."
   echo
   echo "The agent and model come from role 'triage-implementer' in"
   echo ".agents/agents.conf unless --agent and --model are given."
@@ -25,7 +31,16 @@ report_errors() {
   exit 1
 }
 
-agent_parse_args "$@"
+continue_session=0
+arguments=()
+for argument in "$@"; do
+  if [[ "$argument" == "--continue" ]]; then
+    continue_session=1
+  else
+    arguments+=("$argument")
+  fi
+done
+agent_parse_args ${arguments[@]+"${arguments[@]}"}
 if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
   usage
 fi
@@ -98,8 +113,22 @@ review_is_current "$root" "$tmp_work" "$review_path" || stale_status=$?
 case "$stale_status" in
   0) ;;
   1)
-    review_stale_notice "$root" "$tmp_work" "$review_path"
-    fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review."
+    # A session that was interrupted after it changed files is taken up
+    # with --continue, and only that: the mark of the unfinished session
+    # must name this triage. Every other stale review is refused.
+    started_mark="$root/.agents/run/$(jq -r '.issue' "$triage_path")-fixes-started"
+    # The mark holds the triage and what the review and the triage were when
+    # the session started; a session is continued only on exactly those.
+    expected_mark="${triage_path#"$root"/}"$'\n'"$(git hash-object "$review_path")"$'\n'"$(git hash-object "$triage_path")"
+    if [[ "$continue_session" -eq 1 && -f "$started_mark" && "$(cat "$started_mark")" == "$expected_mark" ]]; then
+      echo "Continuing the interrupted fix session of ${triage_path#"$root"/}."
+    else
+      review_stale_notice "$root" "$tmp_work" "$review_path"
+      if [[ "$continue_session" -eq 1 ]]; then
+        fail "--continue found no unfinished fix session of this triage with this review and triage as they were then, and the review is stale. Run a new review."
+      fi
+      fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review."
+    fi
     ;;
   *) fail "could not compute the current fingerprint of the working tree." ;;
 esac
@@ -220,6 +249,23 @@ review_signature_before="$(file_signature "$source_review_path")"
 triage_signature_before="$(file_signature "$triage_path")"
 
 echo
+# The mark of a session that has started and not finished; --continue needs
+# it. It is removed when the fixes are made and verified.
+started_mark="$root/.agents/run/$source_issue-fixes-started"
+if git -C "$root" check-ignore -q ".agents/run/$source_issue-fixes-started" 2>/dev/null; then
+  mkdir -p "$(dirname "$started_mark")"
+  # Kept as it was for a continued session: the first start decides.
+  [[ "$continue_session" -eq 1 && -f "$started_mark" ]] ||
+    printf '%s\n%s\n%s\n' "$triage_relative" "$(git hash-object "$source_review_path")" "$(git hash-object "$triage_path")" >"$started_mark"
+fi
+if [[ "$continue_session" -eq 1 ]]; then
+  start_prompt+="
+
+You are continuing a fix session that was interrupted. An earlier session may
+have resolved part of these findings: inspect the working tree and the diff
+first, keep what is done, and finish the rest. The scope is unchanged."
+fi
+
 echo "Starting $agent implementation agent..."
 echo
 
@@ -272,7 +318,10 @@ verification_status=$?
 set -e
 
 if [[ "$protected_artifact_changed" -ne 0 ]]; then
-  exit 1
+  # Status 5: a session changed the review or the triage it works from. It
+  # is not tried again and not continued; the mark is removed.
+  rm -f "$started_mark"
+  exit 5
 fi
 
 if [[ "$agent_status" -eq 0 && -n "$blocked" ]]; then
@@ -290,17 +339,22 @@ if [[ "$agent_status" -ne 0 ]]; then
   if [[ "$verification_status" -ne 0 ]]; then
     echo "Repository verification also failed with status $verification_status."
   fi
-  # Status 3 is reserved for a session that reported it is blocked.
-  [[ "$agent_status" -ne 3 ]] || agent_status=1
+  # The statuses 3, 4, and 5 have a meaning of their own in the workflow:
+  # a blocked session, a failed verification, and a changed review or
+  # triage. An agent that happens to exit with one of them just failed.
+  [[ "$agent_status" -lt 3 || "$agent_status" -gt 5 ]] || agent_status=1
   exit "$agent_status"
 fi
 
 if [[ "$verification_status" -ne 0 ]]; then
   echo "Error: repository verification failed with status $verification_status."
-  exit "$verification_status"
+  # Status 4 tells a caller that the fixes were made and the verification
+  # failed, apart from a failed agent.
+  exit 4
 fi
 
 echo
+rm -f "$started_mark"
 echo "FIX_NOW implementation completed and verification passed."
 echo "The code changed, so the review is stale. Next: review again to confirm the fixes:"
 echo "  ./scripts/review-feature.sh $source_issue"

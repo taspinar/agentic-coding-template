@@ -93,8 +93,10 @@ $AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
     echo "Error: the implementation agent exited with status $agent_status." >&2
     echo "The feature worktree is preserved at: $session_worktree" >&2
     echo "Continue the work with: $0 $issue --resume" >&2
-    # Status 3 is reserved for a session that reported it is blocked.
-    [[ "$agent_status" -ne 3 ]] || agent_status=1
+    # The statuses 3, 4, and 5 have a meaning of their own in the workflow:
+    # a blocked session, a failed verification, and a changed review or
+    # triage. An agent that happens to exit with one of them just failed.
+    [[ "$agent_status" -lt 3 || "$agent_status" -gt 5 ]] || agent_status=1
     exit "$agent_status"
   fi
   echo "The implementation session ended. Nothing is committed yet."

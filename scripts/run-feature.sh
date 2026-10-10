@@ -7,6 +7,15 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 
 MAX_ROUNDS=5
+# A step whose agent or connection fails is tried again, with a wait that
+# doubles. A verification that fails is repeated once; when it fails again,
+# the implementer repairs it, a limited number of times (AGENTS.md).
+RETRIES="${RUN_FEATURE_RETRIES:-3}"
+RETRY_WAIT="${RUN_FEATURE_RETRY_WAIT:-120}"
+MAX_REPAIRS="${RUN_FEATURE_REPAIRS:-3}"
+MAX_UNSTABLE=3
+repairs=0
+unstable=0
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--implemented]"
@@ -86,9 +95,209 @@ stop() {
   exit "$status"
 }
 
+# note <step> <outcome> <reason> <action>
+# Adds one line to the log of the feature, .agents/run/<issue>-log, and shows
+# it. The outcome is decided here, from exit statuses and check results.
+note() {
+  local line
+
+  line="$(date -u +'%Y-%m-%dT%H:%M:%SZ') | $1 | $2 | $3 | $4"
+  echo "run-feature.sh: $2 in '$1': $3. $4"
+  if [[ -n "${worktree:-}" && -d "$worktree/.agents" ]]; then
+    mkdir -p "$worktree/.agents/run"
+    printf '%s\n' "$line" >>"$worktree/.agents/run/$issue-log"
+  fi
+}
+
+# open_question
+# Succeeds when the handoff note of the feature holds a question under
+# 'Open questions'. An agent that ends with BLOCKED has to record its
+# question there; without one there is nothing for the human to answer.
+open_question() {
+  local note_file="$worktree/.agents/handoffs/$issue.md"
+
+  [[ -f "$note_file" ]] || return 1
+  awk '
+    tolower($0) ~ /open questions?/ {
+      found = 1
+      line = $0
+      sub(/.*[Oo]pen [Qq]uestions?[*: ]*/, "", line)
+      text = line
+      next
+    }
+    found && /^[[:space:]]*$/ { if (text != "") exit; next }
+    found && /^#/ { exit }
+    found { text = text " " $0 }
+    END {
+      gsub(/^[[:space:]*:-]+|[[:space:].]+$/, "", text)
+      if (text == "" || tolower(text) ~ /^(none|no |n\/a|nothing)/) exit 1
+      exit 0
+    }' "$note_file"
+}
+
+# failing_checks <verification-output>
+# Prints the names of the checks that a verification run reports as failed.
+failing_checks() {
+  [[ -f "$1" ]] || return 0
+  awk '$1 == "FAIL" { print $2 }' "$1" | sort -u
+}
+
+# retrying <title> <command>...
+# Runs a command in the feature worktree and keeps its output in
+# .agents/run/<issue>-step.log. A failure that is not a blocked session and
+# not a failed verification counts as temporary: an agent or a connection
+# failed. It is tried again RETRIES times, with a wait that doubles. Sets
+# step_status to the status of the last attempt.
+#
+# When STEP_CONTINUE is set and the content changed since the review in
+# STEP_REVIEW, the command is repeated with --continue: the fix session had
+# started from that review, which is stale now, and apply-triage.sh takes up
+# an interrupted session of the same triage only when it is told to.
+retrying() {
+  local title="$1"
+  local attempt=0
+  local wait="$RETRY_WAIT"
+  local log
+
+  shift
+  while true; do
+    echo
+    echo "=== run-feature.sh: $title ==="
+    echo
+    log="$worktree/.agents/run/$issue-step.log"
+    mkdir -p "$(dirname "$log")"
+    step_status=0
+    (cd "$worktree" && "$@" </dev/null) 2>&1 | tee "$log" || step_status=$?
+    case "$step_status" in
+      0 | 3 | 4) return 0 ;;
+      5)
+        # An agent changed the review or the triage it works from: not a
+        # failure that a retry may pass over.
+        note "$title" "failed" "an agent changed the review or the approved triage" "Stopping; nothing is tried again"
+        return 0
+        ;;
+    esac
+    if [[ "$attempt" -ge "$RETRIES" ]]; then
+      note "$title" "failed" "the step exited with status $step_status, also after $attempt retries" "Stopping"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if [[ -n "${STEP_REVIEW:-}" ]] && ! (cd "$worktree" && ./scripts/check-review.sh "$STEP_REVIEW" >/dev/null 2>&1); then
+      note "$title" "temporary" "the step exited with status $step_status after it had changed the content" "Continuing the interrupted session with the same scope, retry $attempt of $RETRIES in $wait seconds"
+      STEP_REVIEW=""
+      title="$title, continued"
+      set -- "$@" --continue
+    else
+      note "$title" "temporary" "the step exited with status $step_status" "Retry $attempt of $RETRIES in $wait seconds"
+    fi
+    sleep "$wait"
+    wait=$((wait * 2))
+  done
+}
+
+# blocked_or_ignored <title>
+# Called when a session ended with status 3. A blocked session counts only
+# with a question in the handoff note; otherwise step_status becomes 0.
+blocked_or_ignored() {
+  if open_question; then
+    note "$1" "blocked" "an agent needs a decision; its question is in the handoff note" "Stopping"
+  else
+    note "$1" "completed" "the agent ended with BLOCKED, but the handoff note holds no open question" "Going on"
+    step_status=0
+  fi
+}
+
+# repair_verification <step-title>
+# Called when the verification failed in a step. Repeats it once and compares
+# the checks that failed in both runs. A check that failed only once is
+# unstable: it is recorded, and the run goes on. For the checks that failed
+# twice the implementer is resumed with their names in the handoff note, at
+# most MAX_REPAIRS times. Sets step_status to 0 when the run can go on, to 4
+# when the verification cannot be repaired here, and to the status of the
+# repair session when that failed or is blocked.
+repair_verification() {
+  local title="$1"
+  local first_log="$worktree/.agents/run/$issue-step.log"
+  local log="$worktree/.agents/run/$issue-verify.log"
+  local first
+  local second
+  local twice
+  local once
+  local repeat_status=0
+
+  first="$(failing_checks "$first_log")"
+  mkdir -p "$(dirname "$log")"
+  (cd "$worktree" && ./scripts/verify.sh) >"$log" 2>&1 || repeat_status=$?
+  second="$(failing_checks "$log")"
+  twice="$(comm -12 <(printf '%s\n' "$first") <(printf '%s\n' "$second") | grep . || true)"
+  once="$(comm -3 <(printf '%s\n' "$first") <(printf '%s\n' "$second") | tr -d '\t' | grep . | tr '\n' ' ' || true)"
+
+  if [[ "$repeat_status" -eq 0 || ( -z "$twice" && -n "$second" && -n "$first" ) ]]; then
+    unstable=$((unstable + 1))
+    if [[ "$unstable" -gt "$MAX_UNSTABLE" ]]; then
+      note "$title" "failed" "checks failed in one verification run and not in the next, for the $unstable. time: $once" "Stopping: the checks are too unstable to rely on"
+      step_status=4
+      return 0
+    fi
+    note "$title" "temporary" "unstable checks, failed in one of two verification runs: ${once:-unknown}" "Going on; the step is done again"
+    step_status=0
+    return 0
+  fi
+  # Without names from the first run, every check of the second counts.
+  [[ -n "$twice" ]] || twice="$second"
+  if [[ "$repairs" -ge "$MAX_REPAIRS" ]]; then
+    note "$title" "failed" "the verification fails after $repairs repair attempts: $(printf '%s' "$twice" | tr '\n' ' ')" "Stopping"
+    step_status=4
+    return 0
+  fi
+  repairs=$((repairs + 1))
+  note "$title" "failed" "checks failed in two verification runs: $(printf '%s' "$twice" | tr '\n' ' ')${once:+; unstable, failed once: $once}" "Repair attempt $repairs of $MAX_REPAIRS by the implementer"
+  mkdir -p "$worktree/.agents/handoffs"
+  {
+    echo
+    echo "## Verification failed ($(date -u +'%Y-%m-%dT%H:%M:%SZ'), recorded by run-feature.sh)"
+    echo
+    echo "./scripts/verify.sh fails on the content as it is. These checks failed in two"
+    echo "runs; repair them. The complete output is in .agents/run/$issue-verify.log."
+    echo "Repair attempt $repairs of $MAX_REPAIRS."
+    echo
+    printf '%s\n' "${twice:-(no check named; read the log)}" | sed 's/^/- FAIL /'
+    [[ -z "$once" ]] || echo "Failed in one run only, so probably unstable and not yours to repair: $once"
+  } >>"$worktree/.agents/handoffs/$issue.md"
+  retrying "repair of the verification, attempt $repairs of $MAX_REPAIRS" \
+    ./scripts/start-feature.sh "$issue" --resume --unattended
+  case "$step_status" in
+    0) ;;
+    3) blocked_or_ignored "repair of the verification" ;;
+    4) step_status=1 ;;
+  esac
+}
+
 # step <title> <command>...
-# Runs one step of the workflow in the feature worktree and sets step_status.
+# Runs one step of the workflow in the feature worktree and decides its
+# outcome from its exit status. Sets step_status: 0 when the run can go on,
+# 3 when an agent needs a decision of the human, 4 when the verification
+# cannot be repaired, and another status when the step failed for good.
+#
+#   0      completed
+#   3      blocked, when the handoff note holds an open question; otherwise
+#          the BLOCKED line is ignored and the step counts as completed
+#   4      the verification failed: repeated once, then repaired
+#   other  temporary: tried again, RETRIES times, with a growing wait
 step() {
+  local title="$1"
+
+  retrying "$@"
+  case "$step_status" in
+    3) blocked_or_ignored "$title" ;;
+    4) repair_verification "$title" ;;
+  esac
+}
+
+# step_once <title> <command>...
+# Runs a step that is not tried again, because its failure is a refusal that
+# a retry does not change. Sets step_status.
+step_once() {
   local title="$1"
 
   shift
@@ -97,6 +306,7 @@ step() {
   echo
   step_status=0
   (cd "$worktree" && "$@" </dev/null) || step_status=$?
+  [[ "$step_status" -eq 0 ]] || note "$title" "failed" "the step exited with status $step_status" "Stopping"
 }
 
 # ---------------------------------------------------------------- implement
@@ -112,14 +322,23 @@ if [[ -z "$worktree" ]]; then
   step_status=0
   (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) || step_status=$?
   worktree="$(find_worktree)"
-  if [[ "$step_status" -eq 3 ]]; then
-    stop 3 "the implementer needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
-      "answer the question in the handoff note, or change the Issue"
-  elif [[ "$step_status" -ne 0 ]]; then
-    stop 1 "the implementation failed (start-feature.sh exited with status $step_status)." \
-      "resolve what the output above reports"
-  fi
   first_session=1
+  if [[ "$step_status" -eq 3 ]]; then
+    if open_question; then
+      note "implementation" "blocked" "the implementer needs a decision; its question is in the handoff note" "Stopping"
+      stop 3 "the implementer needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
+        "answer the question in the handoff note, or change the Issue"
+    fi
+    note "implementation" "completed" "the implementer ended with BLOCKED, but the handoff note holds no open question" "Going on"
+  elif [[ "$step_status" -ne 0 ]]; then
+    [[ -n "$worktree" ]] ||
+      stop 1 "the implementation failed before a worktree existed (start-feature.sh exited with status $step_status)." \
+        "resolve what the output above reports"
+    # The session failed, for example on a usage limit: the resumed session
+    # below is tried again, with a growing wait.
+    note "implementation" "temporary" "start-feature.sh exited with status $step_status" "Resuming the implementer"
+    first_session=0
+  fi
 else
   [[ "${#arguments[@]}" -eq 1 ]] ||
     fail "the feature already has a worktree ($worktree); run without a slug or base branch to continue it."
@@ -217,9 +436,18 @@ if uncommitted; then
       fi
       step "review, round $((round + 1)) of at most $MAX_ROUNDS" \
         ./scripts/review-feature.sh "$issue" "$base" ${review_options[@]+"${review_options[@]}"}
-      [[ "$step_status" -eq 0 ]] ||
-        stop 1 "the review did not complete (review-feature.sh exited with status $step_status): the verification fails, the reviewer failed, or the review was refused." \
-          "resolve what the output above reports; when the verification fails, for example with ./scripts/start-feature.sh $issue --resume"
+      if [[ "$step_status" -eq 3 ]]; then
+        rm -f "$state_file"
+        stop 3 "the implementer, repairing the verification, needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
+          "answer the question in the handoff note"
+      elif [[ "$step_status" -eq 4 ]]; then
+        stop 1 "the verification still fails; the failing checks are in .agents/run/$issue-verify.log and in the log of the run, .agents/run/$issue-log." \
+          "cd \"$worktree\"" \
+          "./scripts/verify.sh    # repair what fails, for example with ./scripts/start-feature.sh $issue --resume"
+      elif [[ "$step_status" -ne 0 ]]; then
+        stop 1 "the review did not complete (review-feature.sh exited with status $step_status, also after the retries): the reviewer failed, or the review was refused." \
+          "resolve what the output above reports"
+      fi
       continue
     fi
 
@@ -251,17 +479,28 @@ if uncommitted; then
         "cd \"$worktree\"" \
         "./scripts/apply-triage.sh $triage_relative    # and continue by hand: review-feature.sh, finish-feature.sh, publish-feature.sh"
     fi
+    # An interrupted fix session is continued with its scope, not started
+    # again: apply-triage.sh refuses a review whose content changed.
+    STEP_REVIEW="$review"
     step "fixes for round $round" ./scripts/apply-triage.sh "$triage_relative" --unattended
+    STEP_REVIEW=""
     if [[ "$step_status" -eq 3 ]]; then
       # The next run resumes the implementer, which reads the handoff note
       # with the answer before it continues; a review follows.
       rm -f "$state_file"
       stop 3 "the agent that applies the fixes needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
         "answer the question in the handoff note"
-    elif [[ "$step_status" -ne 0 ]]; then
-      stop 1 "the fixes for round $round failed (apply-triage.sh exited with status $step_status): the agent failed, or the verification fails after the fixes." \
+    elif [[ "$step_status" -eq 4 ]]; then
+      stop 1 "the verification still fails after the fixes for round $round; the failing checks are in .agents/run/$issue-verify.log and in the log of the run, .agents/run/$issue-log." \
         "cd \"$worktree\"" \
-        "./scripts/verify.sh    # when it fails: fix it, for example with ./scripts/start-feature.sh $issue --resume"
+        "./scripts/verify.sh    # repair what fails, for example with ./scripts/start-feature.sh $issue --resume"
+    elif [[ "$step_status" -eq 5 ]]; then
+      stop 1 "the agent that applies the fixes changed the review or the approved triage of round $round, which it may only read. Nothing was tried again." \
+        "cd \"$worktree\"" \
+        "git status    # look at what the session changed; restore the review and the triage, or review again"
+    elif [[ "$step_status" -ne 0 ]]; then
+      stop 1 "the fixes for round $round failed (apply-triage.sh exited with status $step_status, also after the retries)." \
+        "resolve what the output above reports"
     fi
     if (cd "$worktree" && ./scripts/check-review.sh "$review" >/dev/null 2>&1); then
       stop 1 "the fixes for round $round changed nothing, although the triage has findings to fix." \
@@ -274,7 +513,7 @@ if uncommitted; then
   title="$(gh issue view "$issue" --json title --jq '.title' </dev/null)" ||
     stop 1 "could not read the title of Issue #$issue for the commit message." \
       "cd \"$worktree\"" "./scripts/finish-feature.sh $issue \"<commit summary>\""
-  step "commit" ./scripts/finish-feature.sh "$issue" "$title" --unattended
+  step_once "commit" ./scripts/finish-feature.sh "$issue" "$title" --unattended
   [[ "$step_status" -eq 0 ]] ||
     stop 1 "the feature could not be committed (finish-feature.sh exited with status $step_status)." \
       "cd \"$worktree\"" "./scripts/finish-feature.sh $issue \"$title\""

@@ -926,8 +926,10 @@ continue with `./scripts/start-feature.sh <issue> --resume`.
 own run of `./scripts/verify.sh` fails on something outside its work, does not
 finish within the session, or cannot run on the machine: it reports that in
 its final message and ends normally. The step that follows verifies the
-result itself, and a verification that really fails stops the run there, with
-status 1 and the failing checks. Common causes on your side are a tool that
+result itself: `review-feature.sh` and `apply-triage.sh` exit with status 4
+when the verification fails, apart from every other failure, and
+`run-feature.sh` repeats and repairs it as described under "Running a feature
+with one command". Common causes on your side are a tool that
 is not in the `PATH` of the terminal you started from, and a verification
 that takes longer than one command of an agent session may.
 
@@ -979,16 +981,36 @@ What stays with you: choosing the feature and creating its Issue, reading the
 pull request, following its checks, merging, and `cleanup-worktree.sh`. The
 run never merges, never pushes to `main`, and never removes a worktree.
 
+The run decides the outcome of every step itself, from exit statuses and from
+the result of the checks. What an agent writes decides one outcome only, and
+only together with what it recorded:
+
+| Outcome | How the run establishes it | What it does |
+|---|---|---|
+| Completed | The step exits 0 | Goes on |
+| Temporary | An agent or a connection fails: a usage limit, a timeout, the network | Tries the step again, three times, with a wait that doubles from two minutes. A fix session that had already changed the content is taken up with `apply-triage.sh <triage-json> --continue`: the same findings, contract, and protections, for the session of this triage that was left unfinished, and for nothing else |
+| Unstable check | The verification is repeated once, and no check failed in both runs | Records the checks and goes on, at most three times in a run |
+| Failed verification | A check failed in both runs | Resumes the implementer with those checks in the handoff note, at most three times (`AGENTS.md`); a review follows. A repair session is retried like any other |
+| Blocked | An agent ends with `BLOCKED:` and the handoff note holds a question under "Open questions" | Stops with status 3. Without such a question there is nothing to answer: the line is ignored and the run goes on |
+
+Every interruption is written to `.agents/run/<issue>-log` in the feature
+worktree, one line each: the time, the step, the outcome, the reason, and
+what the run did. The output of the last step is kept next to it in
+`<issue>-step.log`, and that of a repeated verification in
+`<issue>-verify.log`. Status 4 is kept for a failed verification: the scripts
+turn an agent that happens to exit with it into an ordinary failure. `RUN_FEATURE_RETRIES`, `RUN_FEATURE_RETRY_WAIT` (seconds),
+and `RUN_FEATURE_REPAIRS` change the limits for one run.
+
 The run stops with a non-zero status, and keeps the worktree, when:
 
 | Stop | Status |
 |---|---|
 | An agent needs a decision of yours, or reports a conflict with the Issue's scope, the architecture, or an ADR. Its question is in the handoff note | 3 |
-| The implementer, the reviewer, the triage, or the fixing agent fails, for example on a usage limit | 1 |
-| Verification fails after the implementation or after the fixes | 1 |
+| An agent or a connection keeps failing after the retries | 1 |
+| The verification still fails after three repairs, or checks are unstable more than three times | 1 |
 | The proposed triage is invalid, for example because it defers a critical or major finding | 1 |
 | Five rounds are used and the last one still has a finding that must be fixed | 1 |
-| The fixes changed nothing, the commit fails, or the pull request cannot be opened | 1 |
+| The fixes changed nothing, the commit is refused, or the pull request cannot be opened after the retries | 1 |
 
 It then says why it stopped and which command resolves it. After that, run
 the same command again: `./scripts/run-feature.sh <issue>`. The run reads
