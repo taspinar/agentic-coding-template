@@ -319,16 +319,37 @@ review rounds, the findings that were not adopted, and the fingerprint of the
 planning documents. Use it for the planning PR description, because review
 and revision files are not committed.
 
-Any later change to a planning document invalidates the approval:
+Whether the approval is still current:
 
 ```bash
 ./scripts/finish-planning.sh --check
 ```
 
-exits 0 when the approval still matches the documents and 1 when it is missing
-or stale. `create-feature-issue.sh <feature-id>` refuses to create a feature
-Issue from a roadmap without a current approval, so a roadmap change after the
-planning PR needs a new review round and approval.
+exits 0 when it is and 1 when it is missing or stale. `create-feature-issue.sh
+<feature-id>` refuses to create a feature Issue from a roadmap without a
+current approval.
+
+What makes the approval stale depends on the document:
+
+| Document | Changed after the approval |
+|---|---|
+| `docs/PROJECT_DESCRIPTION.md`, `docs/PROJECT_REQUIREMENTS.md`, `docs/roadmap.md`, `docs/changes/` | Stale. What the product is and which features it gets changes only through a planning cycle, with a review and your approval |
+| `docs/architecture.md`, `docs/decisions/` | Still current. Features keep these up to date, as the Definition of Done asks, and the feature review covers the change. `--check` lists the commits that changed them since the approval |
+
+So a feature that describes what it built in the architecture, or records a
+decision in an ADR, does not stop the next feature. The approval file itself
+is not touched by a feature, so features that run side by side cannot conflict
+in it. The next approval or amendment covers those updates and names their
+commits in the record, with the Issue and the review of each, under "Updates
+by merged work" or with the amendment. A later approval keeps the entries of
+the earlier ones. Until then `--check` lists them. A feature that changes the
+roadmap or the requirements is refused by `finish-feature.sh` before its
+commit, with the command of the change cycle.
+
+The script finds the approved state from the commit that last changed
+`docs/PLANNING_APPROVAL.md`: the planning documents in that commit must have
+the recorded fingerprint. Change that file only through `finish-planning.sh`;
+after a change by hand that does not match, any difference counts as stale.
 
 Open and merge a planning PR before creating Issues for actionable roadmap
 features. The script never implements features, creates Issues, commits,
@@ -399,9 +420,10 @@ the change request and covers it. Commit, push, and merge the planning pull
 request; `cleanup-worktree.sh planning/shopping-list` then removes the
 worktree and an untracked original of the change request.
 
-Every change to a planning document invalidates the planning approval until
-the new one is merged. In between, `create-feature-issue.sh` creates no new
-Issue. A feature that is already in progress is not affected.
+A change to the requirements, the roadmap, the description, or a change
+request makes the planning approval stale until the new one is merged. In
+between, `create-feature-issue.sh` creates no new Issue. A feature that is
+already in progress is not affected.
 
 ### A small technical amendment
 

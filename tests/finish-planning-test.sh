@@ -253,6 +253,39 @@ grep -Fqx "Change request: docs/changes/project-bootstrap.md" "$repo/docs/PLANNI
 grep -Fq 'git commit -m "Plan change: project-bootstrap"' "$repo.out" || fail "the commit is not named after the change"
 grep -Fq "docs/changes" "$repo.out" || fail "the commit step does not include the change request"
 [[ "$(check_status "$repo")" -eq 0 ]] || fail "a fresh change approval is not current"
+
+# A later approval names what merged work changed in the architecture since
+# the previous one, because it now covers those changes.
+later="$(setup_repo later-approval)"
+add_review "$later" 1 PASS "[]"
+run_finish "$later" y || fail "the first approval failed"
+git -C "$later" add -A
+git -C "$later" commit -qm "Plan: first approval"
+printf '\nThe list is stored locally.\n' >>"$later/docs/architecture.md"
+git -C "$later" commit -qam "F03: describe where the list is stored" -m "Issue: #3" -m "Review: round 1, PASS, by codex (model-r)"
+printf '\n## F09 — Another feature\n' >>"$later/docs/roadmap.md"
+add_review "$later" 2 PASS "[]"
+run_finish "$later" y || {
+  cat "$later.out" >&2
+  fail "the later approval failed"
+}
+grep -Fqx "## Updates by merged work" "$later/docs/PLANNING_APPROVAL.md" ||
+  fail "the later approval does not list the updates by merged work"
+grep -Eq '^- [0-9a-f]+ F03: describe where the list is stored \(Issue #3; review: round 1, PASS, by codex \(model-r\)\)$' "$later/docs/PLANNING_APPROVAL.md" ||
+  fail "the later approval does not name the feature, its Issue, and its review"
+
+# A third approval keeps the entry of the second and adds its own.
+git -C "$later" add -A
+git -C "$later" commit -qm "Plan: second approval"
+printf '\nThe list is sorted.\n' >>"$later/docs/architecture.md"
+git -C "$later" commit -qam "F04: describe the order of the list" -m "Issue: #4"
+printf '\n## F10 — One more\n' >>"$later/docs/roadmap.md"
+add_review "$later" 3 PASS "[]"
+run_finish "$later" y || fail "the third approval failed"
+grep -Eq '^- [0-9a-f]+ F03: describe where the list is stored ' "$later/docs/PLANNING_APPROVAL.md" ||
+  fail "the third approval dropped the entry of the second"
+grep -Eq '^- [0-9a-f]+ F04: describe the order of the list \(Issue #4\)$' "$later/docs/PLANNING_APPROVAL.md" ||
+  fail "the third approval lacks its own entry"
 printf 'More.\n' >>"$repo/docs/changes/project-bootstrap.md"
 [[ "$(check_status "$repo")" -eq 1 ]] || fail "changing the change request did not invalidate the approval"
 
@@ -303,7 +336,9 @@ repo="$(setup_approved amend)"
 approval="$repo/docs/PLANNING_APPROVAL.md"
 fingerprint_before="$(grep '^Planning fingerprint: ' "$approval")"
 amend_adr "$repo"
-[[ "$(check_status "$repo")" -eq 1 ]] || fail "a changed ADR did not invalidate the approval"
+# Before it is recorded, the change does not make the approval stale: the
+# architecture and the ADRs may be updated without a planning cycle.
+[[ "$(check_status "$repo")" -eq 0 ]] || fail "a changed ADR made the approval stale"
 run_amend "$repo" y --amend "Add a cache in front of the storage." || {
   cat "$repo.out" >&2
   fail "approving an amendment failed"
@@ -337,7 +372,9 @@ amend_adr "$repo"
 before="$(cat "$repo/docs/PLANNING_APPROVAL.md")"
 run_amend "$repo" n --amend "Add a cache." || fail "declining an amendment failed"
 [[ "$(cat "$repo/docs/PLANNING_APPROVAL.md")" == "$before" ]] || fail "a declined amendment changed the approval"
-[[ "$(check_status "$repo")" -eq 1 ]] || fail "a declined amendment was approved"
+if grep -Fq "## Amendments after the approval" "$repo/docs/PLANNING_APPROVAL.md"; then
+  fail "a declined amendment was recorded"
+fi
 
 # Anything beyond the architecture and the ADRs needs a review, and so does
 # deleting an ADR. The approval is not changed.
@@ -389,7 +426,71 @@ git -C "$repo" switch -q planning/amend-behind
 git -C "$repo" stash pop -q
 if run_amend "$repo" y --amend "A reason."; then fail "an amendment was approved on a branch behind main"; fi
 grep -Fq "does not contain the latest main" "$repo.out" || fail "the outdated branch was not reported"
-[[ "$(check_status "$repo")" -eq 1 ]] || fail "an amendment on an outdated branch was recorded"
+if grep -Fq "## Amendments after the approval" "$repo/docs/PLANNING_APPROVAL.md"; then
+  fail "an amendment on an outdated branch was recorded"
+fi
+
+# Features keep the architecture and the ADRs up to date. After such a change
+# is merged the approval is still current, and the check names the commits.
+repo="$(setup_approved feature-updates)"
+git -C "$repo" switch -q main
+amend_adr "$repo"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "F07: add a cache, with ADR 002" -m "Issue: #7" -m "Review: round 2, PASS, by codex (model-r)"
+[[ "$(check_status "$repo")" -eq 0 ]] || fail "a feature that updated the architecture made the approval stale"
+(cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/finish-planning.sh --check) >"$repo.out" 2>&1
+grep -Fq "F07: add a cache, with ADR 002" "$repo.out" || fail "the check did not name the commit that updated the architecture"
+
+# An amendment can start from that state: the base is still approved.
+git -C "$repo" switch -q -c planning/feature-updates-amend
+printf '\nThe cache is bounded.\n' >>"$repo/docs/architecture.md"
+run_amend "$repo" y --amend "Bound the cache." || {
+  cat "$repo.out" >&2
+  fail "an amendment after a feature updated the architecture failed"
+}
+[[ "$(check_status "$repo")" -eq 0 ]] || fail "the approval is not current after that amendment"
+# The amended record names the commit of the feature, and keeps it when a
+# later amendment follows.
+approval="$repo/docs/PLANNING_APPROVAL.md"
+grep -Eq '^  - [0-9a-f]+ F07: add a cache, with ADR 002 \(Issue #7; review: round 2, PASS, by codex \(model-r\)\)$' "$approval" ||
+  fail "the amended approval does not name the feature that updated the architecture"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Amend planning: bound the cache"
+git -C "$repo" switch -q main
+git -C "$repo" merge -q planning/feature-updates-amend
+git -C "$repo" switch -q -c planning/feature-updates-second
+printf '\nThe cache is cleared at start.\n' >>"$repo/docs/architecture.md"
+run_amend "$repo" y --amend "Clear the cache at start." || fail "a later amendment failed"
+grep -Eq '^  - [0-9a-f]+ F07: add a cache, with ADR 002 \(Issue #7; review: round 2, PASS, by codex \(model-r\)\)$' "$approval" ||
+  fail "a later amendment dropped the record of the feature"
+[[ "$(grep -c 'Approved by the project owner' "$approval")" -eq 2 ]] || fail "the two amendments are not both recorded"
+
+# What the product is and which features it gets is changed by a planning
+# cycle only: a change to the roadmap or the requirements, by a feature or by
+# hand, makes the approval stale, also together with an architecture change.
+for document in docs/roadmap.md docs/PROJECT_REQUIREMENTS.md; do
+  repo="$(setup_approved "stale-$(basename "$document" .md)")"
+  git -C "$repo" switch -q main
+  amend_adr "$repo"
+  printf '\nA change outside a planning cycle.\n' >>"$repo/$document"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm "F08: change $document"
+  [[ "$(check_status "$repo")" -eq 1 ]] || fail "a change to $document did not make the approval stale"
+  (cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/finish-planning.sh --check) >"$repo.out" 2>&1 || true
+  grep -Fq "only a planning cycle may change those" "$repo.out" || fail "the stale approval did not say what changed"
+done
+
+# The starting point is the commit that last changed the approval file, and
+# only when the planning documents in it have the recorded fingerprint. A
+# commit that changes the file without recording the documents it comes
+# with is no approval of them.
+repo="$(setup_approved unrecorded)"
+git -C "$repo" switch -q main
+printf '\nA note.\n' >>"$repo/docs/PLANNING_APPROVAL.md"
+amend_adr "$repo"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Change the approval file and the architecture without recording it"
+[[ "$(check_status "$repo")" -eq 1 ]] || fail "an approval that does not match its own commit was trusted"
 
 # An amendment does not repair a missing or stale approval of the base.
 repo="$(setup_approved amend-no-approval)"
