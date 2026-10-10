@@ -576,6 +576,13 @@ result as JSON and the script validates and stores it. An invalid result is
 retried once and then rejected, and a reviewer that changed the working tree or
 created a commit is reported as an error; in both cases no review is stored.
 
+The diff starts where the feature left its base branch. The feature was
+created from `origin/<base>`, and the local `<base>` of your checkout can be
+behind it, for example after pull requests were merged on GitHub. The script
+therefore uses whichever of the two shares the more recent commit with the
+feature, so that work merged before the feature started never counts as the
+feature's own change. You do not have to pull the base branch first.
+
 The review script must run from the matching feature worktree and needs an
 authenticated GitHub CLI. Each round writes a numbered pair of files without
 overwriting earlier reviews:

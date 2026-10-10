@@ -11,6 +11,35 @@
 
 FINGERPRINT_EXCLUDES=(".agents/reviews" ".agents/triage")
 
+# feature_base <root> <base>
+# Prints two lines: the ref of the base branch a feature is compared with,
+# and the merge base of HEAD and that ref. A feature is created from
+# origin/<base>, and the local <base> can be behind it or ahead of it, so of
+# the two the one is used whose merge base with HEAD is the more recent:
+# that is the point where the feature left its base. With a stale ref the
+# merge base would lie further back, and everything merged since would count
+# as the feature's own change. Fails when neither ref exists or shares
+# history with HEAD.
+feature_base() {
+  local root="$1"
+  local base="$2"
+  local ref
+  local found
+  local best_ref=""
+  local best=""
+
+  for ref in "$base" "origin/$base"; do
+    git -C "$root" rev-parse --verify --quiet "$ref^{commit}" >/dev/null || continue
+    found="$(git -C "$root" merge-base HEAD "$ref" 2>/dev/null)" || continue
+    if [[ -z "$best" ]] || { [[ "$found" != "$best" ]] && git -C "$root" merge-base --is-ancestor "$best" "$found"; }; then
+      best="$found"
+      best_ref="$ref"
+    fi
+  done
+  [[ -n "$best" ]] || return 1
+  printf '%s\n%s\n' "$best_ref" "$best"
+}
+
 # fingerprint_worktree <root> <scratch-dir>
 # Prints the fingerprint of the whole working tree. Ignored files are left
 # out unless Git already tracks them.

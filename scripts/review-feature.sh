@@ -89,15 +89,15 @@ review_data_require_jq
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated. Run: gh auth login"
 
-if git -C "$root" rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
-  base_ref="$base"
-elif git -C "$root" rev-parse --verify --quiet "origin/$base^{commit}" >/dev/null; then
-  base_ref="origin/$base"
-else
+# The local base branch or origin/<base>, whichever knows where the feature
+# left its base; see feature_base.
+git -C "$root" rev-parse --verify --quiet "$base^{commit}" >/dev/null ||
+  git -C "$root" rev-parse --verify --quiet "origin/$base^{commit}" >/dev/null ||
   fail "base branch not found locally or on origin: $base"
-fi
-merge_base="$(git -C "$root" merge-base HEAD "$base_ref")" ||
-  fail "could not determine the merge base of HEAD and $base_ref."
+feature_base_lines="$(feature_base "$root" "$base")" ||
+  fail "could not determine the merge base of HEAD and $base."
+base_ref="$(printf '%s\n' "$feature_base_lines" | sed -n 1p)"
+merge_base="$(printf '%s\n' "$feature_base_lines" | sed -n 2p)"
 
 # Determine next review number.
 review_number=1
