@@ -75,10 +75,18 @@
     return;
   }
 
-  var details = Array.prototype.slice.call(document.querySelectorAll(".detail[id]"));
+  // The steps of a stage, in order. A panel that is not a step of a stage
+  // (updating the plan, the unattended run) has the class extra.
+  function stepsOf(target) {
+    if (!target.parentNode || target.classList.contains("extra")) {
+      return [];
+    }
+    return Array.prototype.slice.call(target.parentNode.querySelectorAll(".detail[id]:not(.extra)"));
+  }
   var dialog = document.createElement("dialog");
   dialog.className = "popup";
   dialog.innerHTML =
+    '<p class="popup-where" hidden></p>' +
     '<div class="popup-body"></div>' +
     '<div class="popup-bar">' +
     '<span><button type="button" data-back>← Back to the diagram</button> ' +
@@ -89,6 +97,7 @@
   document.body.appendChild(dialog);
 
   var body = dialog.querySelector(".popup-body");
+  var where = dialog.querySelector(".popup-where");
   var back = dialog.querySelector("[data-back]");
   var previous = dialog.querySelector("[data-go='-1']");
   var next = dialog.querySelector("[data-go='1']");
@@ -112,13 +121,21 @@
     });
     copy.removeAttribute("aria-labelledby");
     body.replaceChildren(copy);
-    var position = details.indexOf(target);
-    var isDetail = position >= 0;
-    dialog.classList.toggle("wide", !isDetail);
+    var heading = target.querySelector("h3");
+    dialog.setAttribute("aria-label", heading ? heading.textContent : "Details");
+    var siblings = stepsOf(target);
+    var position = siblings.indexOf(target);
+    var isStep = position >= 0;
+    dialog.classList.toggle("wide", target.classList.contains("lane"));
     back.hidden = trail.length < 2;
-    previous.hidden = next.hidden = !isDetail;
+    previous.hidden = next.hidden = !isStep;
     previous.disabled = position <= 0;
-    next.disabled = position === details.length - 1;
+    next.disabled = position === siblings.length - 1;
+    where.hidden = !isStep;
+    if (isStep) {
+      var stage = target.parentNode.getAttribute("data-stage");
+      where.textContent = (stage ? stage + " · " : "") + "Step " + (position + 1) + " of " + siblings.length;
+    }
     dialog.scrollTop = 0;
   }
 
@@ -150,9 +167,10 @@
   });
 
   function step(offset) {
-    var position = details.indexOf(trail[trail.length - 1]) + offset;
-    if (position >= 0 && position < details.length) {
-      trail[trail.length - 1] = details[position];
+    var siblings = stepsOf(trail[trail.length - 1]);
+    var position = siblings.indexOf(trail[trail.length - 1]) + offset;
+    if (siblings.length && position >= 0 && position < siblings.length) {
+      trail[trail.length - 1] = siblings[position];
       render();
     }
   }
@@ -170,7 +188,7 @@
   });
 
   dialog.addEventListener("keydown", function (event) {
-    if (details.indexOf(trail[trail.length - 1]) < 0) {
+    if (!stepsOf(trail[trail.length - 1]).length) {
       return;
     }
     if (event.key === "ArrowRight") {

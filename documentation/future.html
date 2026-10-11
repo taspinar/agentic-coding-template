@@ -15,6 +15,7 @@
   <nav class="nav" aria-label="Documentation">
     <ul>
       <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html">The workflow</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
@@ -32,16 +33,16 @@
   <h1>Possible improvements</h1>
   <p class="lede">We keep exploring ways to improve the template. The ideas below cover security, planning, testing, agent isolation, and support for larger teams.</p>
   <div class="note"><p><strong>This is not a committed roadmap.</strong> A new feature has to add clear value without making the template harder to use for a single developer.</p></div>
-  <p><span class="tag principle">Partially available</span> means related functionality already exists. <span class="tag proposed">Under consideration</span> means the idea was discussed and is not built.</p>
+  <p><span class="tag partial">Partially available</span> means related functionality already exists. <span class="tag proposed">Under consideration</span> means the idea was discussed and is not built.</p>
 
   <h2>Security and approvals</h2>
   <div class="table-scroll">
   <table>
     <thead><tr><th>Improvement</th><th>What it would add</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td>GitHub approval rules</td><td>Code owners and repository rules, so that protected files and important changes need the right approvals</td><td><span class="tag principle">Partially available</span> the scripts classify a change; GitHub does not enforce the approvals yet</td></tr>
-      <tr><td>Separate agent identities</td><td>GitHub identities with limited permissions for coding agents, in place of the owner's permissions</td><td><span class="tag proposed">Under consideration</span></td></tr>
-      <tr><td>More thorough reviews for risky changes</td><td>Additional checks for changes to security, infrastructure, or important architecture decisions</td><td><span class="tag principle">Partially available</span> risk classification exists; specialized reviews do not</td></tr>
+      <tr><td>GitHub approval rules</td><td>Code owners and repository rules, so that protected files and important changes need the right approvals</td><td><span class="tag partial">Partially available</span> the scripts classify a change; GitHub does not enforce the approvals yet. <a href="https://github.com/taspinar/agentic-coding-template/issues/99">Issue 99</a></td></tr>
+      <tr><td>Separate agent identities</td><td>GitHub identities with limited permissions for coding agents, in place of the owner's permissions</td><td><span class="tag proposed">Under consideration</span> <a href="https://github.com/taspinar/agentic-coding-template/issues/99">Issue 99</a></td></tr>
+      <tr><td>More thorough reviews for risky changes</td><td>Additional checks for changes to security, infrastructure, or important architecture decisions</td><td><span class="tag partial">Partially available</span> risk classification exists; specialized reviews do not</td></tr>
     </tbody>
   </table>
   </div>
@@ -51,11 +52,11 @@
   <table>
     <thead><tr><th>Improvement</th><th>What it would add</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td>Feature clarification</td><td>Focused questions when a feature issue lacks important details</td><td><span class="tag proposed">Under consideration</span></td></tr>
-      <tr><td>Dependency-aware planning</td><td>Dependencies between tasks and features in a form that automation can use</td><td><span class="tag principle">Partially available</span> the roadmap describes dependencies in words</td></tr>
+      <tr><td>Feature clarification</td><td>Focused questions when a feature issue lacks important details</td><td><span class="tag proposed">Under consideration</span> <a href="https://github.com/taspinar/agentic-coding-template/issues/16">Issue 16</a></td></tr>
+      <tr><td>Dependency-aware planning</td><td>Dependencies between tasks and features in a form that automation can use</td><td><span class="tag partial">Partially available</span> the roadmap describes dependencies in words</td></tr>
       <tr><td>Ready-to-run task queue</td><td>A list of the tasks whose dependencies are complete and that an agent can start</td><td><span class="tag proposed">Under consideration</span></td></tr>
       <tr><td>Parallel execution</td><td>Several agents working on separate features without conflicts</td><td><span class="tag proposed">Under consideration</span> separate worktrees already allow concurrent work that you start yourself</td></tr>
-      <tr><td>Better failure recovery</td><td>Diagnosing common failures and recovering without redoing finished work</td><td><span class="tag principle">Partially available</span> retries and resuming are supported</td></tr>
+      <tr><td>Better failure recovery</td><td>Diagnosing common failures and recovering without redoing finished work</td><td><span class="tag partial">Partially available</span> retries and resuming are supported</td></tr>
     </tbody>
   </table>
   </div>
@@ -65,7 +66,7 @@
   <table>
     <thead><tr><th>Improvement</th><th>What it would add</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td>Two independent reviewers</td><td>One review of the behavior and one of the engineering quality</td><td><span class="tag proposed">Under consideration</span></td></tr>
+      <tr><td>Two independent reviewers</td><td>One review of the behavior and one of the engineering quality</td><td><span class="tag proposed">Under consideration</span> <a href="https://github.com/taspinar/agentic-coding-template/issues/66">Issue 66</a></td></tr>
       <tr><td>Faster, more selective CI</td><td>Running the tests a change affects, not everything every time</td><td><span class="tag proposed">Under consideration</span> a successful verification is already reused for unchanged content</td></tr>
       <tr><td>Requirements-to-test tracking</td><td>Which implementation and which tests provide the evidence for each requirement</td><td><span class="tag proposed">Under consideration</span></td></tr>
       <tr><td>Browser-based validation</td><td>Browser tests with screenshots or traces for user-interface changes</td><td><span class="tag proposed">Under consideration</span> a project can configure its own browser tests</td></tr>
@@ -79,9 +80,7 @@
   <table>
     <thead><tr><th>Improvement</th><th>What it would add</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td>Full environment isolation</td><td>For each agent its own database, cache, services, queues, ports, credentials, and working files</td><td><span class="tag proposed">Under consideration</span> only the working files are separated today</td></tr>
-      <tr><td>Containers or virtual machines per task</td><td>An isolated environment that is created when work starts and removed afterward</td><td><span class="tag proposed">Under consideration</span></td></tr>
-      <tr><td>Reproducible database copies</td><td>A separate development database with safe, sanitized test data for each agent</td><td><span class="tag proposed">Under consideration</span></td></tr>
+      <tr><td>Full environment isolation</td><td>For each agent its own working files, database, cache, services, queues, ports, and credentials. It has three parts:<ul><li>an environment per task, in a container or a virtual machine, created when work starts and removed afterward;</li><li>a separate development database for each agent, with safe, sanitized test data;</li><li>credentials and network access limited to that environment.</li></ul></td><td><span class="tag proposed">Under consideration</span> only the working files are separated today</td></tr>
       <tr><td>Remote execution</td><td>Agent runs that continue on a server when the developer's laptop is closed</td><td><span class="tag proposed">Under consideration</span></td></tr>
     </tbody>
   </table>
@@ -106,7 +105,7 @@
     <thead><tr><th>Improvement</th><th>What it would add</th><th>Status</th></tr></thead>
     <tbody>
       <tr><td>Web dashboard</td><td>Starting, monitoring, and resuming agent tasks in a browser</td><td><span class="tag proposed">Under consideration</span></td></tr>
-      <tr><td>Documentation website</td><td>The workflow explained with diagrams, examples, and comparisons</td><td><span class="tag principle">Partially available</span> you are reading it; guides for the planning process, unattended runs, and approvals are still to be written</td></tr>
+      <tr><td>Expand the documentation</td><td>Guides for the planning process, for unattended runs, and for approvals and the merge gate, beside the pages that exist</td><td><span class="tag partial">Partially available</span> this website covers the workflow, getting started, the research, and the history</td></tr>
       <tr><td>Convert an application into a template</td><td>Reusable configuration and modules extracted from an existing application</td><td><span class="tag proposed">Under consideration</span></td></tr>
       <tr><td>Event-driven maintenance</td><td>Controlled maintenance tasks that start after a CI failure, a security alert, or a dependency update</td><td><span class="tag proposed">Under consideration</span></td></tr>
       <tr><td>Support for multiple repositories</td><td>Work coordinated across projects, with shared scheduling and resource limits</td><td><span class="tag proposed">Under consideration</span></td></tr>
