@@ -33,27 +33,257 @@
   <p class="lede">The template has two stages: <strong>project planning</strong> and <strong>feature development</strong>.</p>
   <p>First, you describe what you want to build. Agents help turn that description into requirements, an architecture, and a roadmap, which you review and approve. Then each feature moves through implementation, automated checks, an independent code review, and a pull request.</p>
   <p>If the requirements change later, you update the plan through a <a class="popup-link" href="#step-change">separate review and approval process</a>.</p>
-  <p><strong>Click a stage to see its steps.</strong> Click a step to see what it does, which script it uses, what it produces, and when your input is needed. The same information is on this page, <a href="#phases">below the diagram</a>.</p>
+  <p>The drawing plays one feature from idea to merge, including a check that fails and a review finding that is fixed. <strong>Click a stage to see its steps</strong>, or a step to see what it does, which script it uses, what it produces, and when your input is needed. The same information is on this page, <a href="#phases">below the drawing</a>.</p>
 
-  <div class="legend" aria-label="Who acts in a step">
-    <span class="human">Your input or approval</span>
-    <span class="agent">AI agent</span>
-    <span class="script">Automated script or check</span>
+  <div class="run" data-run>
+    <div class="run-stage-box">
+      <div class="run-across">
+<svg class="run-svg run-h" viewBox="0 0 1200 240" role="img" aria-labelledby="run-title-h run-desc-h">
+  <title id="run-title-h">One feature, from idea to merge</title>
+  <desc id="run-desc-h">A route through the two stages. Planning: requirements that you approve, a plan, an independent review with a revision, and your approval. Feature: an issue, the implementation, checks that fail once and are repaired, an independent review with one finding that you decide to fix, a second review, a commit, a pull request with CI, and your merge.</desc>
+  <a class="popup-link" href="#planning" aria-label="Stage 1 · Plan the project: show its steps"><rect class="run-col" x="0" y="0" width="390" height="240"/><text class="run-stage" x="16" y="28">Stage 1 · Plan the project</text></a>
+  <a class="popup-link" href="#feature" aria-label="Stage 2 · Build each feature: show its steps"><line class="run-sep" x1="390" y1="12" x2="390" y2="228"/><rect class="run-col" x="390" y="0" width="810" height="240"/><text class="run-stage" x="406" y="28">Stage 2 · Build each feature</text></a>
+  <g class="run-route">
+    <path class="run-ghost" d="M72 118 L138 118"/><path class="run-ink" d="M72 118 L138 118" data-k="ink:req-plan"/>
+    <path class="run-ghost" d="M162 118 L228 118"/><path class="run-ink" d="M162 118 L228 118" data-k="ink:plan-prev"/>
+    <path class="run-ghost" d="M252 118 L318 118"/><path class="run-ink" d="M252 118 L318 118" data-k="ink:prev-approve"/>
+    <path class="run-ghost" d="M342 118 L438 118"/><path class="run-ink" d="M342 118 L438 118" data-k="ink:approve-issue"/>
+    <path class="run-ghost" d="M462 118 L500 118"/><path class="run-ink" d="M462 118 L500 118" data-k="ink:to-impl"/>
+    <path class="run-ghost" d="M620 118 L648 118"/><path class="run-ink" d="M620 118 L648 118" data-k="ink:from-impl"/>
+    <path class="run-ghost" d="M672 118 L733 118"/><path class="run-ink" d="M672 118 L733 118" data-k="ink:checks-review"/>
+    <path class="run-ghost" d="M757 118 L818 118"/><path class="run-ink" d="M757 118 L818 118" data-k="ink:review-triage"/>
+    <path class="run-ghost" d="M842 118 L908 118"/><path class="run-ink" d="M842 118 L908 118" data-k="ink:triage-commit"/>
+    <path class="run-ghost" d="M932 118 L988 118"/><path class="run-ink" d="M932 118 L988 118" data-k="ink:commit-pr"/>
+    <path class="run-ghost" d="M1012 118 L1058 118"/><path class="run-ink" d="M1012 118 L1058 118" data-k="ink:pr-ci"/>
+    <path class="run-ghost" d="M1082 118 L1138 118"/><path class="run-ink" d="M1082 118 L1138 118" data-k="ink:ci-merge"/>
+    <path class="run-ghost loop" d="M240 100.6 L240 60 L150 60 L150 100.6"/><path class="run-ink loop" d="M240 100.6 L240 60 L150 60 L150 100.6" data-k="ink:loop-plan"/>
+    <path class="run-ghost loop" d="M830 100.6 L830 60 L560 60 L560 107.56"/><path class="run-ink loop" d="M830 100.6 L830 60 L560 60 L560 107.56" data-k="ink:loop-fix"/>
+    <polygon class="run-tip" points="145,92.6 155,92.6 150,100.6" data-k="label:loop-plan"/>
+    <polygon class="run-tip" points="555,99.56 565,99.56 560,107.56" data-k="label:loop-fix"/>
+    <path class="run-track" d="M500 118 L620 118"/><path class="run-bar" d="M500 118 L620 118" data-k="bar"/>
+  </g>
+  <text class="run-loop-label" x="195" y="51" text-anchor="middle" data-k="label:loop-plan">revise</text>
+  <text class="run-loop-label" x="695" y="51" text-anchor="middle" data-k="label:loop-fix">fix and review again</text>
+  <a class="popup-link" href="#step-implement"><rect class="run-hit" x="500" y="88" width="120" height="90"/><text class="run-name" x="560" y="152" text-anchor="middle">Implementation</text></a>
+  <text class="run-stat" x="560" y="170" text-anchor="middle" data-k="stat:impl">done</text>
+  <a class="popup-link run-node human" href="#step-grill" data-state="done" data-k="node:req">
+    <rect class="run-hit" x="20" y="88" width="80" height="110"/><circle class="halo" cx="60" cy="118" r="16"/><rect class="ring" x="52" y="110" width="16" height="16" transform="rotate(45 60 118)"/>
+    <text class="mark" x="60" y="122" text-anchor="middle" data-k="mark:req"></text>
+    <text class="run-name" x="60" y="152" text-anchor="middle">Requirements</text>
+  </a>
+  <text class="run-stat ok" x="60" y="170" text-anchor="middle" data-k="stat:req">approved</text>
+  <text class="run-gate on" x="60" y="188" text-anchor="middle" data-k="gate:req">◆ you approve</text>
+  <a class="popup-link run-node agent" href="#step-plan" data-state="done" data-k="node:plan">
+    <rect class="run-hit" x="110" y="88" width="80" height="110"/><circle class="halo" cx="150" cy="118" r="16"/><circle class="ring" cx="150" cy="118" r="8"/>
+    <text class="mark" x="150" y="122" text-anchor="middle" data-k="mark:plan"></text>
+    <text class="run-name" x="150" y="152" text-anchor="middle">Plan</text>
+  </a>
+  <text class="run-stat ok" x="150" y="170" text-anchor="middle" data-k="stat:plan">roadmap ready</text>
+  <a class="popup-link run-node agent" href="#step-planning-review" data-state="done" data-k="node:prev">
+    <rect class="run-hit" x="200" y="88" width="80" height="110"/><circle class="halo" cx="240" cy="118" r="16"/><circle class="ring" cx="240" cy="118" r="8"/>
+    <text class="mark" x="240" y="122" text-anchor="middle" data-k="mark:prev"></text>
+    <text class="run-name" x="240" y="152" text-anchor="middle">Plan review</text>
+  </a>
+  <text class="run-stat ok" x="240" y="170" text-anchor="middle" data-k="stat:prev">0 findings</text>
+  <a class="popup-link run-node human" href="#step-finish-planning" data-state="done" data-k="node:approve">
+    <rect class="run-hit" x="290" y="88" width="80" height="110"/><circle class="halo" cx="330" cy="118" r="16"/><rect class="ring" x="322" y="110" width="16" height="16" transform="rotate(45 330 118)"/>
+    <text class="mark" x="330" y="122" text-anchor="middle" data-k="mark:approve"></text>
+    <text class="run-name" x="330" y="152" text-anchor="middle">Approval</text>
+  </a>
+  <text class="run-stat ok" x="330" y="170" text-anchor="middle" data-k="stat:approve">recorded</text>
+  <text class="run-gate on" x="330" y="188" text-anchor="middle" data-k="gate:approve">◆ you approve</text>
+  <a class="popup-link run-node script" href="#step-issue" data-state="done" data-k="node:issue">
+    <rect class="run-hit" x="410" y="88" width="80" height="110"/><circle class="halo" cx="450" cy="118" r="16"/><circle class="ring" cx="450" cy="118" r="8"/>
+    <text class="mark" x="450" y="122" text-anchor="middle" data-k="mark:issue"></text>
+    <text class="run-name" x="450" y="152" text-anchor="middle">Feature issue</text>
+  </a>
+  <text class="run-stat ok" x="450" y="170" text-anchor="middle" data-k="stat:issue">created</text>
+  <a class="popup-link run-node script" href="#step-verify" data-state="done" data-k="node:checks">
+    <rect class="run-hit" x="620" y="88" width="80" height="110"/><circle class="halo" cx="660" cy="118" r="16"/><circle class="ring" cx="660" cy="118" r="8"/>
+    <text class="mark" x="660" y="122" text-anchor="middle" data-k="mark:checks"></text>
+    <text class="run-name" x="660" y="152" text-anchor="middle">Checks</text>
+  </a>
+  <text class="run-stat ok" x="660" y="170" text-anchor="middle" data-k="stat:checks">passed</text>
+  <a class="popup-link run-node agent" href="#step-review" data-state="done" data-k="node:review">
+    <rect class="run-hit" x="705" y="88" width="80" height="110"/><circle class="halo" cx="745" cy="118" r="16"/><circle class="ring" cx="745" cy="118" r="8"/>
+    <text class="mark" x="745" y="122" text-anchor="middle" data-k="mark:review"></text>
+    <text class="run-name" x="745" y="152" text-anchor="middle">Review</text>
+  </a>
+  <text class="run-stat ok" x="745" y="170" text-anchor="middle" data-k="stat:review">0 findings</text>
+  <a class="popup-link run-node human" href="#step-triage" data-state="done" data-k="node:triage">
+    <rect class="run-hit" x="790" y="88" width="80" height="110"/><circle class="halo" cx="830" cy="118" r="16"/><rect class="ring" x="822" y="110" width="16" height="16" transform="rotate(45 830 118)"/>
+    <text class="mark" x="830" y="122" text-anchor="middle" data-k="mark:triage"></text>
+    <text class="run-name" x="830" y="152" text-anchor="middle">Findings</text>
+  </a>
+  <text class="run-stat ok" x="830" y="170" text-anchor="middle" data-k="stat:triage">resolved</text>
+  <text class="run-gate on" x="830" y="188" text-anchor="middle" data-k="gate:triage">◆ you decide</text>
+  <a class="popup-link run-node script" href="#step-commit" data-state="done" data-k="node:commit">
+    <rect class="run-hit" x="880" y="88" width="80" height="110"/><circle class="halo" cx="920" cy="118" r="16"/><circle class="ring" cx="920" cy="118" r="8"/>
+    <text class="mark" x="920" y="122" text-anchor="middle" data-k="mark:commit"></text>
+    <text class="run-name" x="920" y="152" text-anchor="middle">Commit</text>
+  </a>
+  <text class="run-stat ok" x="920" y="170" text-anchor="middle" data-k="stat:commit">recorded</text>
+  <a class="popup-link run-node script" href="#step-publish" data-state="done" data-k="node:pr">
+    <rect class="run-hit" x="960" y="88" width="80" height="110"/><circle class="halo" cx="1000" cy="118" r="16"/><circle class="ring" cx="1000" cy="118" r="8"/>
+    <text class="mark" x="1000" y="122" text-anchor="middle" data-k="mark:pr"></text>
+    <text class="run-name" x="1000" y="152" text-anchor="middle">Pull request</text>
+  </a>
+  <text class="run-stat ok" x="1000" y="170" text-anchor="middle" data-k="stat:pr">open</text>
+  <a class="popup-link run-node script" href="#step-publish" data-state="done" data-k="node:ci">
+    <rect class="run-hit" x="1030" y="88" width="80" height="110"/><circle class="halo" cx="1070" cy="118" r="16"/><circle class="ring" cx="1070" cy="118" r="8"/>
+    <text class="mark" x="1070" y="122" text-anchor="middle" data-k="mark:ci"></text>
+    <text class="run-name" x="1070" y="152" text-anchor="middle">CI</text>
+  </a>
+  <text class="run-stat ok" x="1070" y="170" text-anchor="middle" data-k="stat:ci">green</text>
+  <a class="popup-link run-node human" href="#step-merge" data-state="done" data-k="node:merge">
+    <rect class="run-hit" x="1110" y="88" width="80" height="110"/><circle class="halo" cx="1150" cy="118" r="16"/><rect class="ring" x="1142" y="110" width="16" height="16" transform="rotate(45 1150 118)"/>
+    <text class="mark" x="1150" y="122" text-anchor="middle" data-k="mark:merge"></text>
+    <text class="run-name" x="1150" y="152" text-anchor="middle">Merge</text>
+  </a>
+  <text class="run-stat ok" x="1150" y="170" text-anchor="middle" data-k="stat:merge">merged</text>
+  <text class="run-gate on" x="1150" y="188" text-anchor="middle" data-k="gate:merge">◆ you merge</text>
+  <circle class="run-head" r="4" cx="-20" cy="-20" data-k="head"/>
+</svg>
+      </div>
+      <div class="run-down">
+<svg class="run-svg run-v" viewBox="0 0 340 1250" role="img" aria-labelledby="run-title-v run-desc-v">
+  <title id="run-title-v">One feature, from idea to merge</title>
+  <desc id="run-desc-v">A route through the two stages. Planning: requirements that you approve, a plan, an independent review with a revision, and your approval. Feature: an issue, the implementation, checks that fail once and are repaired, an independent review with one finding that you decide to fix, a second review, a commit, a pull request with CI, and your merge.</desc>
+  <a class="popup-link" href="#planning" aria-label="Stage 1 · Plan the project: show its steps"><rect class="run-col" x="0" y="0" width="340" height="414"/><text class="run-stage" x="16" y="26">Stage 1 · Plan the project</text></a>
+  <a class="popup-link" href="#feature" aria-label="Stage 2 · Build each feature: show its steps"><line class="run-sep" x1="12" y1="414" x2="328" y2="414"/><rect class="run-col" x="0" y="414" width="340" height="836"/><text class="run-stage" x="16" y="440">Stage 2 · Build each feature</text></a>
+  <g class="run-route">
+    <path class="run-ghost" d="M64 96 L64 162"/><path class="run-ink" d="M64 96 L64 162" data-k="ink:req-plan"/>
+    <path class="run-ghost" d="M64 186 L64 252"/><path class="run-ink" d="M64 186 L64 252" data-k="ink:plan-prev"/>
+    <path class="run-ghost" d="M64 276 L64 342"/><path class="run-ink" d="M64 276 L64 342" data-k="ink:prev-approve"/>
+    <path class="run-ghost" d="M64 366 L64 462"/><path class="run-ink" d="M64 366 L64 462" data-k="ink:approve-issue"/>
+    <path class="run-ghost" d="M64 486 L64 524"/><path class="run-ink" d="M64 486 L64 524" data-k="ink:to-impl"/>
+    <path class="run-ghost" d="M64 644 L64 672"/><path class="run-ink" d="M64 644 L64 672" data-k="ink:from-impl"/>
+    <path class="run-ghost" d="M64 696 L64 757"/><path class="run-ink" d="M64 696 L64 757" data-k="ink:checks-review"/>
+    <path class="run-ghost" d="M64 781 L64 842"/><path class="run-ink" d="M64 781 L64 842" data-k="ink:review-triage"/>
+    <path class="run-ghost" d="M64 866 L64 932"/><path class="run-ink" d="M64 866 L64 932" data-k="ink:triage-commit"/>
+    <path class="run-ghost" d="M64 956 L64 1012"/><path class="run-ink" d="M64 956 L64 1012" data-k="ink:commit-pr"/>
+    <path class="run-ghost" d="M64 1036 L64 1082"/><path class="run-ink" d="M64 1036 L64 1082" data-k="ink:pr-ci"/>
+    <path class="run-ghost" d="M64 1106 L64 1162"/><path class="run-ink" d="M64 1106 L64 1162" data-k="ink:ci-merge"/>
+    <path class="run-ghost loop" d="M53.2 264 L28 264 L28 174 L53.2 174"/><path class="run-ink loop" d="M53.2 264 L28 264 L28 174 L53.2 174" data-k="ink:loop-plan"/>
+    <path class="run-ghost loop" d="M53.2 854 L28 854 L28 584 L57.52 584"/><path class="run-ink loop" d="M53.2 854 L28 854 L28 584 L57.52 584" data-k="ink:loop-fix"/>
+    <polygon class="run-tip" points="45.2,169 45.2,179 53.2,174" data-k="label:loop-plan"/>
+    <polygon class="run-tip" points="49.52,579 49.52,589 57.52,584" data-k="label:loop-fix"/>
+    <path class="run-track" d="M64 524 L64 644"/><path class="run-bar" d="M64 524 L64 644" data-k="bar"/>
+  </g>
+  <a class="popup-link" href="#step-implement"><rect class="run-hit" x="0" y="518" width="340" height="132"/><text class="run-name" x="96" y="588">Implementation</text></a>
+  <text class="run-stat" x="96" y="606" data-k="stat:impl">done</text>
+  <a class="popup-link run-node human" href="#step-grill" data-state="done" data-k="node:req">
+    <rect class="run-hit" x="0" y="62" width="340" height="66"/><circle class="halo" cx="64" cy="84" r="16"/><rect class="ring" x="56" y="76" width="16" height="16" transform="rotate(45 64 84)"/>
+    <text class="mark" x="64" y="88" text-anchor="middle" data-k="mark:req"></text>
+    <text class="run-name" x="96" y="88">Requirements</text>
+  </a>
+  <text class="run-stat ok" x="96" y="106" data-k="stat:req">approved</text>
+  <text class="run-gate on" x="96" y="124" data-k="gate:req">◆ you approve</text>
+  <a class="popup-link run-node agent" href="#step-plan" data-state="done" data-k="node:plan">
+    <rect class="run-hit" x="0" y="152" width="340" height="66"/><circle class="halo" cx="64" cy="174" r="16"/><circle class="ring" cx="64" cy="174" r="8"/>
+    <text class="mark" x="64" y="178" text-anchor="middle" data-k="mark:plan"></text>
+    <text class="run-name" x="96" y="178">Plan</text>
+  </a>
+  <text class="run-stat ok" x="96" y="196" data-k="stat:plan">roadmap ready</text>
+  <a class="popup-link run-node agent" href="#step-planning-review" data-state="done" data-k="node:prev">
+    <rect class="run-hit" x="0" y="242" width="340" height="66"/><circle class="halo" cx="64" cy="264" r="16"/><circle class="ring" cx="64" cy="264" r="8"/>
+    <text class="mark" x="64" y="268" text-anchor="middle" data-k="mark:prev"></text>
+    <text class="run-name" x="96" y="268">Plan review</text>
+  </a>
+  <text class="run-stat ok" x="96" y="286" data-k="stat:prev">0 findings</text>
+  <a class="popup-link run-node human" href="#step-finish-planning" data-state="done" data-k="node:approve">
+    <rect class="run-hit" x="0" y="332" width="340" height="66"/><circle class="halo" cx="64" cy="354" r="16"/><rect class="ring" x="56" y="346" width="16" height="16" transform="rotate(45 64 354)"/>
+    <text class="mark" x="64" y="358" text-anchor="middle" data-k="mark:approve"></text>
+    <text class="run-name" x="96" y="358">Approval</text>
+  </a>
+  <text class="run-stat ok" x="96" y="376" data-k="stat:approve">recorded</text>
+  <text class="run-gate on" x="96" y="394" data-k="gate:approve">◆ you approve</text>
+  <a class="popup-link run-node script" href="#step-issue" data-state="done" data-k="node:issue">
+    <rect class="run-hit" x="0" y="452" width="340" height="66"/><circle class="halo" cx="64" cy="474" r="16"/><circle class="ring" cx="64" cy="474" r="8"/>
+    <text class="mark" x="64" y="478" text-anchor="middle" data-k="mark:issue"></text>
+    <text class="run-name" x="96" y="478">Feature issue</text>
+  </a>
+  <text class="run-stat ok" x="96" y="496" data-k="stat:issue">created</text>
+  <a class="popup-link run-node script" href="#step-verify" data-state="done" data-k="node:checks">
+    <rect class="run-hit" x="0" y="662" width="340" height="66"/><circle class="halo" cx="64" cy="684" r="16"/><circle class="ring" cx="64" cy="684" r="8"/>
+    <text class="mark" x="64" y="688" text-anchor="middle" data-k="mark:checks"></text>
+    <text class="run-name" x="96" y="688">Checks</text>
+  </a>
+  <text class="run-stat ok" x="96" y="706" data-k="stat:checks">passed</text>
+  <a class="popup-link run-node agent" href="#step-review" data-state="done" data-k="node:review">
+    <rect class="run-hit" x="0" y="747" width="340" height="66"/><circle class="halo" cx="64" cy="769" r="16"/><circle class="ring" cx="64" cy="769" r="8"/>
+    <text class="mark" x="64" y="773" text-anchor="middle" data-k="mark:review"></text>
+    <text class="run-name" x="96" y="773">Review</text>
+  </a>
+  <text class="run-stat ok" x="96" y="791" data-k="stat:review">0 findings</text>
+  <a class="popup-link run-node human" href="#step-triage" data-state="done" data-k="node:triage">
+    <rect class="run-hit" x="0" y="832" width="340" height="66"/><circle class="halo" cx="64" cy="854" r="16"/><rect class="ring" x="56" y="846" width="16" height="16" transform="rotate(45 64 854)"/>
+    <text class="mark" x="64" y="858" text-anchor="middle" data-k="mark:triage"></text>
+    <text class="run-name" x="96" y="858">Findings</text>
+  </a>
+  <text class="run-stat ok" x="96" y="876" data-k="stat:triage">resolved</text>
+  <text class="run-gate on" x="96" y="894" data-k="gate:triage">◆ you decide</text>
+  <a class="popup-link run-node script" href="#step-commit" data-state="done" data-k="node:commit">
+    <rect class="run-hit" x="0" y="922" width="340" height="66"/><circle class="halo" cx="64" cy="944" r="16"/><circle class="ring" cx="64" cy="944" r="8"/>
+    <text class="mark" x="64" y="948" text-anchor="middle" data-k="mark:commit"></text>
+    <text class="run-name" x="96" y="948">Commit</text>
+  </a>
+  <text class="run-stat ok" x="96" y="966" data-k="stat:commit">recorded</text>
+  <a class="popup-link run-node script" href="#step-publish" data-state="done" data-k="node:pr">
+    <rect class="run-hit" x="0" y="1002" width="340" height="66"/><circle class="halo" cx="64" cy="1024" r="16"/><circle class="ring" cx="64" cy="1024" r="8"/>
+    <text class="mark" x="64" y="1028" text-anchor="middle" data-k="mark:pr"></text>
+    <text class="run-name" x="96" y="1028">Pull request</text>
+  </a>
+  <text class="run-stat ok" x="96" y="1046" data-k="stat:pr">open</text>
+  <a class="popup-link run-node script" href="#step-publish" data-state="done" data-k="node:ci">
+    <rect class="run-hit" x="0" y="1072" width="340" height="66"/><circle class="halo" cx="64" cy="1094" r="16"/><circle class="ring" cx="64" cy="1094" r="8"/>
+    <text class="mark" x="64" y="1098" text-anchor="middle" data-k="mark:ci"></text>
+    <text class="run-name" x="96" y="1098">CI</text>
+  </a>
+  <text class="run-stat ok" x="96" y="1116" data-k="stat:ci">green</text>
+  <a class="popup-link run-node human" href="#step-merge" data-state="done" data-k="node:merge">
+    <rect class="run-hit" x="0" y="1152" width="340" height="66"/><circle class="halo" cx="64" cy="1174" r="16"/><rect class="ring" x="56" y="1166" width="16" height="16" transform="rotate(45 64 1174)"/>
+    <text class="mark" x="64" y="1178" text-anchor="middle" data-k="mark:merge"></text>
+    <text class="run-name" x="96" y="1178">Merge</text>
+  </a>
+  <text class="run-stat ok" x="96" y="1196" data-k="stat:merge">merged</text>
+  <text class="run-gate on" x="96" y="1214" data-k="gate:merge">◆ you merge</text>
+  <circle class="run-head" r="4" cx="-20" cy="-20" data-k="head"/>
+</svg>
+      </div>
+    </div>
+    <div class="run-below">
+      <figure class="run-log">
+        <figcaption>One feature, from idea to merge <span>what happened, step by step</span></figcaption>
+        <ol>
+        <li data-log><span class="k">start-planning.sh</span><span>questions about goals, users, and scope</span></li>
+        <li data-log class="is-gate"><span class="k">you</span><span>approve the requirements</span></li>
+        <li data-log><span class="k">planning agent</span><span>writes the architecture and the roadmap</span></li>
+        <li data-log class="is-warn"><span class="k">review-planning.sh</span><span>2 findings: the plan is revised and reviewed again</span></li>
+        <li data-log class="is-gate"><span class="k">you</span><span>approve the plan; the approval is linked to this version</span></li>
+        <li data-log><span class="k">create-feature-issue.sh</span><span>roadmap feature F01 becomes a GitHub issue</span></li>
+        <li data-log><span class="k">start-feature.sh</span><span>the implementer works in its own branch and worktree</span></li>
+        <li data-log class="is-warn"><span class="k">verify.sh</span><span>1 check fails: the implementer repairs it, then all pass</span></li>
+        <li data-log class="is-warn"><span class="k">review-feature.sh</span><span>the independent reviewer reports 1 finding</span></li>
+        <li data-log class="is-gate"><span class="k">you</span><span>decide: fix it now</span></li>
+        <li data-log><span class="k">apply-triage.sh</span><span>fixed; the second review has 0 findings</span></li>
+        <li data-log><span class="k">finish-feature.sh</span><span>commit, with the checks and the review recorded</span></li>
+        <li data-log><span class="k">publish-feature.sh</span><span>pull request opened; CI passes</span></li>
+        <li data-log class="is-gate"><span class="k">you</span><span>merge</span></li>
+        </ol>
+      </figure>
+      <div class="run-side">
+        <ul class="run-legend">
+          <li class="human"><svg width="22" height="14" aria-hidden="true"><rect x="6" y="2" width="10" height="10" transform="rotate(45 11 7)"/></svg> <b>You</b> give input or approve</li>
+          <li class="agent"><svg width="22" height="14" aria-hidden="true"><circle cx="11" cy="7" r="5"/></svg> <b>An AI agent</b> plans, builds, or reviews</li>
+          <li class="script"><svg width="22" height="14" aria-hidden="true"><circle cx="11" cy="7" r="5"/></svg> <b>A script</b> checks or records</li>
+        </ul>
+        <button class="run-replay" type="button" hidden>Play again ↻</button>
+      </div>
+    </div>
   </div>
 
-  <ol class="overview" aria-label="The workflow from idea to merge">
-    <li><a class="step human" href="#step-idea"><b>Project idea</b><small>your description</small></a></li>
-    <li><a class="step agent group" href="#planning"><b>Plan the project</b><small>clarify, plan, review</small></a></li>
-    <li><a class="step human" href="#step-planning-merge"><b>Plan approved</b><small>merged by you</small></a></li>
-    <li><a class="step script" href="#step-issue"><b>Feature issue</b><small>one roadmap feature</small></a></li>
-    <li><a class="step agent group" href="#feature"><b>Build the feature</b><small>implement, review, fix</small></a></li>
-    <li><a class="step human" href="#step-merge"><b>Merge</b><small>the pull request</small></a></li>
-    <li class="back next-feature" aria-hidden="true"><span>start the next feature</span></li>
-    <li class="back change"><span>the plan has to change: <a class="popup-link" href="#step-change">update the plan</a></span></li>
-  </ol>
-
   <h2 id="phases">The two stages, step by step</h2>
-  <p>The blocks marked with <span class="group-mark" aria-hidden="true">▸</span> in the diagram contain these steps.</p>
 
   <div class="diagram">
     <section class="lane" id="planning" aria-labelledby="lane-planning">
@@ -301,5 +531,6 @@
 </div>
 </main>
 <script src="assets/site.js"></script>
+<script src="assets/run.js"></script>
 </body>
 </html>
