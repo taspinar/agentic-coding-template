@@ -390,7 +390,7 @@ td:first-child {
   content: "";
   position: absolute;
   left: -34px;
-  top: 5px;
+  top: 9px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -398,30 +398,8 @@ td:first-child {
   border: 2px solid var(--bg);
 }
 
-.timeline .when {
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin: 0;
-}
-
 .timeline h2 {
-  margin: 2px 0 8px;
-}
-
-.timeline ul {
-  padding-left: 20px;
-}
-
-.timeline ul li {
-  margin-bottom: 4px;
-}
-
-.prs {
-  white-space: nowrap;
-  font-size: 13.5px;
+  margin: 0 0 8px;
 }
 
 /* --- The pipeline strip on the introduction ------------------------------- */
