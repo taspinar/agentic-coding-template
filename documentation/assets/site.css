@@ -191,7 +191,7 @@ code {
 }
 
 .wrap.wide {
-  max-width: 1040px;
+  max-width: 1100px;
 }
 
 .menu-button {
@@ -324,9 +324,14 @@ td:first-child {
   color: var(--script);
 }
 
-.tag.principle {
+.tag.partial {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.tag.principle {
+  background: var(--agent-soft);
+  color: var(--agent);
 }
 
 .tag.proposed {
@@ -832,7 +837,7 @@ dialog.popup .detail {
   margin: 0 auto;
 }
 
-@media (min-width: 1240px) {
+@media (min-width: 1440px) {
   .run-across {
     display: block;
   }
@@ -1127,7 +1132,15 @@ a:hover > .run-name {
   fill: var(--script);
 }
 
-.run-replay {
+.run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.run-controls button,
+.run-switch button {
   font: inherit;
   font-size: 14.5px;
   font-weight: 650;
@@ -1139,8 +1152,15 @@ a:hover > .run-name {
   cursor: pointer;
 }
 
-.run-replay:hover {
+.run-controls button:hover,
+.run-switch button:hover {
   border-color: var(--accent);
+}
+
+.run-controls .run-play {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
 }
 
 @media (max-width: 900px) {
@@ -1171,4 +1191,267 @@ a:hover > .run-name {
 
 .run.playing .run-tip:not(.on) {
   opacity: 0;
+}
+
+/* The two ways to run a feature. What differs between them is in the page
+   twice, and the mode decides which one shows. */
+.run-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 14.5px;
+}
+
+.run-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.run-switch button {
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  padding: 6px 14px;
+}
+
+.run-switch button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.run-mode-note {
+  flex-basis: 100%;
+  margin: 0;
+  max-width: none;
+  color: var(--muted);
+}
+
+.run[data-mode="step"] .only-unattended,
+.run[data-mode="unattended"] .only-step {
+  display: none;
+}
+
+.run[data-mode="unattended"] .run-node.swap {
+  --who: var(--agent);
+}
+
+.run-gate.agent {
+  fill: var(--agent);
+}
+
+.run[data-mode="unattended"] .run-log .is-gate .k .only-unattended {
+  color: var(--agent);
+}
+
+/* --- The dialog: where a step is in its stage ------------------------------- */
+
+.popup-where {
+  margin: 0;
+  padding: 16px 24px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.popup-where + .popup-body .detail {
+  padding-top: 6px;
+}
+
+/* --- The home page ---------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 6px;
+  max-width: none;
+}
+
+.button {
+  display: inline-block;
+  text-decoration: none;
+  font-weight: 650;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 16px;
+}
+
+.button:hover {
+  border-color: var(--accent);
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+
+.phases {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0 8px;
+  padding: 0;
+}
+
+.phases > li {
+  max-width: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.phases h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.phases p {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.phases .who {
+  margin-top: 10px;
+  color: var(--human);
+  font-weight: 650;
+  font-size: 13.5px;
+}
+
+.phases-note {
+  color: var(--muted);
+  font-size: 14.5px;
+  max-width: none;
+}
+
+.inside {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 28px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.tree {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  font-size: 14px;
+}
+
+.tree-root {
+  margin: 0 0 8px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree ul ul {
+  padding-left: 22px;
+}
+
+.tree li {
+  max-width: none;
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 13.5em minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--muted);
+}
+
+.tree ul ul .tree-row {
+  grid-template-columns: calc(13.5em - 22px) minmax(0, 1fr);
+}
+
+.tree code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.tree summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.tree summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree summary code::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+
+.tree details[open] > summary code::before {
+  content: "▾ ";
+}
+
+.tree summary:hover code {
+  color: var(--accent);
+}
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  overflow-wrap: normal;
+}
+
+@media (max-width: 1000px) {
+  .phases {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inside {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .phases {
+    grid-template-columns: 1fr;
+  }
+
+  .tree-row,
+  .tree ul ul .tree-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+/* A control that the script has not switched on stays out of the page: the
+   layout rules above must not override the hidden attribute. */
+[hidden] {
+  display: none !important;
 }

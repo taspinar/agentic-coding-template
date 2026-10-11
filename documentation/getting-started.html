@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started · Agentic Coding Template</title>
+<meta name="description" content="Create a repository from the template, check your setup, choose your agents, and plan your first project.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <ul>
+      <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html" aria-current="page">Getting started</a></li>
+      <li><a href="workflow.html">The workflow</a></li>
+      <li><a href="research.html">Research and design choices</a></li>
+      <li><a href="history.html">History</a></li>
+      <li><a href="future.html">Possible improvements</a></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap">
+  <h1>Getting started</h1>
+  <p class="lede">Create a repository from the template, check your setup, choose your agents, and plan your first project.</p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Git and Bash</li>
+    <li>The <a href="https://cli.github.com/">GitHub CLI</a>, signed in to your account</li>
+    <li><code>jq</code></li>
+    <li>At least one supported coding agent: Claude Code or Codex. Using two, one to implement and one to review, gives you a more independent review.</li>
+  </ul>
+
+  <h2>1. Create your repository</h2>
+  <p><a href="https://github.com/taspinar/agentic-coding-template/generate">Create a repository from the template</a> and clone it. Then delete <code>documentation/</code> and <code>.github/workflows/pages.yml</code>: they are this website, not part of your project.</p>
+  <p>The <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">repository setup guide</a> lists the GitHub settings that go with the workflow, such as branch protection for <code>main</code>.</p>
+
+  <h2>2. Check your setup</h2>
+<pre><code>./scripts/doctor.sh</code></pre>
+  <p>The script checks that the tools above are installed and that the agents you configured can run. It tells you what is missing.</p>
+
+  <h2>3. Choose your agents</h2>
+  <p>Each role in the workflow has an agent and a model. Set them in <code>.agents/agents.conf</code>, one role per line:</p>
+<pre><code>implementer: codex &lt;model&gt;
+reviewer: claude &lt;model&gt;</code></pre>
+  <p>The file lists every role, including the planner and the planning reviewer. A different agent for writing and for reviewing is a good default.</p>
+
+  <h2>4. Plan your project</h2>
+  <p>Write a short description of what you want to build, and start the planning with it:</p>
+<pre><code>./scripts/start-planning.sh --description path/to/idea.md</code></pre>
+  <p>An agent asks you questions and writes the requirements for your approval. It then proposes an architecture and a roadmap in a planning worktree: a separate folder next to your repository, whose path the script prints. Go to that folder, then review the plan, address the findings, and approve it:</p>
+<pre><code>cd ../&lt;repository&gt;-planning-project-bootstrap
+./scripts/review-planning.sh
+./scripts/revise-planning.sh --review &lt;review&gt;
+./scripts/finish-planning.sh</code></pre>
+  <p>Each script ends by telling you the next command. Merge the planning pull request when you are done, then return to your repository and update it:</p>
+<pre><code>cd ../&lt;repository&gt;
+git pull</code></pre>
+
+  <h2>5. Build your first feature</h2>
+  <p>From your repository, on the updated <code>main</code>, create the issue of the first roadmap feature. Then let one command take it to a pull request:</p>
+<pre><code>./scripts/create-feature-issue.sh F01
+./scripts/run-feature.sh &lt;issue&gt;</code></pre>
+  <p>The run implements the feature, runs your checks, has it reviewed, fixes what the review finds, and opens a pull request. It does not merge. Read the pull request and the decisions about the review findings, then merge it yourself.</p>
+  <p>To stay closer to the work, run the steps one at a time, starting with <code>./scripts/start-feature.sh &lt;issue&gt;</code>. <a href="workflow.html">The workflow</a> explains each step.</p>
+
+  <h2>Where to go next</h2>
+  <ul>
+    <li><a href="workflow.html">The workflow</a>: every step, with a walkthrough of one example.</li>
+    <li><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/example.md">Worked example</a>: a sample project from its description to a merged feature.</li>
+    <li><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md">Development guide</a>: every command and option.</li>
+  </ul>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

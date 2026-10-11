@@ -15,6 +15,7 @@
   <nav class="nav" aria-label="Documentation">
     <ul>
       <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html" aria-current="page">The workflow</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
@@ -33,9 +34,21 @@
   <p class="lede">The template has two stages: <strong>project planning</strong> and <strong>feature development</strong>.</p>
   <p>First, you describe what you want to build. Agents help turn that description into requirements, an architecture, and a roadmap, which you review and approve. Then each feature moves through implementation, automated checks, an independent code review, and a pull request.</p>
   <p>If the requirements change later, you update the plan through a <a class="popup-link" href="#step-change">separate review and approval process</a>.</p>
-  <p>The drawing plays one feature from idea to merge, including a check that fails and a review finding that is fixed. <strong>Click a stage to see its steps</strong>, or a step to see what it does, which script it uses, what it produces, and when your input is needed. The same information is on this page, <a href="#phases">below the drawing</a>.</p>
+  <p>The diagram shows the complete workflow, from planning a project to merging a feature. Play the walkthrough to follow one example, including what happens when a test fails or a review finds an issue.</p>
+  <p><strong>Click any step</strong> to learn what happens and which script is responsible, or a stage to see all its steps. The same information is on this page, <a href="#phases">below the diagram</a>.</p>
 
-  <div class="run" data-run>
+  <div class="run" data-run data-mode="step">
+    <div class="run-modes" hidden>
+      <span id="run-modes-label">How you run a feature:</span>
+      <span class="run-switch" role="group" aria-labelledby="run-modes-label">
+        <button type="button" data-set-mode="step" aria-pressed="true">Step by step</button>
+        <button type="button" data-set-mode="unattended" aria-pressed="false">Unattended</button>
+      </span>
+      <p class="run-mode-note" aria-live="polite">
+        <span class="only-step"><strong>Step by step:</strong> you run each script, and you approve the decisions about review findings.</span>
+        <span class="only-unattended"><strong>Unattended:</strong> <code>run-feature.sh</code> runs the feature stage without you. An agent decides what to do with review findings; read its decisions afterward. Planning and the merge stay with you.</span>
+      </p>
+    </div>
     <div class="run-stage-box">
       <div class="run-across">
 <svg class="run-svg run-h" viewBox="0 0 1200 240" role="img" aria-labelledby="run-title-h run-desc-h">
@@ -110,13 +123,14 @@
     <text class="run-name" x="745" y="152" text-anchor="middle">Review</text>
   </a>
   <text class="run-stat ok" x="745" y="170" text-anchor="middle" data-k="stat:review">0 findings</text>
-  <a class="popup-link run-node human" href="#step-triage" data-state="done" data-k="node:triage">
-    <rect class="run-hit" x="790" y="88" width="80" height="110"/><circle class="halo" cx="830" cy="118" r="16"/><rect class="ring" x="822" y="110" width="16" height="16" transform="rotate(45 830 118)"/>
+  <a class="popup-link run-node human swap" href="#step-triage" data-state="done" data-k="node:triage">
+    <rect class="run-hit" x="790" y="88" width="80" height="110"/><circle class="halo" cx="830" cy="118" r="16"/><rect class="ring only-step" x="822" y="110" width="16" height="16" transform="rotate(45 830 118)"/><circle class="ring only-unattended" cx="830" cy="118" r="8"/>
     <text class="mark" x="830" y="122" text-anchor="middle" data-k="mark:triage"></text>
     <text class="run-name" x="830" y="152" text-anchor="middle">Findings</text>
   </a>
   <text class="run-stat ok" x="830" y="170" text-anchor="middle" data-k="stat:triage">resolved</text>
-  <text class="run-gate on" x="830" y="188" text-anchor="middle" data-k="gate:triage">◆ you decide</text>
+  <text class="run-gate on only-step" x="830" y="188" text-anchor="middle" data-k="gate:triage">◆ you decide</text>
+  <text class="run-gate agent on only-unattended" x="830" y="188" text-anchor="middle" data-k="gate:triage">● an agent decides</text>
   <a class="popup-link run-node script" href="#step-commit" data-state="done" data-k="node:commit">
     <rect class="run-hit" x="880" y="88" width="80" height="110"/><circle class="halo" cx="920" cy="118" r="16"/><circle class="ring" cx="920" cy="118" r="8"/>
     <text class="mark" x="920" y="122" text-anchor="middle" data-k="mark:commit"></text>
@@ -216,13 +230,14 @@
     <text class="run-name" x="96" y="773">Review</text>
   </a>
   <text class="run-stat ok" x="96" y="791" data-k="stat:review">0 findings</text>
-  <a class="popup-link run-node human" href="#step-triage" data-state="done" data-k="node:triage">
-    <rect class="run-hit" x="0" y="832" width="340" height="66"/><circle class="halo" cx="64" cy="854" r="16"/><rect class="ring" x="56" y="846" width="16" height="16" transform="rotate(45 64 854)"/>
+  <a class="popup-link run-node human swap" href="#step-triage" data-state="done" data-k="node:triage">
+    <rect class="run-hit" x="0" y="832" width="340" height="66"/><circle class="halo" cx="64" cy="854" r="16"/><rect class="ring only-step" x="56" y="846" width="16" height="16" transform="rotate(45 64 854)"/><circle class="ring only-unattended" cx="64" cy="854" r="8"/>
     <text class="mark" x="64" y="858" text-anchor="middle" data-k="mark:triage"></text>
     <text class="run-name" x="96" y="858">Findings</text>
   </a>
   <text class="run-stat ok" x="96" y="876" data-k="stat:triage">resolved</text>
-  <text class="run-gate on" x="96" y="894" data-k="gate:triage">◆ you decide</text>
+  <text class="run-gate on only-step" x="96" y="894" data-k="gate:triage">◆ you decide</text>
+  <text class="run-gate agent on only-unattended" x="96" y="894" data-k="gate:triage">● an agent decides</text>
   <a class="popup-link run-node script" href="#step-commit" data-state="done" data-k="node:commit">
     <rect class="run-hit" x="0" y="922" width="340" height="66"/><circle class="halo" cx="64" cy="944" r="16"/><circle class="ring" cx="64" cy="944" r="8"/>
     <text class="mark" x="64" y="948" text-anchor="middle" data-k="mark:commit"></text>
@@ -254,7 +269,7 @@
     </div>
     <div class="run-below">
       <figure class="run-log">
-        <figcaption>One feature, from idea to merge <span>what happened, step by step</span></figcaption>
+        <figcaption>An example: one feature, from idea to merge <span>what happens at each step</span></figcaption>
         <ol>
         <li data-log><span class="k">start-planning.sh</span><span>questions about goals, users, and scope</span></li>
         <li data-log class="is-gate"><span class="k">you</span><span>approve the requirements</span></li>
@@ -265,7 +280,7 @@
         <li data-log><span class="k">start-feature.sh</span><span>the implementer works in its own branch and worktree</span></li>
         <li data-log class="is-warn"><span class="k">verify.sh</span><span>1 check fails: the implementer repairs it, then all pass</span></li>
         <li data-log class="is-warn"><span class="k">review-feature.sh</span><span>the independent reviewer reports 1 finding</span></li>
-        <li data-log class="is-gate"><span class="k">you</span><span>decide: fix it now</span></li>
+        <li data-log class="is-gate"><span class="k"><span class="only-step">you</span><span class="only-unattended">triage agent</span></span><span><span class="only-step">decide: fix it now</span><span class="only-unattended">decides: fix it now. You read this afterward</span></span></li>
         <li data-log><span class="k">apply-triage.sh</span><span>fixed; the second review has 0 findings</span></li>
         <li data-log><span class="k">finish-feature.sh</span><span>commit, with the checks and the review recorded</span></li>
         <li data-log><span class="k">publish-feature.sh</span><span>pull request opened; CI passes</span></li>
@@ -278,7 +293,10 @@
           <li class="agent"><svg width="22" height="14" aria-hidden="true"><circle cx="11" cy="7" r="5"/></svg> <b>An AI agent</b> plans, builds, or reviews</li>
           <li class="script"><svg width="22" height="14" aria-hidden="true"><circle cx="11" cy="7" r="5"/></svg> <b>A script</b> checks or records</li>
         </ul>
-        <button class="run-replay" type="button" hidden>Play again ↻</button>
+        <p class="run-controls" hidden>
+          <button class="run-play" type="button">Play walkthrough</button>
+          <button class="run-finish" type="button" hidden>Show complete workflow</button>
+        </p>
       </div>
     </div>
   </div>
@@ -332,7 +350,7 @@
 
   <h2 id="steps">Every step in detail</h2>
   <h3>Stage 1 · Plan the project</h3>
-  <div class="details">
+  <div class="details" data-stage="Stage 1">
     <section class="detail" id="step-idea">
       <h3>Describe the idea</h3>
       <p>Start with a short description of your project. You do not need every detail worked out: the next step helps find what is missing.</p>
@@ -361,7 +379,7 @@
         <dt>Who</dt><dd>Planning agent</dd>
         <dt>Script</dt><dd>The same run of <code>start-planning.sh</code></dd>
         <dt>Result</dt><dd><code>docs/architecture.md</code>, <code>docs/roadmap.md</code>, <code>docs/decisions/</code></dd>
-        <dt>Stops if</dt><dd>A decision needs your input and should not be assumed</dd>
+        <dt>Stops if</dt><dd>The agent needs you to make a decision</dd>
       </dl>
     </section>
     <section class="detail" id="step-planning-review">
@@ -386,7 +404,7 @@
     </section>
     <section class="detail" id="step-finish-planning">
       <h3>Approve the plan</h3>
-      <p>The workflow records your approval together with a fingerprint, a checksum of the approved requirements and roadmap. If either document changes later, the approval no longer applies.</p>
+      <p>The workflow records your approval together with a fingerprint: a checksum that identifies the exact version of the requirements and the roadmap you approved. If either document changes later, the approval no longer applies.</p>
       <dl class="human">
         <dt>Who</dt><dd>You</dd>
         <dt>Script</dt><dd><code>./scripts/finish-planning.sh</code></dd>
@@ -402,7 +420,7 @@
         <dt>Result</dt><dd>The approved plan on <code>main</code></dd>
       </dl>
     </section>
-    <section class="detail" id="step-change">
+    <section class="detail extra" id="step-change">
       <h3>Update an approved plan</h3>
       <p>When the requirements or the direction of the project change, write a short change request. The planning agent updates the documents the request touches, and the changes go through review and approval again. A lighter process exists for a small change to the architecture or to a decision record.</p>
       <dl class="human">
@@ -416,7 +434,7 @@
   </div>
 
   <h3>Stage 2 · Build each feature</h3>
-  <div class="details">
+  <div class="details" data-stage="Stage 2">
     <section class="detail" id="step-issue">
       <h3>Create a feature issue</h3>
       <p>Create a GitHub issue for the roadmap feature you are ready to build. Creating it at that moment keeps it in line with the current requirements and architecture.</p>
@@ -457,7 +475,7 @@
         <dt>Who</dt><dd>Reviewer agent</dd>
         <dt>Script</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt;</code></dd>
         <dt>Option</dt><dd><code>--changes</code> for a follow-up review of the recent fixes only</dd>
-        <dt>Result</dt><dd>A review of one specific version of the change. If the code changes afterward, the review is no longer valid</dd>
+        <dt>Result</dt><dd>A review tied to the current version of the code. If the code changes afterward, another review is required</dd>
         <dt>Next</dt><dd>Decide on the findings, or commit when there are none</dd>
       </dl>
     </section>
@@ -473,7 +491,7 @@
     </section>
     <section class="detail" id="step-fix">
       <h3>Apply fixes and review again</h3>
-      <p>The implementer fixes only the findings that were selected in the triage, and the checks run again. The fixes change the code, so the earlier review is no longer valid: run the review again, until a review has nothing left to fix.</p>
+      <p>The implementer fixes only the findings that were selected in the triage, and the checks run again. The code has changed, so another review is required: run the review again, until a review has nothing left to fix.</p>
       <dl class="agent">
         <dt>Who</dt><dd>Implementer agent</dd>
         <dt>Script</dt><dd><code>./scripts/apply-triage.sh &lt;triage&gt;</code></dd>
@@ -509,7 +527,7 @@
         <dt>After the merge</dt><dd><code>./scripts/cleanup-worktree.sh &lt;issue&gt;</code></dd>
       </dl>
     </section>
-    <section class="detail" id="step-run">
+    <section class="detail extra" id="step-run">
       <h3>Run a feature unattended</h3>
       <p>One command coordinates implementation, verification, review, triage, fixes, the commit, and the pull request. It retries a temporary failure and stops when it cannot safely continue.</p>
       <dl class="script">

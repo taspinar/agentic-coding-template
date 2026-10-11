@@ -15,6 +15,7 @@
   <nav class="nav" aria-label="Documentation">
     <ul>
       <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html">The workflow</a></li>
       <li><a href="research.html" aria-current="page">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
@@ -34,6 +35,7 @@
   <p>We compared approaches to planning, code review, verification, and agent orchestration, and kept the parts that fit a lightweight workflow on GitHub. A similarity with another project does not mean code was reused: no code was copied from the projects named here.</p>
   <p>
     <span class="tag built">Implemented</span> available in the template today ·
+    <span class="tag partial">Partially implemented</span> some of it is available ·
     <span class="tag principle">Design principle</span> shapes the workflow, without being a separate feature ·
     <span class="tag proposed">Under consideration</span> researched, not built ·
     <span class="tag left-out">Not adopted</span> deliberately left out
@@ -48,16 +50,21 @@
   <table>
     <thead><tr><th>Framework</th><th>What influenced us</th><th>What we didn't include</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td><a href="https://github.com/github/spec-kit">GitHub Spec Kit</a></td><td>Clear links between requirements, plans, tasks, and implementation; consistency checks</td><td>A second specification system with its own commands and directories</td><td><span class="tag built">Implemented in part</span> requirements, roadmap, feature issues, planning review</td></tr>
+      <tr><td><a href="https://github.com/github/spec-kit">GitHub Spec Kit</a></td><td>Clear links between requirements, plans, tasks, and implementation; consistency checks</td><td>A second specification system with its own commands and directories</td><td><span class="tag partial">Partially implemented</span> requirements, roadmap, feature issues, planning review</td></tr>
       <tr><td><a href="https://github.com/Fission-AI/OpenSpec">OpenSpec</a></td><td>Explicit change requests for an approved plan</td><td>A separate change-management tool with its own set of documents</td><td><span class="tag built">Implemented</span> the planning change process, with a new approval</td></tr>
-      <tr><td><a href="https://github.com/obra/superpowers">Superpowers</a></td><td>Verification before calling work done, independent reviews, short task contexts, systematic debugging</td><td>Installing every skill, or requiring test-first development for every change</td><td><span class="tag built">Implemented in part</span> reviews, verification, resuming; a debugging method is under consideration</td></tr>
+      <tr><td><a href="https://github.com/obra/superpowers">Superpowers</a></td><td>Verification before calling work done, independent reviews, short task contexts, systematic debugging</td><td>Installing every skill, or requiring test-first development for every change</td><td><span class="tag partial">Partially implemented</span> reviews, verification, resuming; a debugging method is under consideration</td></tr>
       <tr><td><a href="https://github.com/bmad-code-org/BMAD-METHOD">BMAD Method</a></td><td>Separate responsibilities for planning, implementation, and review</td><td>A large set of mandatory agent personas and documents</td><td><span class="tag principle">Design principle</span> focused agent roles</td></tr>
-      <tr><td><a href="https://github.com/open-gsd/gsd-core">GSD Core</a></td><td>Small tasks, progress notes that survive a session, resuming with a fresh context</td><td>A second orchestrator, or parallel execution by default</td><td><span class="tag built">Implemented in part</span> handoff notes and resuming; task scheduling is under consideration</td></tr>
+      <tr><td><a href="https://github.com/open-gsd/gsd-core">GSD Core</a></td><td>Small tasks, progress notes that survive a session, resuming with a fresh context</td><td>A second orchestrator, or parallel execution by default</td><td><span class="tag partial">Partially implemented</span> handoff notes and resuming; task scheduling is under consideration</td></tr>
     </tbody>
   </table>
   </div>
 
   <h2>Ideas from talks and development workflows</h2>
+  <h3>Talks and workshops</h3>
+  <ul>
+    <li><a href="https://youtu.be/-QFHIoCo-Ko">Matt Pocock: Full Walkthrough: Workflow for AI Coding</a>. Influenced our approach to clarifying requirements, vertical slices, and dependencies between tasks.</li>
+    <li><a href="https://youtu.be/rnDm57Py54A">Eric Zakariasson: Building your own software factory</a>. Prompted our research into isolated development environments, parallel agents, and better verification evidence.</li>
+  </ul>
 
   <h3>Clarify requirements before implementation</h3>
   <p>The <strong>Project Grill</strong> is a round of questions about goals, users, and scope. It turns a first idea into agreed requirements before an agent writes the plan. <span class="tag built">Implemented</span> A similar step for a single feature is <span class="tag proposed">Under consideration</span>.</p>
@@ -89,6 +96,15 @@
     </tbody>
   </table>
   </div>
+
+  <h2>Why we built it</h2>
+  <p>AI coding agents can help plan a project, implement features, write tests, and review changes. Using them across a whole development process raises practical questions. How do you keep the requirements consistent? How do you know a change was reviewed and tested? How do you let agents work on their own without giving up the important decisions?</p>
+  <p>The answers are established engineering practices, applied to work with agents. Three of them shaped the template most:</p>
+  <ul>
+    <li><strong>Clear requirements reduce rework.</strong> That is why every plan starts with a round of questions and your approval.</li>
+    <li><strong>Independent reviews help catch problems the implementer may miss.</strong> A separate reviewer that cannot edit the code reads every change, and every finding gets an explicit decision.</li>
+    <li><strong>Approval rules should not depend on an agent's judgment alone.</strong> Rules about the files a change touches come first; the reviewer's assessment comes on top and can only make the outcome stricter.</li>
+  </ul>
 
   <h2>What we learned from using the template</h2>
   <h3>Keeping existing projects up to date</h3>

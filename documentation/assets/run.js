@@ -1,9 +1,10 @@
 // The played run on the workflow page: one feature from idea to merge.
 //
-// The page holds the finished drawing, which is what a reader without this
-// script, or with reduced motion, sees. This script plays the run once when
-// the drawing scrolls into view, and again on request; the button under the
-// drawing stops a run that is playing and shows the result. Every element it
+// The page holds the finished drawing, which shows the complete workflow.
+// This script plays the walkthrough when the reader asks for it, and can
+// pause, resume, and return to the complete drawing. It also switches between
+// running a feature step by step and unattended, which differ in who decides
+// about review findings. Every element it
 // changes carries data-k; the drawing exists twice (across and down), and
 // both are played together.
 
@@ -182,7 +183,10 @@
   active(15.4, "review", "reviewing");
   at(16.2, function () { stat("review", "1 finding", "warn"); log(8); });
   line(16.3, 16.7, "review-triage");
-  active(16.7, "triage", "your decision");
+  at(16.7, function () {
+    state("triage", "active");
+    stat("triage", unattended() ? "agent decides" : "your decision");
+  });
   at(17.3, function () { gate("triage", true); stat("triage", "fix now", "warn"); log(9); });
   line(17.4, 18.4, "loop-fix");
   during(18.4, 19.3, function (progress) { bar(0.75 + 0.25 * progress, progress < 1 ? "fixing" : "done", progress < 1 ? "warn" : "ok"); });
@@ -216,13 +220,24 @@
     return progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
   }
 
-  var frame = 0;
-  var replay = root.querySelector(".run-replay");
+  function unattended() {
+    return root.getAttribute("data-mode") === "unattended";
+  }
 
-  // One button: it stops a run that is playing, and starts one otherwise.
+  var frame = 0;
+  var playButton = root.querySelector(".run-play");
+  var finishButton = root.querySelector(".run-finish");
+  var status = "complete"; // complete, playing, or paused
+  var elapsed = 0;
+  var finished = new Set();
+
   function label() {
-    if (replay) {
-      replay.textContent = root.classList.contains("playing") ? "Stop and show the result" : "Play again ↻";
+    root.classList.toggle("playing", status !== "complete");
+    if (playButton) {
+      playButton.textContent = status === "playing" ? "Pause" : status === "paused" ? "Resume" : "Play walkthrough";
+    }
+    if (finishButton) {
+      finishButton.hidden = status === "complete";
     }
   }
 
@@ -239,28 +254,23 @@
       });
     });
     log(lines.length - 1, false);
-    root.classList.remove("playing");
+    status = "complete";
     label();
   }
 
-  function play() {
-    cancelAnimationFrame(frame);
-    reset();
-    root.classList.add("playing");
-    label();
-    var finished = new Set();
-    var began = performance.now();
+  function run() {
+    var began = performance.now() - elapsed * 1000;
     function tick(now) {
-      var time = (now - began) / 1000;
+      elapsed = (now - began) / 1000;
       steps.forEach(function (step) {
-        if (finished.has(step) || time < step.start) {
+        if (finished.has(step) || elapsed < step.start) {
           return;
         }
         if (step.end === undefined) {
           step.action(1);
           finished.add(step);
         } else {
-          var progress = Math.min(1, (time - step.start) / (step.end - step.start));
+          var progress = Math.min(1, (elapsed - step.start) / (step.end - step.start));
           step.action(ease(progress));
           if (progress >= 1) {
             finished.add(step);
@@ -273,36 +283,54 @@
         finish();
       }
     }
+    status = "playing";
+    label();
     frame = requestAnimationFrame(tick);
   }
 
-  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  finish();
-  if (still) {
-    return;
+  function play() {
+    cancelAnimationFrame(frame);
+    reset();
+    elapsed = 0;
+    finished = new Set();
+    run();
   }
-  if (replay) {
-    replay.hidden = false;
-    replay.addEventListener("click", function () {
-      if (root.classList.contains("playing")) {
-        finish();
+
+  function pause() {
+    cancelAnimationFrame(frame);
+    status = "paused";
+    label();
+  }
+
+  finish();
+  var controls = root.querySelector(".run-controls");
+  if (controls && playButton && finishButton) {
+    controls.hidden = false;
+    playButton.addEventListener("click", function () {
+      if (status === "playing") {
+        pause();
+      } else if (status === "paused") {
+        run();
       } else {
         play();
       }
     });
+    finishButton.addEventListener("click", finish);
   }
-  if (typeof IntersectionObserver === "undefined") {
-    play();
-    return;
-  }
-  var observer = new IntersectionObserver(
-    function (entries) {
-      if (entries.some(function (entry) { return entry.isIntersecting; })) {
-        observer.disconnect();
-        play();
+
+  // The two ways to run a feature.
+  var modes = root.querySelector(".run-modes");
+  if (modes) {
+    modes.hidden = false;
+    modes.addEventListener("click", function (event) {
+      var button = event.target.closest && event.target.closest("[data-set-mode]");
+      if (!button) {
+        return;
       }
-    },
-    { threshold: 0.3 }
-  );
-  observer.observe(root.querySelector(".run-stage-box"));
+      root.setAttribute("data-mode", button.getAttribute("data-set-mode"));
+      modes.querySelectorAll("[data-set-mode]").forEach(function (other) {
+        other.setAttribute("aria-pressed", other === button ? "true" : "false");
+      });
+    });
+  }
 })();

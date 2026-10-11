@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>History · Agentic Coding Template</title>
-<meta name="description" content="How the template grew from a basic workflow for planning, implementation, and review to one command per feature.">
+<meta name="description" content="How the template grew from a manual workflow to unattended feature execution, in five milestones.">
 <link rel="stylesheet" href="assets/site.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
@@ -15,6 +15,7 @@
   <nav class="nav" aria-label="Documentation">
     <ul>
       <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html">The workflow</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html" aria-current="page">History</a></li>
@@ -30,40 +31,55 @@
 <main class="page">
 <div class="wrap">
   <h1>How the template evolved</h1>
-  <p class="lede">The template started as a basic workflow for planning, implementation, and independent review. Each step became a script only after it had been done by hand often enough to know what the script had to guarantee.</p>
+  <p class="lede">We started with a manual workflow and gradually automated the steps that proved useful and repeatable.</p>
   <p>The ideas behind the workflow are not new. The template combines established software engineering practices with AI coding tools and fits them into a development process on GitHub.</p>
+
+  <ol class="pipeline" aria-label="Five milestones">
+    <li><span>Initial workflow</span></li>
+    <li><span>Structured planning</span></li>
+    <li><span>Independent verification</span></li>
+    <li><span>Improved reliability</span></li>
+    <li><span>Unattended execution</span></li>
+  </ol>
 
   <ol class="timeline">
     <li>
-      <h2>A workflow, written down</h2>
-      <p>The first version was mostly documents: instructions for agents, a few policies, a guide for setting up a repository, and a rhythm of plan, act, and evaluate. A feature was planned in a GitHub issue, built in its own worktree, and read by a second agent. The developer carried the results from one step to the next.</p>
+      <h2>Initial workflow</h2>
+      <p>The first version was mostly documents: instructions for agents, a few policies, a setup guide, and a rhythm of plan, act, and evaluate. A feature was planned in a GitHub issue, built in its own worktree, and read by a second agent. Developers had to move between the steps themselves.</p>
       <p>The first scripts took over what was the same every time: creating the issue of a feature, starting the work, and starting the review. Soon after, each review finding got an explicit decision, and the implementer fixed only what had been decided.</p>
     </li>
     <li>
-      <h2>Planning before development</h2>
-      <p>Until then the template assumed that you already knew what to build. That was its weakest assumption. A planning process was added before the first feature: from an idea to clear requirements, an architecture, and a roadmap.</p>
+      <h2>Structured planning</h2>
+      <p>Until then the template assumed that you already knew what to build. A planning process was added before the first feature: from an idea to clear requirements, an architecture, and a roadmap.</p>
     </li>
     <li>
-      <h2>More reliable reviews and approvals</h2>
-      <p>Using the workflow showed where it relied on an agent's word: that the tests had passed, that a review covered the current code, that a finding had been dealt with. These were replaced, one by one, by something a script can check. The project's checks got one command. Reviews and decisions about findings became structured records, each linked to the version it was written for, so that a later change makes it visibly outdated. Reviewers lost the ability to edit files.</p>
-      <p>The plan got the same treatment as a feature: an independent review, a recorded decision for every finding, and an approval linked to the approved version of the documents.</p>
+      <h2>Independent verification</h2>
+      <p>Practical use revealed that some checks relied too heavily on the agent's own reports: that the tests had passed, that a review covered the current code, that a finding had been dealt with.</p>
+      <p>These were replaced by records a script can check. The project's checks got one command. Reviews and decisions about findings became structured records, each linked to the version it was written for. Reviewers lost the ability to edit files. The plan got its own independent review and an approval linked to the approved version of the documents.</p>
     </li>
     <li>
-      <h2>Improvements from regular use</h2>
-      <p>Building real features with the template brought practical problems to the surface. A session can end unexpectedly, so a feature can now resume from a handoff note. Verification ran more often than needed, so a successful run is recorded and reused for unchanged content. A plan sometimes has to change after its approval, so there is a change process for it. A second review only needs to read what changed. And because a project created from a template does not receive later improvements, a script now brings them over.</p>
+      <h2>Improved reliability</h2>
+      <p>Building real features brought practical problems to the surface, and each got an answer:</p>
+      <ul>
+        <li>A session can end unexpectedly, so a feature can resume from a handoff note.</li>
+        <li>Verification ran more often than needed, so a successful run is reused for unchanged content.</li>
+        <li>A plan sometimes has to change after its approval, so there is a change process for it.</li>
+        <li>A second review only needs to read what changed.</li>
+        <li>A project created from a template does not receive later improvements, so a script brings them over.</li>
+      </ul>
     </li>
     <li>
-      <h2>Unattended feature execution</h2>
-      <p>Once every step was a script, the steps could run in a row. One command now takes a feature from its issue to an open pull request without stopping for routine input. It still ends at the pull request: it does not merge.</p>
-      <p>Running features this way showed what unattended work needs. A script, not an agent, decides whether a step succeeded; it retries a temporary failure and lets the implementer repair a check that really fails. "Blocked" means only that a person has to decide. A feature is reviewed against the branch it started from, also when that branch has moved on. And whether a change needs the owner's approval is no longer left to the agent that made the change.</p>
+      <h2>Unattended execution</h2>
+      <p>Once every step was a script, the steps could run in a row. One command now takes a feature from its issue to an open pull request without stopping for routine input. It ends at the pull request: it does not merge.</p>
+      <p>Unattended work needed clearer rules. A script, not an agent, decides whether a step succeeded, and it retries a temporary failure. "Blocked" means only that a person has to decide. Reviews must stay up to date when the code or the base branch changes. And whether a change needs the owner's approval is no longer left to the agent that made the change.</p>
     </li>
   </ol>
 
   <h2>What the order shows</h2>
   <ul>
-    <li><strong>By hand first.</strong> Deciding on findings, the planning loop, and the unattended run were each a manual routine before they were a script.</li>
+    <li><strong>Manual first.</strong> Deciding on findings, the planning loop, and the unattended run were each a manual routine before they were a script.</li>
     <li><strong>Evidence before automation.</strong> Recorded reviews and verification came before the command that runs a feature alone. Without them an unattended run would have had nothing to stop on.</li>
-    <li><strong>Use sets the agenda.</strong> Once real work depended on the template, nearly every change answered something that had gone wrong.</li>
+    <li><strong>Improvements driven by real-world use.</strong> Once real work depended on the template, most changes answered something that had gone wrong.</li>
   </ul>
   <p>The template is still evolving. See <a href="future.html">Possible improvements</a> for the ideas under consideration.</p>
 </div>
