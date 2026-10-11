@@ -410,140 +410,6 @@ td:first-child {
 
 /* --- The workflow diagram -------------------------------------------------- */
 
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin: 14px 0 6px;
-  font-size: 13.5px;
-  color: var(--muted);
-}
-
-.legend span::before {
-  content: "";
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
-  margin-right: 6px;
-  vertical-align: -1px;
-  background: var(--swatch);
-}
-
-.legend .human {
-  --swatch: var(--human);
-}
-
-.legend .agent {
-  --swatch: var(--agent);
-}
-
-.legend .script {
-  --swatch: var(--script);
-}
-
-/* The overview: six blocks in a row, and under them the two ways back. A
-   block with the class group contains a diagram of its own. */
-.overview {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  column-gap: 26px;
-  margin: 18px 0 8px;
-  padding: 18px 18px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-}
-
-.overview > li {
-  position: relative;
-  max-width: none;
-}
-
-.overview > li:not(.back) {
-  grid-row: 1;
-}
-
-.overview .step {
-  height: 100%;
-}
-
-/* The arrow to the next block. */
-.overview > li:not(.back):not(:nth-child(6))::after {
-  content: "";
-  position: absolute;
-  right: -22px;
-  top: calc(50% - 1px);
-  width: 14px;
-  height: 2px;
-  background: var(--line);
-}
-
-.overview > li:not(.back):not(:nth-child(6))::before {
-  content: "";
-  position: absolute;
-  right: -24px;
-  top: calc(50% - 5px);
-  border: 5px solid transparent;
-  border-left-color: var(--muted);
-  border-right: 0;
-}
-
-.step.group b::after,
-.group-mark {
-  content: " ▸";
-  color: var(--edge, var(--agent));
-}
-
-.step.group {
-  box-shadow: 3px 3px 0 var(--edge);
-}
-
-/* A way back: a bracket under the row, from the centre of the last block to
-   the centre of the block it returns to, with its arrowhead there. */
-.overview > .back {
-  border: 2px solid var(--line);
-  border-top: 0;
-  border-radius: 0 0 12px 12px;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-.overview > .back span {
-  display: inline-block;
-  position: relative;
-  top: 0.75em;
-  background: var(--surface);
-  padding: 0 12px;
-}
-
-.overview > .back::before {
-  content: "";
-  position: absolute;
-  left: -6px;
-  top: -2px;
-  border: 5px solid transparent;
-  border-bottom-color: var(--muted);
-  border-top: 0;
-}
-
-.overview > .next-feature {
-  grid-row: 2;
-  grid-column: 4 / 7;
-  height: 20px;
-  margin: 6px 16.6% 0;
-}
-
-.overview > .change {
-  grid-row: 3;
-  grid-column: 2 / 7;
-  height: 30px;
-  margin: 0 10% 12px;
-}
-
 .diagram {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -842,59 +708,6 @@ dialog.popup .detail {
   }
 }
 
-/* The overview as a column: the ways back become two lines of text. */
-@media (max-width: 1180px) {
-  .overview {
-    grid-template-columns: 1fr;
-    row-gap: 22px;
-  }
-
-  .overview > li:not(.back) {
-    grid-row: auto;
-  }
-
-  .overview > li:not(.back):not(:nth-child(6))::after {
-    right: auto;
-    left: 50%;
-    top: auto;
-    bottom: -18px;
-    width: 2px;
-    height: 14px;
-  }
-
-  .overview > li:not(.back):not(:nth-child(6))::before {
-    right: auto;
-    left: calc(50% - 4px);
-    top: auto;
-    bottom: -19px;
-    border: 5px solid transparent;
-    border-top-color: var(--muted);
-    border-bottom: 0;
-  }
-
-  .overview > .back,
-  .overview > .next-feature,
-  .overview > .change {
-    grid-row: auto;
-    grid-column: 1;
-    height: auto;
-    margin: 0;
-    border: 0;
-    text-align: left;
-  }
-
-  .overview > .back::before {
-    content: "↺ ";
-    position: static;
-    border: 0;
-  }
-
-  .overview > .back span {
-    position: static;
-    padding: 0;
-  }
-}
-
 @media (max-width: 820px) {
   /* Without the script the navigation is the first part of the page. */
   .sidebar {
@@ -973,4 +786,389 @@ dialog.popup .detail {
   .sidebar {
     transition: none;
   }
+}
+
+/* --- The played run on the workflow page ---------------------------------- */
+
+:root {
+  --fail: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fail: #f2857c;
+  }
+}
+
+:root[data-theme="dark"] {
+  --fail: #f2857c;
+}
+
+.run {
+  margin: 20px 0 8px;
+}
+
+.run-stage-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.run-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Across on a wide screen, down on a narrow one. */
+.run-across {
+  display: none;
+}
+
+.run-down {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+@media (min-width: 1240px) {
+  .run-across {
+    display: block;
+  }
+
+  .run-down {
+    display: none;
+  }
+}
+
+.run-col,
+.run-hit {
+  fill: transparent;
+}
+
+a:hover > .run-col,
+a:focus-visible > .run-col {
+  fill: var(--accent-soft);
+  opacity: 0.6;
+}
+
+.run-svg a {
+  cursor: pointer;
+  outline: none;
+}
+
+.run-sep {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.run-stage {
+  fill: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.run-ghost,
+.run-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.run-ink {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.run-ghost.loop,
+.run-ink.loop {
+  stroke-dasharray: 5 5;
+}
+
+.run-ink.loop {
+  stroke: var(--human);
+}
+
+.run-track,
+.run-bar {
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.run-bar {
+  fill: none;
+  stroke: var(--agent);
+}
+
+.run-head {
+  fill: var(--accent);
+}
+
+.run-name {
+  fill: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.run-stat {
+  fill: var(--muted);
+  font-size: 13.5px;
+}
+
+.run-stat.ok {
+  fill: var(--script);
+}
+
+.run-stat.warn {
+  fill: var(--human);
+  font-weight: 650;
+}
+
+.run-gate {
+  fill: var(--human);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.run-gate.on {
+  opacity: 1;
+}
+
+.run-loop-label {
+  fill: var(--human);
+  font-size: 13px;
+  font-weight: 650;
+  transition: opacity 0.3s ease;
+}
+
+.run.playing .run-loop-label:not(.on) {
+  opacity: 0;
+}
+
+/* A stop of the route: a circle for an agent or a script, a diamond where
+   you decide. Grey while it waits, outlined while it works, filled when done. */
+.run-node {
+  --who: var(--script);
+}
+
+.run-node.human {
+  --who: var(--human);
+}
+
+.run-node.agent {
+  --who: var(--agent);
+}
+
+.run-node .ring {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 2.5;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+
+.run-node .halo {
+  fill: var(--who);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.run-node .mark {
+  fill: var(--surface);
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.run-node[data-state="active"] .ring {
+  stroke: var(--who);
+}
+
+.run-node[data-state="active"] .halo {
+  opacity: 0.18;
+}
+
+.run-node[data-state="done"] .ring {
+  fill: var(--who);
+  stroke: var(--who);
+}
+
+.run-node[data-state="fail"] .ring {
+  fill: var(--fail);
+  stroke: var(--fail);
+}
+
+.run-node:hover .halo,
+.run-node:focus-visible .halo {
+  opacity: 0.22;
+}
+
+.run-node:hover .run-name,
+.run-node:focus-visible .run-name,
+a:hover > .run-name {
+  text-decoration: underline;
+}
+
+/* Under the drawing: what happened, and the legend. */
+.run-below {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 22px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.run-log {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 16px 20px 18px;
+}
+
+.run-log figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  font-weight: 650;
+  margin-bottom: 10px;
+}
+
+.run-log figcaption span {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13.5px;
+}
+
+.run-log ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13.5px;
+}
+
+.run-log li {
+  display: grid;
+  grid-template-columns: 12.5em minmax(0, 1fr);
+  gap: 12px;
+  max-width: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: opacity 0.3s ease, background-color 0.3s ease;
+}
+
+.run-log .k {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.run-log .is-gate .k {
+  color: var(--human);
+  font-weight: 700;
+}
+
+.run-log .is-warn span:last-child {
+  color: var(--human);
+}
+
+.run-log li.pending {
+  opacity: 0.25;
+}
+
+.run-log li.now {
+  background: var(--accent-soft);
+}
+
+.run-legend {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
+.run-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.run-legend b {
+  color: var(--ink);
+}
+
+.run-legend svg {
+  flex: none;
+}
+
+.run-legend .human rect {
+  fill: var(--human);
+}
+
+.run-legend .agent circle {
+  fill: var(--agent);
+}
+
+.run-legend .script circle {
+  fill: var(--script);
+}
+
+.run-replay {
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.run-replay:hover {
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .run-below {
+    grid-template-columns: 1fr;
+  }
+
+  .run-log li {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-node .ring,
+  .run-node .halo,
+  .run-gate,
+  .run-loop-label,
+  .run-log li {
+    transition: none;
+  }
+}
+
+.run-tip {
+  fill: var(--human);
+  transition: opacity 0.3s ease;
+}
+
+.run.playing .run-tip:not(.on) {
+  opacity: 0;
 }
