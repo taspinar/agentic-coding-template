@@ -1,0 +1,44 @@
+name: Documentation
+
+# Publishes the documentation site of the template: the folder documentation/
+# and nothing else of the repository.
+#
+# This workflow belongs to the template itself. It is not in the paths that
+# sync-template.sh hands to a project, and it runs only in a repository that
+# sets the variable PUBLISH_DOCUMENTATION to "true", so a project created
+# from the template does not publish the template's documentation.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - documentation/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: vars.PUBLISH_DOCUMENTATION == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the site against the repository
+        run: ./documentation/check.sh
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: documentation
+      - id: deployment
+        uses: actions/deploy-pages@v4

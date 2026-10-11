@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The workflow · Agentic Coding Template</title>
+<meta name="description" content="From a project idea to merged features: every step of the template, who acts in it, and where a human decides.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <p class="nav-group">Start</p>
+    <ul>
+      <li><a href="index.html">Introduction</a></li>
+      <li><a href="research.html">Research and comparisons</a></li>
+    </ul>
+    <p class="nav-group">How it works</p>
+    <ul>
+      <li><a href="workflow.html" aria-current="page">The workflow</a></li>
+      <li><span class="soon">The planning round</span></li>
+      <li><span class="soon">Running unattended</span></li>
+      <li><span class="soon">The merge gate</span></li>
+    </ul>
+    <p class="nav-group">Background</p>
+    <ul>
+      <li><a href="history.html">History</a></li>
+      <li><a href="future.html">Possible improvements</a></li>
+      <li><span class="soon">Notes from a real project</span></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap wide">
+  <h1>The workflow</h1>
+  <p class="lede">A project is planned once and approved by you. After that, every feature of the roadmap goes the same way: its own Issue, its own worktree, an independent review, and one pull request that you merge.</p>
+
+  <p>The overview shows the whole route. Select "Project planning" or "Feature work" to open the steps inside it, with the loops back to an earlier step; select a step there to see which script runs it, what goes in and comes out, who decides, and when it stops. Everything is also on this page, <a href="#phases">below the overview</a>.</p>
+
+  <div class="legend" aria-label="Who acts in a step">
+    <span class="human">You decide or approve</span>
+    <span class="agent">An agent works</span>
+    <span class="script">A script checks or records</span>
+  </div>
+
+  <ol class="overview" aria-label="The workflow from idea to merge">
+    <li><a class="step human" href="#step-idea"><b>Project idea</b><small>your description</small></a></li>
+    <li><a class="step agent group" href="#planning"><b>Project planning</b><small>grill, plan, review, revise</small></a></li>
+    <li><a class="step human" href="#step-planning-merge"><b>Planning approved</b><small>merged by you</small></a></li>
+    <li><a class="step script" href="#step-issue"><b>Feature Issue</b><small>one roadmap feature</small></a></li>
+    <li><a class="step agent group" href="#feature"><b>Feature work</b><small>implement, review, fix</small></a></li>
+    <li><a class="step human" href="#step-merge"><b>Merge</b><small>pull request, by you</small></a></li>
+    <li class="back next-feature" aria-hidden="true"><span>next roadmap feature</span></li>
+    <li class="back change"><span>the planning has to change: <a class="popup-link" href="#step-change">change cycle</a></span></li>
+  </ol>
+
+  <h2 id="phases">The two phases, step by step</h2>
+  <p>The blocks marked with <span class="group-mark" aria-hidden="true">▸</span> in the overview contain these steps.</p>
+
+  <div class="diagram">
+    <section class="lane" id="planning" aria-labelledby="lane-planning">
+      <h3 id="lane-planning">1 · Project planning</h3>
+      <p>Once per project, in the planning worktree.</p>
+      <ol class="steps">
+        <li style="grid-row: 1"><a class="step human" href="#step-idea"><b>Project idea</b><small>You describe what you want to build</small></a></li>
+        <li style="grid-row: 2"><a class="step human" href="#step-grill"><b>Project Grill and requirements</b><small>start-planning.sh · questions, then your approval</small></a></li>
+        <li style="grid-row: 3"><a class="step agent" href="#step-plan"><b>Planner writes the planning</b><small>architecture, roadmap, decisions</small></a></li>
+        <li style="grid-row: 4"><a class="step agent" href="#step-planning-review"><b>Independent planning review</b><small>review-planning.sh · read-only</small></a></li>
+        <li style="grid-row: 5"><a class="step human" href="#step-revise"><b>Decide on the findings, revise</b><small>revise-planning.sh · your approval</small></a></li>
+        <li style="grid-row: 6"><a class="step human" href="#step-finish-planning"><b>Final approval</b><small>finish-planning.sh · bound to the exact documents</small></a></li>
+        <li style="grid-row: 7" class="last"><a class="step human" href="#step-planning-merge"><b>Planning pull request merged</b><small>the approved planning is on main</small></a></li>
+        <li class="loop" style="grid-row: 4 / 6" aria-hidden="true"><span>findings adopted: review again</span></li>
+      </ol>
+    </section>
+
+    <section class="lane" id="feature" aria-labelledby="lane-feature">
+      <h3 id="lane-feature">2 · Every feature</h3>
+      <p>Per roadmap feature, in its own worktree and branch.</p>
+      <p class="unattended"><b>run-feature.sh</b> runs the steps from the implementation to the open pull request without you, with at most five review rounds. It never merges. <a class="popup-link" href="#step-run">Details</a></p>
+      <ol class="steps">
+        <li style="grid-row: 1"><a class="step script" href="#step-issue"><b>Feature Issue</b><small>create-feature-issue.sh · just in time</small></a></li>
+        <li style="grid-row: 2"><a class="step agent" href="#step-implement"><b>Implementation</b><small>start-feature.sh · own worktree</small></a></li>
+        <li style="grid-row: 3"><a class="step script" href="#step-verify"><b>Verification</b><small>verify.sh · the project's own checks</small></a></li>
+        <li style="grid-row: 4"><a class="step agent" href="#step-review"><b>Independent feature review</b><small>review-feature.sh · read-only</small></a></li>
+        <li style="grid-row: 5"><a class="step human" href="#step-triage"><b>Triage of the findings</b><small>triage-review.sh · your approval</small></a></li>
+        <li style="grid-row: 6"><a class="step agent" href="#step-fix"><b>Fixes</b><small>apply-triage.sh · only what the triage says</small></a></li>
+        <li style="grid-row: 7"><a class="step script" href="#step-commit"><b>Commit with evidence</b><small>finish-feature.sh · review and gate recorded</small></a></li>
+        <li style="grid-row: 8"><a class="step script" href="#step-publish"><b>Pull request and CI</b><small>publish-feature.sh</small></a></li>
+        <li style="grid-row: 9" class="last"><a class="step human" href="#step-merge"><b>Merge</b><small>you, or what the merge gate allows</small></a></li>
+        <li class="loop" style="grid-row: 4 / 7" aria-hidden="true"><span>fixed: review the changes again</span></li>
+      </ol>
+    </section>
+  </div>
+  <p class="between">After a merge the next roadmap feature starts at "Feature Issue". When the planning itself has to change, a <a class="popup-link" href="#step-change">change cycle</a> leads back to the planning.</p>
+
+  <h2 id="ways">Three ways to work</h2>
+  <p>The steps are the same every time; what differs is who starts them. Choose per feature: a risky or unclear feature step by step, routine work with one command.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Way</th><th>You do</th><th>Runs by itself</th><th>Ends at</th><th>Choose it when</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Step by step</td>
+        <td>Run each script, follow the agent in its session, approve the triage and the commit message</td>
+        <td>One step at a time</td>
+        <td>Wherever you stop</td>
+        <td>The feature is risky, the requirements are unclear, or you want to learn what the workflow does</td>
+      </tr>
+      <tr>
+        <td>One command per feature</td>
+        <td>Start <code>run-feature.sh</code> for an Issue; afterwards read the pull request and the triage decisions that were approved without you, and merge</td>
+        <td>Implementation, review, triage, fixes, commit, and pull request, with at most five review rounds</td>
+        <td>An open pull request, or a stop with its reason</td>
+        <td>The Issue is clear and the feature is routine</td>
+      </tr>
+      <tr>
+        <td>A supervised queue of features</td>
+        <td>Agree on a rule for merging, and decide what the gate holds back</td>
+        <td>A supervising agent starts several runs side by side, restarts what stopped on a temporary fault, brings branches up to date, and merges what the rule allows</td>
+        <td>Merged features, and a list of what waits for you</td>
+        <td>Several independent features are ready and you are away</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The first two are the template. The third is how it was used on a real project, with a coding agent as the supervisor and a few helper scripts of that project; the template has no queue of its own. The merge rule there was: the last review passed, CI is green on a branch that contains the current <code>main</code>, and the commit records that the owner's approval is not required. A ready queue and parallel runs that avoid each other's files are among the <a href="future.html">possible improvements</a>.</p>
+
+  <h2 id="steps">Every step in detail</h2>
+
+  <h3>Project planning</h3>
+  <div class="details">
+    <section class="detail" id="step-idea">
+      <p class="who human">You</p>
+      <h3>Project idea</h3>
+      <p>The planning starts from a short description in your own words. It does not have to be complete: the next step asks what is missing.</p>
+      <dl>
+        <dt>Goes in</dt><dd><code>PROJECT_DESCRIPTION.md</code>, written by you</dd>
+        <dt>Comes out</dt><dd>The starting point of the planning; the file is never rewritten by an agent</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-grill">
+      <p class="who human">You, questioned by an agent</p>
+      <h3>Project Grill and requirements</h3>
+      <p>An agent questions you about goals, users, scope, and what is deliberately left out, until the open ends are named. It writes the requirements; nothing is planned before you approve them.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/start-planning.sh &lt;name&gt;</code></dd>
+        <dt>Goes in</dt><dd>The project description and your answers</dd>
+        <dt>Comes out</dt><dd><code>docs/PROJECT_REQUIREMENTS.md</code> in the planning worktree <code>planning/&lt;name&gt;</code></dd>
+        <dt>Human gate</dt><dd>You approve the requirements before the planner starts</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-plan">
+      <p class="who agent">Planner agent</p>
+      <h3>Planner writes the planning</h3>
+      <p>From the approved requirements the planner writes the architecture, a roadmap of features with stable IDs and dependencies, and a decision record for each choice that is hard to reverse. The roadmap states intent; it is not a backlog of Issues.</p>
+      <dl>
+        <dt>Script</dt><dd>The same run of <code>start-planning.sh</code></dd>
+        <dt>Comes out</dt><dd><code>docs/architecture.md</code>, <code>docs/roadmap.md</code>, <code>docs/decisions/</code></dd>
+        <dt>Stops when</dt><dd>The planner has a question only you can answer; it is recorded, not guessed</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-planning-review">
+      <p class="who agent">Planning reviewer, read-only</p>
+      <h3>Independent planning review</h3>
+      <p>A second agent, preferably another model, reads the planning without being able to change it. Its findings are structured data that a script validates, so a later step can tell whether each one was answered.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/review-planning.sh</code></dd>
+        <dt>Comes out</dt><dd>A review record with findings by severity, and a readable report</dd>
+        <dt>Next</dt><dd>Findings: decide on them. No findings: final approval</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-revise">
+      <p class="who human">You, on a proposal of the planner</p>
+      <h3>Decide on the findings, revise</h3>
+      <p>The planner proposes a decision per finding: adopt, reject, defer, or escalate to you. You approve the decisions, and only then are the documents revised. A revision that changes the planning makes the review stale, so the review runs again.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/revise-planning.sh</code></dd>
+        <dt>Human gate</dt><dd>You approve the decisions; an escalated finding needs your answer</dd>
+        <dt>Loop</dt><dd>Back to the planning review until a round changes nothing</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-finish-planning">
+      <p class="who human">You</p>
+      <h3>Final approval</h3>
+      <p>Your approval is recorded together with a fingerprint of the documents you approved. A later change to the requirements or the roadmap makes it stale; an update of the architecture by a feature does not.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/finish-planning.sh</code></dd>
+        <dt>Comes out</dt><dd><code>docs/PLANNING_APPROVAL.md</code> and the planning commit</dd>
+        <dt>Refuses when</dt><dd>The latest review is stale or has an unresolved escalation</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-planning-merge">
+      <p class="who human">You</p>
+      <h3>Planning pull request merged</h3>
+      <p>The planning reaches <code>main</code> through a pull request like any other change. From here on, features can start.</p>
+      <dl>
+        <dt>Comes out</dt><dd>An approved planning on <code>main</code></dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-change">
+      <p class="who human">You, then the same loop</p>
+      <h3>Changing an approved planning</h3>
+      <p>An approved planning is not edited by hand. You write a short change request, the planner changes only what the request needs, and the review, the decisions, and your approval follow as before. A changed requirement is questioned first with <code>--grill</code>. Feature IDs stay stable, and a decision record is superseded, not removed.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/start-planning.sh &lt;name&gt; --change &lt;file&gt;</code></dd>
+        <dt>Small amendment</dt><dd><code>./scripts/finish-planning.sh --amend</code> for the architecture and decision records only</dd>
+        <dt>Meanwhile</dt><dd>No new feature Issue is created until the change is approved and merged; features in progress continue</dd>
+      </dl>
+    </section>
+  </div>
+
+  <h3>Every feature</h3>
+  <div class="details">
+    <section class="detail" id="step-issue">
+      <p class="who script">Script</p>
+      <h3>Feature Issue</h3>
+      <p>One feature of the roadmap becomes one GitHub Issue, created when you are about to build it. The roadmap is not turned into a backlog of Issues in advance: by the time a late feature starts, the project has learned things its Issue should know.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/create-feature-issue.sh F01</code></dd>
+        <dt>Goes in</dt><dd>The roadmap entry of the feature</dd>
+        <dt>Refuses when</dt><dd>The planning approval is not current</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-implement">
+      <p class="who agent">Implementer agent</p>
+      <h3>Implementation</h3>
+      <p>The feature gets its own Git worktree and branch, so several features can be in progress without touching each other. The implementer reads the Issue, the architecture, and the accepted decisions, then writes the code, the tests, a summary of the changes, and a handoff note for whoever continues.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt;</code>; <code>--resume</code> continues an interrupted session</dd>
+        <dt>Comes out</dt><dd>Uncommitted work in <code>feature/&lt;issue&gt;-&lt;slug&gt;</code></dd>
+        <dt>Stops when</dt><dd>The agent needs a decision of yours: it ends as blocked with its question in the handoff note</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-verify">
+      <p class="who script">Script</p>
+      <h3>Verification</h3>
+      <p>The checks of the project (tests, linters, builds) are declared in one file and run by one command, locally and in CI. A pass is recorded for exactly the content that was checked, so a later step can rely on it without running everything twice.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/verify.sh</code>, configured in <code>scripts/verify.conf</code></dd>
+        <dt>Rule</dt><dd>No review of work that does not pass, and no commit either</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-review">
+      <p class="who agent">Reviewer, read-only</p>
+      <h3>Independent feature review</h3>
+      <p>A reviewer that did not write the code, preferably another model, reads the complete change against the Issue. It cannot edit anything. It reports findings by severity, gives a verdict, and classifies the impact on the architecture, which the merge gate uses later.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt;</code>; <code>--changes</code> reviews only what changed since the previous round</dd>
+        <dt>Comes out</dt><dd>A review record bound to the reviewed content; a change afterwards makes it stale</dd>
+        <dt>Next</dt><dd>Findings: triage. No findings: commit</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-triage">
+      <p class="who human">You, on a proposal of an agent</p>
+      <h3>Triage of the findings</h3>
+      <p>Not every finding has to be fixed now, but every finding gets an explicit answer: fix now, defer to a follow-up Issue, or accept with a reason. The approved triage is published on the feature Issue, so the decision is on record where the work is discussed.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/triage-review.sh &lt;review&gt;</code></dd>
+        <dt>Human gate</dt><dd>You approve the triage; in an unattended run the triage agent's proposal is published for you to read afterwards</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-fix">
+      <p class="who agent">Implementer agent</p>
+      <h3>Fixes</h3>
+      <p>The implementer resolves the findings the triage marked "fix now" and nothing else. It cannot change the review or the triage it works from. After the fixes the review runs again, on the changes only.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/apply-triage.sh &lt;triage&gt;</code></dd>
+        <dt>Loop</dt><dd>Back to the review until a round passes</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-commit">
+      <p class="who script">Script</p>
+      <h3>Commit with evidence</h3>
+      <p>The commit is made by a script that first checks that verification passes and that the latest review is current and resolved. The message records the review result, the verification, and whether the merge needs the owner's approval, for exactly this content.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/finish-feature.sh &lt;issue&gt; "&lt;summary&gt;"</code></dd>
+        <dt>Never</dt><dd>Pushes or merges</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-publish">
+      <p class="who script">Script</p>
+      <h3>Pull request and CI</h3>
+      <p>The branch is pushed and one pull request is opened that closes the Issue. CI runs the same verification as the local command.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/publish-feature.sh &lt;issue&gt;</code></dd>
+        <dt>Comes out</dt><dd>An open pull request with the evidence in its description</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-merge">
+      <p class="who human">You</p>
+      <h3>Merge</h3>
+      <p>Merging is a human decision. A change of a decision record, of a protected path, or with an impact the reviewer calls major or breaking always waits for the owner; the rules are read from the base branch, so a feature cannot relax the gate it is checked by.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/check-guardrails.sh</code> decides what needs the owner</dd>
+        <dt>Afterwards</dt><dd><code>./scripts/cleanup-worktree.sh &lt;issue&gt;</code> removes the worktree</dd>
+      </dl>
+    </section>
+
+    <section class="detail" id="step-run">
+      <p class="who script">Script, driving the agents</p>
+      <h3>One command for a feature</h3>
+      <p><code>run-feature.sh</code> runs the implementation, the review, the triage, the fixes, the commit, and the pull request in order, without questions. The script, not an agent, decides whether a step succeeded: it retries what looks temporary, lets the implementer repair a verification that fails twice, and stops with a clear reason otherwise.</p>
+      <dl>
+        <dt>Script</dt><dd><code>./scripts/run-feature.sh &lt;issue&gt;</code></dd>
+        <dt>Limits</dt><dd>At most five review rounds; it ends at an open pull request and never merges</dd>
+        <dt>Stops when</dt><dd>An agent needs your decision, a step keeps failing, or the rounds are used up</dd>
+      </dl>
+    </section>
+  </div>
+
+  <h2>Where the details are</h2>
+  <p>This page explains the flow. The reference that agents and scripts follow stays in the repository:</p>
+  <ul>
+    <li><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/workflow.md">docs/workflow.md</a>: per step, who acts, what is written, and what is committed.</li>
+    <li><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md">docs/development.md</a>: every command and option.</li>
+    <li><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/example.md">docs/example.md</a>: a complete run with a sample project.</li>
+  </ul>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

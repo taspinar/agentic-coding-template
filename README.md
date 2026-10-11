@@ -14,6 +14,11 @@ flowchart LR
   pr -- next feature --> issue
 ```
 
+The [documentation site](https://taspinar.github.io/agentic-coding-template/)
+explains the workflow with a diagram you can click through, how the template
+came about, and what it was compared with. The reference is in this
+repository:
+
 - [Workflow](docs/workflow.md): the workflow in flow, artifact, and reference views.
 - [Worked example](docs/example.md): a complete run with a sample project.
 - [Development](docs/development.md): every command and its options.
@@ -23,6 +28,8 @@ flowchart LR
 
 1. Create a repository from this template, complete `docs/repository-setup.md`,
    and check your machine with `./scripts/doctor.sh`.
+   Delete `documentation/` and `.github/workflows/pages.yml`: they are the
+   site of the template itself.
 2. Set the provider and model of each role in `.agents/agents.conf`.
 3. Plan the project in a planning worktree:
 

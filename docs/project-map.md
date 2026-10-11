@@ -106,3 +106,5 @@ What each part of the template is for. The workflow that connects them is in
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |
 | `tests/` | Integration tests of the workflow scripts, run by `verify.sh` when a workflow file changed, and always in CI | Yes |
+| `documentation/` | The documentation site of the template, published on GitHub Pages: hand-written HTML, one style sheet, one script, and `check.sh`, which checks its links and the scripts it names against the repository. The template's own; not synced to a project | Delete in a project |
+| `.github/workflows/pages.yml` | Publishes `documentation/` and nothing else, only in a repository that sets the variable `PUBLISH_DOCUMENTATION` to `true`. The template's own; not synced to a project | Delete in a project |
