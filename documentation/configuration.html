@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration and security · Agentic Coding Template</title>
+<meta name="description" content="Agent roles and models, permission profiles, the merge approval gate, what GitHub has to enforce, verification, and template updates.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <ul>
+      <li><a href="index.html">Introduction</a></li>
+      <li><a href="getting-started.html">Getting started</a></li>
+      <li><a href="workflow.html">The workflow</a></li>
+      <li><a href="configuration.html" aria-current="page">Configuration and security</a></li>
+      <li><a href="research.html">Research and design choices</a></li>
+      <li><a href="history.html">History</a></li>
+      <li><a href="future.html">Possible improvements</a></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap wide">
+  <h1>Configuration and security</h1>
+  <p class="lede">Which agent does what, what an agent is allowed to do, how the workflow flags risky changes, and what you have to set up in GitHub yourself.</p>
+  <div class="note"><p><strong>The short version:</strong> the scripts decide what an agent may do on your machine and point out changes that need your attention. They do not control who can merge on GitHub. For that you configure branch rules and permissions in the repository.</p></div>
+
+  <h2 id="roles">Agent roles and models</h2>
+  <p>A role is a job in the workflow, not a person or an account. Each role has an agent and a model, set in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/agents.conf"><code>.agents/agents.conf</code></a>, one role per line:</p>
+<pre><code>implementer: codex &lt;model&gt;
+reviewer: claude &lt;model&gt;</code></pre>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Role</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>project-grill</code></td><td>Asks you questions about a new project and writes the requirements</td></tr>
+      <tr><td><code>project-planner</code></td><td>Writes the architecture, the roadmap, and the decision records</td></tr>
+      <tr><td><code>planning-reviewer</code></td><td>Reviews the plan, read-only</td></tr>
+      <tr><td><code>implementer</code></td><td>Implements a feature and writes its tests</td></tr>
+      <tr><td><code>reviewer</code></td><td>Reviews a feature, read-only</td></tr>
+      <tr><td><code>triage</code></td><td>Proposes what to do with each review finding</td></tr>
+      <tr><td><code>triage-implementer</code></td><td>Fixes the findings that were selected</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The supported agents are Claude Code (<code>claude</code>) and Codex (<code>codex</code>). You can override the agent and the model for one run with <code>--agent</code> and <code>--model</code> on a workflow script. The model you name is passed to the agent as it is: the workflow never replaces it with another one, and an unknown agent is an error.</p>
+  <p>A different agent for writing and for reviewing gives you a more independent review.</p>
+
+  <h2 id="profiles">What an agent is allowed to do</h2>
+  <p>A script starts an agent with one of three permission profiles:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Profile</th><th>Used for</th><th>What the agent can do</th></tr></thead>
+    <tbody>
+      <tr><td><strong>write</strong></td><td>A step you follow in the terminal, such as implementing a feature</td><td>Change files in its worktree and use the network. For anything beyond that it asks you: Claude before it runs a shell command, Codex before a command leaves its sandbox</td></tr>
+      <tr><td><strong>unattended</strong></td><td>A step that runs without you, such as in <code>run-feature.sh</code></td><td>The same reach as write, and it asks nothing. What it would have asked you is decided without you, in a different way per agent: Codex stays inside its sandbox and is refused what leaves it; Claude runs in its automatic permission mode, whose own check allows or denies each action, and anything that would still need a question is denied. It gets none of your personal integrations, such as MCP servers or apps</td></tr>
+      <tr><td><strong>read-only</strong></td><td>Reviews and triage proposals</td><td>Read files. It cannot change them, and it gets none of your personal integrations</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>If an agent cannot enforce a profile, the script stops. It never starts the agent with broader permissions instead.</p>
+  <p><strong>What this is not:</strong> a profile uses the permission and sandbox settings of the agent's own command-line tool. It is not a container or a virtual machine. All agents share your machine, your network, and whatever databases and services run there, and a worktree separates working files only. Full isolation per agent is one of the <a href="future.html">possible improvements</a>.</p>
+
+  <h2 id="gate">Changes that need the owner</h2>
+  <p>Before a feature is committed, <code>check-guardrails.sh</code> looks at which files it changes. The rules come from the base branch, so a feature cannot loosen the rules it is checked against.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Kind of change</th><th>Examples</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Protected</strong></td><td>Decision records in <code>docs/decisions/</code>, CI workflows, <code>CODEOWNERS</code>, the agent configuration, and the scripts and prompts that carry out the review</td><td>The pull request is opened and marked as needing the owner's approval. No script merges it</td></tr>
+      <tr><td><strong>Sensitive</strong></td><td><code>docs/architecture.md</code>, a new check in <code>scripts/verify.conf</code>, and paths you add yourself</td><td>Allowed; the reviewer is told to look at it closely</td></tr>
+      <tr><td>Everything else</td><td>Ordinary feature work</td><td>No extra step</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>You add the paths that matter in your project, such as the deployment or the dependency manifest, to <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/policies/guardrails.conf"><code>.agents/policies/guardrails.conf</code></a>. Changing or removing an existing check in <code>scripts/verify.conf</code> counts as protected; adding one counts as sensitive.</p>
+  <p>The reviewer also says how much a change affects the architecture. A "major" or "breaking" assessment marks the change as needing the owner, whatever the files are. The reviewer can make the outcome stricter, never looser.</p>
+
+  <h2 id="github">What GitHub has to enforce</h2>
+  <p>The gate above is a check and a label. It tells you which pull requests need your attention, and the workflow's own scripts will not merge them. It does <strong>not</strong> stop someone, or an agent with your credentials, from merging on GitHub. To enforce the rules, configure the repository:</p>
+  <ul>
+    <li><strong>A ruleset for <code>main</code></strong> that requires a pull request and the CI check before a merge. <code>./scripts/doctor.sh</code> warns you when the check is not required. The <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">repository setup guide</a> lists the settings.</li>
+    <li><strong><code>.github/CODEOWNERS</code></strong> ships with the placeholder <code>@YOUR_GITHUB_USERNAME</code>. Replace it with your own account before you require code owner reviews; until then the file has no effect.</li>
+    <li><strong>Bypass rights:</strong> a repository administrator can usually bypass a ruleset. Decide whether that should apply to you.</li>
+  </ul>
+  <p><strong>One identity:</strong> an agent runs with the GitHub permissions of the account that started it. If that account may merge, so may the agent, and no script can prevent it. A separate GitHub identity with limited permissions for agents is not built yet (<a href="https://github.com/taspinar/agentic-coding-template/issues/99">Issue 99</a>).</p>
+
+  <h2 id="verification">Project checks and workflow checks</h2>
+  <p><code>./scripts/verify.sh</code> runs two sets of checks:</p>
+  <ul>
+    <li><strong>Your project's checks</strong>, listed in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/scripts/verify.conf"><code>scripts/verify.conf</code></a>, one command per line: tests, linters, builds. They always run. The file ships with the checks of the template itself; you replace them with your own.</li>
+    <li><strong>Tests of the workflow scripts</strong>, listed in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/scripts/verify-workflow.conf"><code>scripts/verify-workflow.conf</code></a>. They protect the workflow, not your application, and run locally only when a workflow file changed. <code>./scripts/verify.sh --all</code> always runs them, and CI uses that.</li>
+  </ul>
+  <p>A successful run is recorded for the exact content of the working tree that was checked, together with which checks ran. With <code>--reuse</code>, a later step skips the run only when that content is unchanged and the recorded run covered every check that is required now: a run that skipped the workflow tests does not count where they are required. Any change to the content means the checks run again.</p>
+  <p>A review belongs to the content that was reviewed: a change to that content requires another review. New commits on the base branch alone do not make a review outdated.</p>
+  <p>Separately, if the point where the feature branched off its base branch has changed, for example after you merged the base branch into the feature, any later review has to cover the complete feature and cannot be limited to the recent changes.</p>
+  <p>The guidance on what makes a check worth having is in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/evaluation.md"><code>docs/evaluation.md</code></a>: checks that protect behavior matter more than the number of tests.</p>
+
+  <h2 id="sync">Keeping a project up to date</h2>
+  <p>A repository created from the template does not receive the template's later improvements. <code>./scripts/sync-template.sh</code> brings them over:</p>
+  <ul>
+    <li>It touches only the files listed under <code>paths:</code> in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/template.conf"><code>.agents/template.conf</code></a>: the workflow scripts, prompts, policies, schemas, the CI and guardrails workflows, and the workflow documentation. Your code, your requirements, your roadmap, and your <code>scripts/verify.conf</code> stay yours.</li>
+    <li>A file you did not change is replaced. A file both sides changed is merged, and a conflict is left in the file and reported. A file the template removed is reported, never deleted.</li>
+    <li>To keep a listed file as your own, add <code>:(exclude)&lt;path&gt;</code> to the list.</li>
+    <li>The script never commits or pushes: you review the result and open a pull request.</li>
+  </ul>
+  <p>What each file in the repository is for is in the <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/project-map.md">project map</a>.</p>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

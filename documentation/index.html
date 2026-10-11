@@ -17,6 +17,7 @@
       <li><a href="index.html" aria-current="page">Introduction</a></li>
       <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html">The workflow</a></li>
+      <li><a href="configuration.html">Configuration and security</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
       <li><a href="future.html">Possible improvements</a></li>
@@ -32,7 +33,8 @@
 <div class="wrap wide">
   <h1>Agentic Coding Template</h1>
   <p class="lede">A GitHub repository template for building software with AI coding agents.</p>
-  <p>From an initial idea to a reviewed pull request, the template helps you organize AI-assisted development without having to manage every step manually. It works with Claude Code and Codex, and with any programming language or framework.</p>
+  <p>Plan projects, implement features, review code independently, and verify changes with a repeatable workflow. You choose which agents and models do the work, and you keep the important decisions.</p>
+  <p>It works with Claude Code and Codex, and with any programming language or framework.</p>
   <p class="actions">
     <a class="button primary" href="getting-started.html">Get started</a>
     <a class="button" href="https://github.com/taspinar/agentic-coding-template">View on GitHub</a>
@@ -43,25 +45,25 @@
   <ol class="phases">
     <li>
       <h3>1. Plan</h3>
-      <p>Clarify the requirements, define the architecture, and create a roadmap.</p>
+      <p>Clarify the requirements, define the architecture, and approve a roadmap.</p>
       <p class="who">You approve the plan</p>
     </li>
     <li>
       <h3>2. Build</h3>
-      <p>An AI agent implements each feature in a separate Git branch and worktree.</p>
+      <p>An AI agent implements a feature in its own Git branch and worktree.</p>
     </li>
     <li>
       <h3>3. Verify and review</h3>
-      <p>Run the tests, review the code independently, and fix issues when needed.</p>
+      <p>Run the checks, review the change independently, and address the findings.</p>
     </li>
     <li>
-      <h3>4. Merge</h3>
-      <p>Open a pull request with the verification evidence, ready for the final review.</p>
+      <h3>4. Deliver</h3>
+      <p>Open a pull request with the recorded verification and review evidence.</p>
       <p class="who">An authorized maintainer merges</p>
     </li>
   </ol>
-  <p class="phases-note">Each feature follows the build, review, and merge cycle. The project plan can be updated when requirements change.</p>
-  <p><strong>Agents handle the development workflow. You stay in control of requirements, approvals, and the final merge.</strong></p>
+  <p class="phases-note">Each feature goes through build, review, and delivery. The project plan can be updated when requirements change.</p>
+  <p><strong>Agents handle much of the development work. You stay in control of requirements, important approvals, and how changes are merged.</strong></p>
   <p><a href="workflow.html">Explore the detailed workflow</a></p>
 
   <h2>What's inside the template</h2>
@@ -114,12 +116,12 @@
 
   <h2>Why use it</h2>
   <div class="cards">
-    <div class="card"><h3>Independent reviews</h3><p>The agent that writes the code does not review it. A separate, read-only agent does, and every finding gets a recorded decision.</p></div>
-    <div class="card"><h3>Traceability</h3><p>Each feature has a GitHub issue and a pull request. The decisions, the review findings, and the verification results stay with the code.</p></div>
-    <div class="card"><h3>Automation with limits</h3><p>One command can take a feature to an open pull request. It stops there: merging stays with a person.</p></div>
-    <div class="card"><h3>Results that stay current</h3><p>Checks and reviews are recorded for the version they apply to. If the code changes, the scripts ask for them again.</p></div>
-    <div class="card"><h3>Control over important changes</h3><p>The workflow flags changes that need extra approval. To enforce approvals on GitHub, you also configure repository permissions and branch protection.</p></div>
+    <div class="card"><h3>Clear requirements</h3><p>A round of questions and your approval come before any plan, so agents work toward a goal you agreed to.</p></div>
+    <div class="card"><h3>Independent reviews</h3><p>A separate, read-only agent reviews every change, which gives you a second perspective on the code.</p></div>
+    <div class="card"><h3>Meaningful verification</h3><p>One command runs your project's checks and records what was checked. If the code changes, the checks run again.</p></div>
+    <div class="card"><h3>Traceable changes</h3><p>Planning, GitHub issues, review decisions, and pull requests stay connected, so you can see why a change was made.</p></div>
   </div>
+  <p>How the workflow flags risky changes, and what you configure in GitHub to enforce approvals, is in <a href="configuration.html">Configuration and security</a>.</p>
 
   <h2>Get started</h2>
   <p>Create a repository from the template, configure your coding agents, and check your setup with <code>./scripts/doctor.sh</code>. Then you are ready to plan your first project.</p>
@@ -141,6 +143,7 @@
   <h2>Explore further</h2>
   <div class="cards">
     <div class="card"><h3><a href="workflow.html">The workflow</a></h3><p>Every step from requirements to a reviewed pull request, with its script and its approvals.</p></div>
+    <div class="card"><h3><a href="configuration.html">Configuration and security</a></h3><p>Agent roles and models, what an agent may do, and what GitHub has to enforce.</p></div>
     <div class="card"><h3><a href="research.html">Research and design choices</a></h3><p>Why we built it, the frameworks and practices that influenced it, and the ideas we left out.</p></div>
     <div class="card"><h3><a href="history.html">History</a></h3><p>How the workflow developed and which changes made it more reliable.</p></div>
     <div class="card"><h3><a href="future.html">Possible improvements</a></h3><p>Features we are considering, such as better agent isolation and smarter orchestration.</p></div>

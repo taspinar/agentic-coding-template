@@ -1455,3 +1455,42 @@ pre code {
 [hidden] {
   display: none !important;
 }
+
+/* A list of situations with what to do in each. */
+.handles {
+  margin: 14px 0;
+}
+
+.handles dt {
+  font-weight: 650;
+  margin-top: 14px;
+}
+
+.handles dd {
+  margin: 2px 0 0;
+  max-width: 72ch;
+}
+
+/* A command that can be copied. The button is added by the script. */
+pre {
+  position: relative;
+}
+
+.copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
