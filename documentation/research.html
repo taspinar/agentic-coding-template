@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Research and comparisons · Agentic Coding Template</title>
-<meta name="description" content="The frameworks, skill collections, and ideas the template was compared with: what was adapted, what was left out, and what is still a proposal.">
+<title>Research and design choices · Agentic Coding Template</title>
+<meta name="description" content="The frameworks and practices that influenced the template, how we adapted them, and which ideas we chose not to include.">
 <link rel="stylesheet" href="assets/site.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
@@ -13,23 +13,12 @@
 <aside class="sidebar" id="sidebar">
   <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
   <nav class="nav" aria-label="Documentation">
-    <p class="nav-group">Start</p>
     <ul>
       <li><a href="index.html">Introduction</a></li>
-      <li><a href="research.html" aria-current="page">Research and comparisons</a></li>
-    </ul>
-    <p class="nav-group">How it works</p>
-    <ul>
       <li><a href="workflow.html">The workflow</a></li>
-      <li><span class="soon">The planning round</span></li>
-      <li><span class="soon">Running unattended</span></li>
-      <li><span class="soon">The merge gate</span></li>
-    </ul>
-    <p class="nav-group">Background</p>
-    <ul>
+      <li><a href="research.html" aria-current="page">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
       <li><a href="future.html">Possible improvements</a></li>
-      <li><span class="soon">Notes from a real project</span></li>
     </ul>
   </nav>
   <div class="sidebar-foot">
@@ -40,134 +29,77 @@
 
 <main class="page">
 <div class="wrap wide">
-  <h1>Research and comparisons</h1>
-  <p class="lede">The template was not designed in isolation. Between September and October 2026 it was compared with the larger frameworks for agentic development, with collections of agent skills, and with ideas from practitioners. This page records what was adapted, what was left out on purpose, and what is still only a proposal.</p>
-
-  <div class="note"><p>"Adapted from" means an idea that was compared and reworked to fit this workflow. No code was copied from the projects named here, and a similar feature may have more than one origin.</p></div>
-
-  <p>Each row carries one of four labels:</p>
+  <h1>Research and design choices</h1>
+  <p class="lede">The template builds on established software engineering practices and on ideas from existing frameworks for AI-assisted development. This page explains which ideas influenced it, how we adapted them, and which we chose not to include.</p>
+  <p>We compared approaches to planning, code review, verification, and agent orchestration, and kept the parts that fit a lightweight workflow on GitHub. A similarity with another project does not mean code was reused: no code was copied from the projects named here.</p>
   <p>
-    <span class="tag built">Built</span> works in the template today ·
-    <span class="tag principle">Principle</span> guides the design, built to a varying degree ·
-    <span class="tag proposed">Proposed</span> a candidate, not built ·
-    <span class="tag left-out">Left out</span> deliberately not part of the workflow
+    <span class="tag built">Implemented</span> available in the template today ·
+    <span class="tag principle">Design principle</span> shapes the workflow, without being a separate feature ·
+    <span class="tag proposed">Under consideration</span> researched, not built ·
+    <span class="tag left-out">Not adopted</span> deliberately left out
   </p>
 
-  <h2>The guiding idea</h2>
-  <p>One small, model-agnostic, auditable delivery workflow, not a stack of competing frameworks. Product decisions and risky changes have human gates; agents implement and review independently; checks and stored records provide the evidence; GitHub is where the work is coordinated. Every comparison below was read with one question: does this idea make that workflow better, or does it add a second system beside it?</p>
+  <h2>Our approach</h2>
+  <p>We want one workflow that is easy to understand, inspect, and maintain. AI agents plan, write code, and review changes. Scripts check whether the required steps were completed. People approve the requirements and the important decisions.</p>
+  <p>For every external framework we asked one question: <strong>would this improve the workflow we have, or would it add complexity we do not need?</strong></p>
 
-  <h2>Five general frameworks</h2>
+  <h2>Frameworks we compared</h2>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Framework</th><th>Adapted</th><th>Not adopted</th><th>In the template</th></tr></thead>
+    <thead><tr><th>Framework</th><th>What influenced us</th><th>What we didn't include</th><th>Status</th></tr></thead>
     <tbody>
-      <tr>
-        <td><a href="https://github.com/github/spec-kit">GitHub Spec Kit</a></td>
-        <td>Traceability from requirement to plan to task to implementation; checking those for consistency; explicit project principles</td>
-        <td>A second, complete specification flow with its own directory tree, commands, and plan documents</td>
-        <td><span class="tag built">Built</span> as requirements, roadmap, Issues derived from it, and the planning review</td>
-      </tr>
-      <tr>
-        <td><a href="https://github.com/Fission-AI/OpenSpec">OpenSpec</a></td>
-        <td>A bounded change request with its reason, and a review of the changed specification; no silent edits to an approved plan</td>
-        <td>A separate command line tool and a second tree of changes and specifications</td>
-        <td><span class="tag built">Built</span> as the change cycle: <code>start-planning.sh --change</code>, <code>--grill</code>, and a new approval</td>
-      </tr>
-      <tr>
-        <td><a href="https://github.com/obra/superpowers">Superpowers</a></td>
-        <td>Verification before "done"; independent code review; short contexts and a fresh session per task; systematic debugging</td>
-        <td>Installing every skill; test-first as an obligation for each edit; replacing the review and triage of the template</td>
-        <td><span class="tag built">Built</span> for verification, the separated implementer and reviewer, and resuming; a debugging method is <span class="tag proposed">Proposed</span></td>
-      </tr>
-      <tr>
-        <td><a href="https://github.com/bmad-code-org/BMAD-METHOD">BMAD-METHOD</a></td>
-        <td>Separate roles for planning, implementing, and reviewing; more ceremony only where the risk asks for it</td>
-        <td>A full cast of personas and a waterfall of documents for routine features</td>
-        <td><span class="tag built">Built</span> as focused roles; deeper product and design reviews are <span class="tag proposed">Proposed</span></td>
-      </tr>
-      <tr>
-        <td><a href="https://github.com/open-gsd/gsd-core">GSD Core</a></td>
-        <td>Progress that survives a session: handoff notes, small tasks, continuing with a fresh context</td>
-        <td>A global orchestrator, and parallel agents as the default everywhere</td>
-        <td><span class="tag built">Built</span> as handoff notes and <code>--resume</code>; a durable queue of work is <span class="tag proposed">Proposed</span></td>
-      </tr>
+      <tr><td><a href="https://github.com/github/spec-kit">GitHub Spec Kit</a></td><td>Clear links between requirements, plans, tasks, and implementation; consistency checks</td><td>A second specification system with its own commands and directories</td><td><span class="tag built">Implemented in part</span> requirements, roadmap, feature issues, planning review</td></tr>
+      <tr><td><a href="https://github.com/Fission-AI/OpenSpec">OpenSpec</a></td><td>Explicit change requests for an approved plan</td><td>A separate change-management tool with its own set of documents</td><td><span class="tag built">Implemented</span> the planning change process, with a new approval</td></tr>
+      <tr><td><a href="https://github.com/obra/superpowers">Superpowers</a></td><td>Verification before calling work done, independent reviews, short task contexts, systematic debugging</td><td>Installing every skill, or requiring test-first development for every change</td><td><span class="tag built">Implemented in part</span> reviews, verification, resuming; a debugging method is under consideration</td></tr>
+      <tr><td><a href="https://github.com/bmad-code-org/BMAD-METHOD">BMAD Method</a></td><td>Separate responsibilities for planning, implementation, and review</td><td>A large set of mandatory agent personas and documents</td><td><span class="tag principle">Design principle</span> focused agent roles</td></tr>
+      <tr><td><a href="https://github.com/open-gsd/gsd-core">GSD Core</a></td><td>Small tasks, progress notes that survive a session, resuming with a fresh context</td><td>A second orchestrator, or parallel execution by default</td><td><span class="tag built">Implemented in part</span> handoff notes and resuming; task scheduling is under consideration</td></tr>
     </tbody>
   </table>
   </div>
 
-  <h2>Ideas, by theme</h2>
-  <p>Some ideas came from talks and workshops on AI coding workflows and on "software factories", not from a repository. They are grouped here by what they changed.</p>
+  <h2>Ideas from talks and development workflows</h2>
 
-  <h3>Clarify before planning</h3>
+  <h3>Clarify requirements before implementation</h3>
+  <p>The <strong>Project Grill</strong> is a round of questions about goals, users, and scope. It turns a first idea into agreed requirements before an agent writes the plan. <span class="tag built">Implemented</span> A similar step for a single feature is <span class="tag proposed">Under consideration</span>.</p>
+  <p>We encourage <strong>vertical slices</strong>: features that deliver useful behavior from end to end, in place of separate database, API, and user-interface tasks. <span class="tag principle">Design principle</span></p>
+  <p>The roadmap describes the dependencies between features, but nothing schedules work from them yet. A task queue that knows the dependencies is <span class="tag proposed">Under consideration</span>.</p>
+  <p>We create a GitHub issue when a feature is ready to start. Opening issues for the whole roadmap in advance is <span class="tag left-out">Not adopted</span>.</p>
+
+  <h3>Separate work and record evidence</h3>
+  <p>Each feature has its own Git branch and worktree. Verification results and code reviews are recorded, so the workflow can check whether they still apply after a change. <span class="tag built">Implemented</span></p>
+  <p>A worktree does <strong>not</strong> isolate the whole runtime. Separate databases, caches, services, ports, and credentials need containers or virtual machines. Full environment isolation is <span class="tag proposed">Under consideration</span>.</p>
+  <p>Screenshots, recordings, and similar evidence can come from a project's own tests. The template does not provide them as a general feature.</p>
+
+  <h3>Allow autonomy, with clear boundaries</h3>
+  <p><code>run-feature.sh</code> carries out implementation, verification, review, fixes, and the pull request without asking for input at each stage. It stops at an open pull request and does not merge or deploy. <span class="tag built">Implemented</span></p>
+  <p>The template assesses risk from protected paths and from the reviewer's assessment. A model's own assessment never decides alone whether an important change needs approval. <span class="tag built">Implemented</span></p>
+  <p>A task scheduler, a central dashboard, and better support for several agents at once are <span class="tag proposed">Under consideration</span>.</p>
+
+  <h2>Specialized agent skills</h2>
+  <p>We looked at collections of skills for security, front-end development, cloud infrastructure, design, and the evaluation of AI systems. The goal is not to install everything: a project uses only the skills its work needs.</p>
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Idea</th><th>What became of it</th><th>Status</th></tr></thead>
+    <thead><tr><th>Source</th><th>Why it was interesting</th><th>Current approach</th></tr></thead>
     <tbody>
-      <tr><td>Question the goal until it is unambiguous</td><td>The Project Grill at the start of every planning, and again for a changed requirement</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>Requirements as a destination, not a code generator</td><td>Approved requirements say what and why; the plan and each Issue say how</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>Vertical slices instead of layer after layer</td><td>The planner is asked for features that each deliver something usable, with their dependencies</td><td><span class="tag principle">Principle</span></td></tr>
-      <tr><td>A machine-readable dependency graph and a ready queue</td><td>Dependencies are written in the roadmap; nothing schedules from them yet</td><td><span class="tag proposed">Proposed</span></td></tr>
-      <tr><td>Open the whole roadmap as Issues at once</td><td>Issues are created one at a time, when a feature is about to start</td><td><span class="tag left-out">Left out</span></td></tr>
+      <tr><td><a href="https://github.com/cloudflare/security-audit-skill">Cloudflare security audit skill</a></td><td>Repeatable security reviews with structured findings</td><td>An optional specialist audit is under consideration</td></tr>
+      <tr><td><a href="https://github.com/trailofbits/skills">Trail of Bits skills</a></td><td>Security checks for code and for automation workflows</td><td>Select skills per project; not bundled</td></tr>
+      <tr><td><a href="https://github.com/addyosmani/agent-skills">Addy Osmani's agent skills</a></td><td>Engineering quality and disciplined review</td><td>Design inspiration</td></tr>
+      <tr><td><a href="https://github.com/anthropics/skills">Anthropic skills</a></td><td>Packaging and evaluating reusable skills</td><td>A skills registry is under consideration</td></tr>
+      <tr><td><a href="https://github.com/pbakaus/impeccable">Impeccable</a></td><td>Structured design reviews</td><td>An optional design review is under consideration</td></tr>
     </tbody>
   </table>
   </div>
 
-  <h3>Isolation and evidence</h3>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Idea</th><th>What became of it</th><th>Status</th></tr></thead>
-    <tbody>
-      <tr><td>An agent-ready repository</td><td><code>AGENTS.md</code>, policies, prompts per role, and a map of the project</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>One isolated workspace per task</td><td>A Git worktree and branch per feature, with an optional setup hook</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>Proof of completion</td><td><code>verify.sh</code> with a record bound to the checked content; the commit and the pull request carry it</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>A container or virtual machine per agent</td><td>A worktree separates files only; services, ports, and credentials are shared</td><td><span class="tag proposed">Proposed</span></td></tr>
-      <tr><td>Screenshots and recordings as evidence</td><td>Left to the project's own checks</td><td><span class="tag proposed">Proposed</span></td></tr>
-      <tr><td>Turn recurring review comments into rules</td><td>A place for lessons exists; nothing mines the reviews for them</td><td><span class="tag proposed">Proposed</span></td></tr>
-    </tbody>
-  </table>
-  </div>
+  <h2>What we learned from using the template</h2>
+  <h3>Keeping existing projects up to date</h3>
+  <p>GitHub does not update a repository that was created from a template. We compared several approaches and added <code>sync-template.sh</code>, which brings workflow improvements into an existing project and leaves the project's own files alone.</p>
+  <h3>Keeping reviews and approvals current</h3>
+  <p>A review is useful only if it describes the code that is merged. The workflow records which version was reviewed and checks whether that is still the current one. The approval of a plan is tied to the approved requirements and roadmap in the same way.</p>
+  <h3>Making verification more efficient</h3>
+  <p>As a project gains tests and checks, verification takes longer. The template reuses a successful run when the content has not changed. Running only the tests a change affects, caching, and limits on the duration of a check are still being explored.</p>
 
-  <h3>Autonomy and its limits</h3>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Idea</th><th>What became of it</th><th>Status</th></tr></thead>
-    <tbody>
-      <tr><td>Plan together, execute unattended</td><td><code>run-feature.sh</code> takes one feature to an open pull request, with at most five review rounds</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>Route review by risk</td><td>Protected and sensitive paths, the reviewer's impact classification, and the owner's merge gate</td><td><span class="tag built">Built</span></td></tr>
-      <tr><td>The author judges its own risk</td><td>Rules about the changed files decide first; a reviewer can only make the gate stricter</td><td><span class="tag left-out">Left out</span></td></tr>
-      <tr><td>Unattended merging and deployment</td><td>A run ends at a pull request; merging is a human decision</td><td><span class="tag left-out">Left out</span></td></tr>
-      <tr><td>Many parallel agents as a measure of quality</td><td>Parallel features are possible, one writer per worktree; it is not the default</td><td><span class="tag left-out">Left out</span></td></tr>
-      <tr><td>Detecting stalled work, a queue, a dashboard</td><td>A run stops with a reason and can be resumed; nothing watches a fleet</td><td><span class="tag proposed">Proposed</span></td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <h2>Specialist skills and audits</h2>
-  <p>A survey of twenty public collections of agent skills (security, front end, cloud providers, evaluation of language models, design) led to one decision: a project picks the few skills its work needs. The template bundles none of them.</p>
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Source</th><th>What was considered</th><th>Status</th></tr></thead>
-    <tbody>
-      <tr><td><a href="https://github.com/cloudflare/security-audit-skill">Cloudflare security audit skill</a></td><td>A reproducible audit in phases with machine-readable findings</td><td><span class="tag proposed">Proposed</span> as an optional specialist audit</td></tr>
-      <tr><td><a href="https://github.com/trailofbits/skills">Trail of Bits skills</a></td><td>Security review of a change, auditing of CI workflows that run agents</td><td><span class="tag proposed">Proposed</span>, selected per project</td></tr>
-      <tr><td><a href="https://github.com/addyosmani/agent-skills">Addy Osmani's agent skills</a></td><td>Working from constraints, from sources, and from doubt; specialist review</td><td><span class="tag principle">Principle</span></td></tr>
-      <tr><td><a href="https://github.com/anthropics/skills">Anthropic skills</a></td><td>How to package a skill and evaluate it</td><td><span class="tag proposed">Proposed</span> for a registry of skills</td></tr>
-      <tr><td><a href="https://github.com/pbakaus/impeccable">Impeccable</a></td><td>Two independent critiques of a design, with deterministic checks beside them</td><td><span class="tag proposed">Proposed</span> as an opt-in design review</td></tr>
-    </tbody>
-  </table>
-  </div>
-
-  <h2>What use taught</h2>
-  <p>Not everything came from reading. Three subjects were worked out on the template and the project built with it.</p>
-  <h3>Keeping projects up to date</h3>
-  <p>A repository made from a GitHub template does not receive later changes of that template. Subtrees, submodules, and cherry-picking were compared; the choice was an explicit script. <code>sync-template.sh</code> takes over only the paths that belong to the template and leaves the project's own files alone. <span class="tag built">Built</span></p>
-  <h3>Reviews and approvals that stay true</h3>
-  <p>A review is bound to the content it read and goes stale when that changes. An approval of the planning is bound to the documents by a fingerprint. A feature is reviewed against the base it was created from, also when that base has moved on. An agent that ends "blocked" counts as blocked only when it left a question for a person. <span class="tag built">Built</span></p>
-  <h3>The cost of verification</h3>
-  <p>On the project built with the template, CI grew from about one minute to more than fifteen as browser checks, site builds, and determinism checks were added. A passed verification is now reused for identical content, and the template's own tests run locally only when the workflow changed. Selecting checks by what a change can affect, caching, and budgets for the duration of a check are <span class="tag proposed">Proposed</span>. Removing useful checks to save time was <span class="tag left-out">Left out</span>.</p>
-
-  <h2>Open proposals</h2>
-  <p>The research left a list of candidates that are not built. They are collected, by theme and with where the template stands today, under <a href="future.html">Possible improvements</a>.</p>
+  <h2>What we may add next</h2>
+  <p>See <a href="future.html">Possible improvements</a> for the current list of proposals.</p>
 </div>
 </main>
 <script src="assets/site.js"></script>

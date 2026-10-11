@@ -130,20 +130,6 @@ code {
   margin-top: 3px;
 }
 
-.nav ul + .nav-group {
-  margin-top: 16px;
-}
-
-.nav-group {
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 0 8px;
-  margin: 0 0 4px;
-}
-
 .nav ul {
   list-style: none;
   margin: 0;
@@ -167,24 +153,6 @@ code {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
-}
-
-.nav .soon {
-  display: block;
-  color: var(--muted);
-  padding: 6px 8px;
-  font-size: 14.5px;
-}
-
-.nav .soon::after {
-  content: "soon";
-  margin-left: 8px;
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  border: 1px solid var(--line);
-  border-radius: 99px;
-  padding: 1px 6px;
 }
 
 .sidebar-foot {
@@ -766,26 +734,24 @@ td:first-child {
 }
 
 .detail h3 {
-  margin: 0 0 2px;
+  margin: 0 0 6px;
   font-size: 18px;
 }
 
-.detail .who {
-  font-size: 13.5px;
-  font-weight: 700;
-  margin: 0 0 8px;
-}
-
-.detail .who.human {
+/* The first row of a step says who acts, in the colour of the diagram. */
+.detail dl.human dd:first-of-type {
   color: var(--human);
+  font-weight: 700;
 }
 
-.detail .who.agent {
+.detail dl.agent dd:first-of-type {
   color: var(--agent);
+  font-weight: 700;
 }
 
-.detail .who.script {
+.detail dl.script dd:first-of-type {
   color: var(--script);
+  font-weight: 700;
 }
 
 .detail dl {
