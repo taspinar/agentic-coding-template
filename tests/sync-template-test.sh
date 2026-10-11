@@ -311,4 +311,33 @@ if run_sync "$project" --template "$tmp/no-such-template"; then fail "a missing 
 [[ -z "$(git -C "$project" status --porcelain)" ]] || fail "a refused sync changed the project"
 [[ "$(git -C "$project" branch --show-current)" == "main" ]] || fail "a refused sync created a branch"
 
+# The paths this repository hands out: the documentation site of the template
+# and the workflow that publishes it never reach a project, while the
+# workflows of the template do.
+handed_out="$(
+  cd "$source_root"
+  read -r -a pathspecs <<<"$(sed -n 's/^paths: *//p' .agents/template.conf)"
+  git ls-files --cached --others --exclude-standard -- "${pathspecs[@]}"
+)"
+if grep -Eq '^documentation/|^\.github/workflows/pages\.yml$' <<<"$handed_out"; then
+  fail "the template paths hand out the documentation site or its workflow"
+fi
+for workflow in ci.yml guardrails.yml; do
+  if [[ -f "$source_root/.github/workflows/$workflow" ]]; then
+    grep -Fxq ".github/workflows/$workflow" <<<"$handed_out" || fail "the template paths do not hand out $workflow"
+  fi
+done
+
+# A project has no documentation site: it is not handed out, and a new project
+# deletes it. The check of the site in the template's verification passes
+# there.
+site_check="$(sed -n 's/^documentation: *//p' "$source_root/scripts/verify.conf")"
+if [[ -n "$site_check" ]]; then
+  mkdir -p "$tmp/no-site"
+  (cd "$tmp/no-site" && bash -c "$site_check") >"$tmp/no-site.out" 2>&1 || {
+    cat "$tmp/no-site.out" >&2
+    fail "the documentation check fails in a repository without the documentation site"
+  }
+fi
+
 echo "sync-template tests passed"

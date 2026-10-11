@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Possible improvements · Agentic Coding Template</title>
+<meta name="description" content="Enhancements the template could get, grouped by theme. Candidates, not commitments.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <p class="nav-group">Start</p>
+    <ul>
+      <li><a href="index.html">Introduction</a></li>
+      <li><a href="research.html">Research and comparisons</a></li>
+    </ul>
+    <p class="nav-group">How it works</p>
+    <ul>
+      <li><a href="workflow.html">The workflow</a></li>
+      <li><span class="soon">The planning round</span></li>
+      <li><span class="soon">Running unattended</span></li>
+      <li><span class="soon">The merge gate</span></li>
+    </ul>
+    <p class="nav-group">Background</p>
+    <ul>
+      <li><a href="history.html">History</a></li>
+      <li><a href="future.html" aria-current="page">Possible improvements</a></li>
+      <li><span class="soon">Notes from a real project</span></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap wide">
+  <h1>Possible improvements</h1>
+  <p class="lede">Enhancements the template could get, drawn from the research into existing frameworks, agentic workflows, and software factories, and from running it on a real project.</p>
+  <div class="note"><p>These are candidates, not commitments. A feature that is added should stay modular and optional, and the template has to keep working for one developer with one laptop.</p></div>
+  <p>The third column says where the template stands today. Nothing on this page is promised for a date.</p>
+
+  <h2>Security and governance</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>GitHub governance</td><td>Enforce protected files, code owners, and role-based approvals for decision records, roadmaps, scripts, and infrastructure.</td><td><span class="tag principle">Partly built</span> The merge gate classifies protected and sensitive paths today; code owners and review thresholds enforced by GitHub are not set up.</td></tr>
+      <tr><td>Agent identity isolation</td><td>Give agents separate GitHub identities and restricted permissions.</td><td><span class="tag proposed">Proposed</span> While an agent runs with the owner's permissions, a script cannot enforce a separation of duties by itself.</td></tr>
+      <tr><td>Risk-based approval gates</td><td>Require stronger reviews for security-sensitive or architectural changes.</td><td><span class="tag principle">Partly built</span> A change of a decision record, of a protected path, or with a major impact waits for the owner; reviews by a specialist per kind of risk do not exist.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Planning and orchestration</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>Feature clarification gate</td><td>Resolve unclear requirements before implementation begins.</td><td><span class="tag proposed">Proposed</span> The planning is questioned at the start; a single feature is not.</td></tr>
+      <tr><td>Dependency-aware planning</td><td>Track dependencies between features and implementation tasks.</td><td><span class="tag principle">Partly built</span> The roadmap names the dependencies of a feature in words; nothing reads them.</td></tr>
+      <tr><td>Ready queue</td><td>Automatically identify tasks that are ready for execution.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Parallel agent orchestration</td><td>Execute independent tasks concurrently while preventing conflicts.</td><td><span class="tag proposed">Proposed</span> Features can run side by side in their own worktrees today, started by hand; two features that write the same module still collide at the merge.</td></tr>
+      <tr><td>Automated failure recovery</td><td>Diagnose failed agent runs and apply controlled recovery strategies.</td><td><span class="tag principle">Partly built</span> <code>run-feature.sh</code> retries what looks temporary and lets the implementer repair a failing verification; it does not diagnose a failure caused by a base branch that moved on.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Quality and testing</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>Dual independent review</td><td>Use separate reviewers for functional correctness and engineering quality.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Selective CI and test impact analysis</td><td>Run relevant tests based on changed code and dependencies.</td><td><span class="tag proposed">Proposed</span> A passed verification is reused for identical content; checks are not selected by impact.</td></tr>
+      <tr><td>Requirements traceability</td><td>Link requirements to implementations, tests, and verification evidence.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Browser-based validation</td><td>Validate user interface features with Playwright, screenshots, and browser traces.</td><td><span class="tag proposed">Proposed</span> Left to the checks of a project today.</td></tr>
+      <tr><td>Specialized quality gates</td><td>Add targeted security, performance, API, and infrastructure reviews.</td><td><span class="tag proposed">Proposed</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Agent isolation and infrastructure</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>Full environment isolation per agent</td><td>Give each agent its own worktree, database, cache, services, queues, ports, and runtime.</td><td><span class="tag proposed">Proposed</span> A worktree separates files only.</td></tr>
+      <tr><td>Container or virtual machine provisioning</td><td>Create and destroy isolated environments per task.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Database cloning and seeding</td><td>Provision reproducible, sanitized database copies for independent agent development.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Remote agent execution</td><td>Run agents on a dedicated server, independent of a developer's laptop.</td><td><span class="tag proposed">Proposed</span> An unattended run stops today when the laptop sleeps or loses its network.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Skills and intelligence</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>Agent skills registry</td><td>Manage reusable, versioned skills with role-based access and configuration per project.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Dynamic model routing</td><td>Select a model by the complexity, the needs, and the cost of a task.</td><td><span class="tag proposed">Proposed</span> The agent and model of each role are configured per project and can be set per run.</td></tr>
+      <tr><td>Continuous workflow improvement</td><td>Learn from recurring failures and propose improvements to prompts, tests, and skills.</td><td><span class="tag proposed">Proposed</span> A place for lessons exists; nothing fills it from the reviews.</td></tr>
+      <tr><td>Agent run analytics</td><td>Track execution time, retries, model usage, costs, and success rates.</td><td><span class="tag proposed">Proposed</span> A run keeps a log of its steps and interruptions; nothing aggregates it.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Developer experience and scale</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Improvement</th><th>What it would do</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr><td>Web-based agent dashboard</td><td>Start, monitor, review, and resume agent tasks from a browser.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Documentation website</td><td>Publish interactive workflow documentation and framework comparisons.</td><td><span class="tag built">Started</span> This site. Pages for the planning round, the unattended run, and the merge gate are still to be written.</td></tr>
+      <tr><td>Repository-to-template converter</td><td>Convert an existing application into a reusable, configurable project template.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Event-driven maintenance agents</td><td>Trigger controlled tasks from dependency updates, security alerts, and CI failures.</td><td><span class="tag proposed">Proposed</span></td></tr>
+      <tr><td>Multi-repository software factory</td><td>Orchestrate agents across several projects with central scheduling and resource management.</td><td><span class="tag proposed">Proposed</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>How these ideas came up, and what was deliberately left out, is in <a href="research.html">Research and comparisons</a>.</p>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

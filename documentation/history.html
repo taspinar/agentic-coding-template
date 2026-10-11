@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History · Agentic Coding Template</title>
+<meta name="description" content="How the template grew from steps done by hand to one command per feature, with the pull request behind every change.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <p class="nav-group">Start</p>
+    <ul>
+      <li><a href="index.html">Introduction</a></li>
+      <li><a href="research.html">Research and comparisons</a></li>
+    </ul>
+    <p class="nav-group">How it works</p>
+    <ul>
+      <li><a href="workflow.html">The workflow</a></li>
+      <li><span class="soon">The planning round</span></li>
+      <li><span class="soon">Running unattended</span></li>
+      <li><span class="soon">The merge gate</span></li>
+    </ul>
+    <p class="nav-group">Background</p>
+    <ul>
+      <li><a href="history.html" aria-current="page">History</a></li>
+      <li><a href="future.html">Possible improvements</a></li>
+      <li><span class="soon">Notes from a real project</span></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap">
+  <h1>History</h1>
+  <p class="lede">The template grew in one month from a set of documents and steps done by hand to one command per feature. Each step became a script only after it had been done by hand often enough to know what the script had to guarantee.</p>
+  <p>Every entry links to the pull request that made the change; its description and the Issue it closes hold the reasoning.</p>
+
+  <ol class="timeline">
+    <li>
+      <p class="when">10–11 September 2026</p>
+      <h2>Steps done by hand, written down</h2>
+      <p>The first version is mostly documents: instructions for agents, policies, how to set up a repository, and a plan-act-evaluate rhythm. A feature is planned in an Issue, built in a worktree, and reviewed by a second agent, with the human copying results from one step to the next.</p>
+      <ul>
+        <li>Repository setup and the first planning phase <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/1">#1</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/2">#2</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/3">#3</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/4">#4</a></span></li>
+        <li>A script to create a feature Issue, and scripts to start and review a feature <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/5">#5</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/8">#8</a></span></li>
+        <li>Review findings get a triage, and an approved triage is applied by the implementer <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/12">#12</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/14">#14</a></span></li>
+      </ul>
+    </li>
+    <li>
+      <p class="when">15 September 2026</p>
+      <h2>A project starts with a planning</h2>
+      <p>Until here the template assumed that someone already knew what to build. The bootstrap planning adds the step before the first feature: from a project idea to requirements, an architecture, and a roadmap.</p>
+      <ul>
+        <li>Project bootstrap planning <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/22">#22</a></span></li>
+      </ul>
+    </li>
+    <li>
+      <p class="when">2–3 October 2026</p>
+      <h2>From trust to evidence</h2>
+      <p>Two weeks of use showed where the workflow relied on an agent's word. This round replaces that with data a script can check: reviews and triages become validated JSON, each is bound to the exact content it read, and the planning gets its own independent review, recorded decisions, and an approval tied to the documents.</p>
+      <ul>
+        <li>Reliable project verification with one command, and a check of the local prerequisites <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/31">#31</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/34">#34</a></span></li>
+        <li>One place to configure agents, and reviewers that cannot write <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/35">#35</a></span></li>
+        <li>Validated JSON for reviews and triage, bound to the reviewed version by a fingerprint <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/39">#39</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/42">#42</a></span></li>
+        <li>Reports published on the Issue instead of committed <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/43">#43</a></span></li>
+        <li>A feature Issue created from its roadmap entry <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/44">#44</a></span></li>
+        <li>The planning loop: review, revise with a decision per finding, finish with an approval <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/49">#49</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/50">#50</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/51">#51</a></span></li>
+        <li>finish-feature.sh as the closing step; the workflow documented in three views; cleanup of merged worktrees <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/52">#52</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/54">#54</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/57">#57</a></span></li>
+      </ul>
+    </li>
+    <li>
+      <p class="when">6–8 October 2026</p>
+      <h2>The first real project</h2>
+      <p>A physics course site is built with the template, and the first run produces a list of findings. Most changes of these days remove friction that only shows with real work: sessions that are interrupted, verifications that run twice, a planning that has to change after it was approved, and projects that fall behind the template.</p>
+      <ul>
+        <li>Fixes from the first real run; the template's own tests run only when the workflow changed <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/61">#61</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/69">#69</a></span></li>
+        <li>A setup script for a new worktree; publishing a feature with one command <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/71">#71</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/73">#73</a></span></li>
+        <li>A passed verification is recorded, required for a review, and not repeated <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/74">#74</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/83">#83</a></span></li>
+        <li>sync-template.sh brings template changes into an existing project <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/76">#76</a></span></li>
+        <li>An interrupted feature resumes without the previous chat <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/77">#77</a></span></li>
+        <li>An approved planning changes through a change cycle, or a small amendment <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/79">#79</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/80">#80</a></span></li>
+        <li>A re-review can cover only the changes since the previous round <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/81">#81</a></span></li>
+      </ul>
+    </li>
+    <li>
+      <p class="when">9–10 October 2026</p>
+      <h2>One command, and the gate that makes it safe</h2>
+      <p>With every step scripted, the steps can run in a row. run-feature.sh takes a feature from its Issue to an open pull request without questions. Running it overnight on a queue of features exposed what unattended work needs: a script, not an agent, that decides whether a step succeeded, and a merge gate that an agent cannot talk its way past.</p>
+      <ul>
+        <li>An unattended permission profile for agents, and run-feature.sh <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/89">#89</a> <a href="https://github.com/taspinar/agentic-coding-template/pull/91">#91</a></span></li>
+        <li>"Blocked" means a person has to decide, not that a verification is unfinished <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/95">#95</a></span></li>
+        <li>A feature is reviewed against the base it was created from <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/93">#93</a></span></li>
+        <li>The planning approval stays current when a feature updates the architecture <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/96">#96</a></span></li>
+        <li>The merge approval gate: protected paths, decision records, and the reviewer's impact classification <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/100">#100</a></span></li>
+        <li>The scripts decide the outcome of a step, and retry or repair it <span class="prs"><a href="https://github.com/taspinar/agentic-coding-template/pull/101">#101</a></span></li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>What the order shows</h2>
+  <ul>
+    <li><strong>By hand first.</strong> Triage, the planning loop, and the unattended run were each a manual routine before they were a script.</li>
+    <li><strong>Evidence before automation.</strong> Fingerprints, validated records, and the recorded verification came a week before the command that runs a feature alone. Without them an unattended run would have had nothing to stop on.</li>
+    <li><strong>Real use sets the agenda.</strong> From 6 October on, nearly every change answers something that went wrong in the project built with the template.</li>
+  </ul>
+  <p>What may come next is listed under <a href="future.html">Possible improvements</a>.</p>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

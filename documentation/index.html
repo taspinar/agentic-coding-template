@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Coding Template · Documentation</title>
+<meta name="description" content="A small, model-agnostic workflow for building software with coding agents: human gates, independent review, and evidence in Git and GitHub.">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js");</script>
+</head>
+<body>
+<button class="menu-button" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="index.html">Agentic Coding Template<small>Documentation</small></a>
+  <nav class="nav" aria-label="Documentation">
+    <p class="nav-group">Start</p>
+    <ul>
+      <li><a href="index.html" aria-current="page">Introduction</a></li>
+      <li><a href="research.html">Research and comparisons</a></li>
+    </ul>
+    <p class="nav-group">How it works</p>
+    <ul>
+      <li><a href="workflow.html">The workflow</a></li>
+      <li><span class="soon">The planning round</span></li>
+      <li><span class="soon">Running unattended</span></li>
+      <li><span class="soon">The merge gate</span></li>
+    </ul>
+    <p class="nav-group">Background</p>
+    <ul>
+      <li><a href="history.html">History</a></li>
+      <li><a href="future.html">Possible improvements</a></li>
+      <li><span class="soon">Notes from a real project</span></li>
+    </ul>
+  </nav>
+  <div class="sidebar-foot">
+    <a href="https://github.com/taspinar/agentic-coding-template">Repository on GitHub</a>
+    <button class="theme-toggle" type="button" hidden>Dark theme</button>
+  </div>
+</aside>
+
+<main class="page">
+<div class="wrap">
+  <h1>Agentic Coding Template</h1>
+  <p class="lede">A repository template for building software with coding agents, in which you keep the decisions: agents plan, implement, and review each other, scripts check and record, and nothing reaches <code>main</code> without evidence and a human merge.</p>
+
+  <ol class="pipeline" aria-label="The workflow in one line">
+    <li><span>Idea</span></li>
+    <li class="gate"><span>Requirements</span></li>
+    <li><span>Plan</span></li>
+    <li><span>Planning review</span></li>
+    <li class="gate"><span>Approval</span></li>
+    <li><span>Feature Issue</span></li>
+    <li><span>Worktree</span></li>
+    <li><span>Implement and verify</span></li>
+    <li><span>Independent review</span></li>
+    <li class="gate"><span>Triage</span></li>
+    <li><span>Fix and re-review</span></li>
+    <li><span>Pull request and CI</span></li>
+    <li class="gate"><span>Merge</span></li>
+  </ol>
+  <p>The highlighted steps are yours. <a href="workflow.html">The workflow</a> shows every step, with what goes in, what comes out, and when it stops.</p>
+
+  <h2>What it is</h2>
+  <p>The template is a set of Bash scripts, agent prompts, and policies that you copy into a new repository. It needs Git, the GitHub command line, <code>jq</code>, and at least one coding agent on your machine. It does not prescribe a language, a framework, or a model: the implementer, the reviewer, and the planner are each configured as an agent and a model, and you can change them per project or per run.</p>
+
+  <div class="cards">
+    <div class="card"><h3>You decide what is built</h3><p>Requirements and the roadmap are approved by you, and the approval is bound to the exact documents. An agent cannot rewrite them on the way.</p></div>
+    <div class="card"><h3>Whoever writes does not review</h3><p>Every planning and every feature is read by an independent agent that cannot edit anything, preferably another model than the one that wrote it.</p></div>
+    <div class="card"><h3>Evidence, not assurances</h3><p>One command runs the project's checks. Reviews, triage decisions, and verification are recorded for the content they apply to and go stale when it changes.</p></div>
+    <div class="card"><h3>Git and GitHub are the record</h3><p>One Issue, one branch, one worktree, and one pull request per feature. What was decided, and why, is where the team already looks.</p></div>
+  </div>
+
+  <h2>How it came about</h2>
+  <p>The template started in September 2026 from a practical question: how do you let a coding agent do real work on a project without losing track of what it did, and why? The first version was small: instructions for agents in <code>AGENTS.md</code>, a plan-act-evaluate rhythm, a worktree per task, a read-only reviewer, CI, and human gates sized to the risk of a change.</p>
+  <p>From there it grew by use. Each step of the workflow began as something done by hand, was written down, and became a script once it was clear what the script had to guarantee. Three experiences shaped it most:</p>
+  <ul>
+    <li><strong>Unclear goals cost more than slow code.</strong> A planning round that questions the idea before anything is designed, the Project Grill, removed most of the rework later. The requirements it produces are approved by a person, and the plan is reviewed before the first feature starts.</li>
+    <li><strong>An agent that checks its own work finds little.</strong> Independent review with structured findings, an explicit answer to every finding, and a new review after the fixes turned out to be where most real defects were caught.</li>
+    <li><strong>A model cannot be the judge of its own risk.</strong> Whether a change needs the owner is decided first by rules about the files it touches. The reviewer's judgment is added on top and can only make the gate stricter.</li>
+  </ul>
+  <p>The template was built alongside a real project, a physics course site with executable lessons and formal proofs. Running dozens of its features through the workflow, many of them unattended overnight, is what exposed the weak spots: stale reviews after a base branch moved, runs that stopped for a network error, checks that an agent could quietly weaken. Each became an Issue in the template, and most of the scripts carry a test for the case that went wrong.</p>
+
+  <h2>What it deliberately is not</h2>
+  <p>Several larger frameworks for agentic development were studied along the way; <a href="research.html">Research and comparisons</a> lists them and what was taken from each. The template stays one small, auditable workflow, not a stack of frameworks:</p>
+  <ul>
+    <li>It is not an orchestration platform. There is no always-on swarm, scheduler, or registry to run before a small project can start.</li>
+    <li>It does not open the whole roadmap as Issues. A feature Issue is created just in time, when the project knows what it has learned.</li>
+    <li>It does not make test-first a ritual for every edit. The requirement is meaningful evidence that runs.</li>
+    <li>It does not merge or deploy by itself. The unattended run ends at an open pull request.</li>
+    <li>It does not treat a Git worktree as a sandbox. A worktree separates files, not databases, ports, or credentials.</li>
+  </ul>
+
+  <h2>Where to go next</h2>
+  <div class="cards">
+    <div class="card"><h3><a href="workflow.html">The workflow</a></h3><p>The diagram from idea to merge, with the details of every step.</p></div>
+    <div class="card"><h3><a href="research.html">Research and comparisons</a></h3><p>What was compared, what was adapted, and what was left out.</p></div>
+    <div class="card"><h3><a href="history.html">History</a></h3><p>From steps done by hand to one command per feature, change by change.</p></div>
+    <div class="card"><h3><a href="future.html">Possible improvements</a></h3><p>What the template could get next. Candidates, not commitments.</p></div>
+    <div class="card"><h3><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">Set up a repository</a></h3><p>Start a project from the template and configure GitHub for it.</p></div>
+    <div class="card"><h3><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/example.md">A complete example</a></h3><p>One sample project, from its description to a merged feature.</p></div>
+  </div>
+</div>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>
