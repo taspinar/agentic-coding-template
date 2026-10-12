@@ -16,7 +16,7 @@ the website describes the current template.
 | GitHub settings: rulesets, required checks, code owners, permissions | `docs/repository-setup.md` | "Getting started" and "Configuration and security" on the website |
 | Commands, options, and how to resume or recover | `docs/development.md` and the usage text of each script | Selected commands on the website and in the README |
 | Steps, artifacts, approvals, and what stops a step | `docs/workflow.md` | The workflow page of the website |
-| Principles: where state lives, roadmap versus Issues, plans versus Issues | `docs/agentic-workflow.md` | `AGENTS.md`, briefly |
+| Principles: where state lives, roadmap versus Issues, plans versus Issues | "Principles" in `docs/workflow.md` | `AGENTS.md`, briefly |
 | What makes a check or a review worth having | `docs/evaluation.md` | "Configuration and security" on the website |
 | What each file is for | This file | The repository tree on the website |
 | A complete run | `docs/example.md` | Linked, not repeated |
