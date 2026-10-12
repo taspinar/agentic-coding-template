@@ -30,9 +30,8 @@ What each part of the template is for. The workflow that connects them is in
 | `docs/PLANNING_APPROVAL.md` | Your approval of the reviewed planning, with its fingerprint | `finish-planning.sh` |
 | `docs/repository-setup.md` | GitHub settings for a new repository | You |
 | `docs/development.md` | Every command and its behaviour | Template |
-| `docs/workflow.md` | The workflow in flow, artifact, and reference views | Template |
+| `docs/workflow.md` | The workflow in flow, artifact, reference, and principles views | Template |
 | `docs/example.md` | A complete run with a sample project | Template |
-| `docs/agentic-workflow.md` | Principles: persistent state, roadmap versus Issues, plans versus Issues | Template |
 | `docs/evaluation.md` | Review criteria, finding severities, and the testing principle | Template |
 | `docs/deployment.md`, `docs/operations.md` | Deployment and operations of the project | You |
 
