@@ -287,6 +287,7 @@ exits with status 3.
 | Script | When to use it |
 |---|---|
 | `doctor.sh` | Once after creating a repository from the template, and whenever a tool may be missing |
+| `check-docs.sh` | To check that the Markdown files name files that exist; add it to `scripts/verify.conf` to run it with every verification |
 | `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
