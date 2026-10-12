@@ -47,6 +47,39 @@ after a failure, and a summary lists each check as `PASS` or `FAIL`.
 There is no automatic stack detection and no optional check: remove a check
 from `scripts/verify.conf` rather than letting it be skipped.
 
+### Groups of checks
+
+A check may name a group in square brackets after its name:
+
+```text
+lint [code]: ruff check .
+unit-tests [code]: pytest tests/unit
+site-build [build]: ./scripts/build-site.sh
+tests-in-a-browser [e2e]: pytest tests/e2e
+```
+
+- `./scripts/verify.sh` runs every check, whatever its group. Nothing changes
+  for the developer and for the workflow scripts.
+- `./scripts/verify.sh --only code` runs the checks of one group, and
+  `--only code,build` those of several, in the order of the file.
+- `./scripts/verify.sh --groups` prints the groups that have a check.
+- A check without a group is in the group `default`.
+- An unknown group is an error, so a renamed group cannot pass unnoticed.
+
+Groups exist for a CI that has outgrown one job: each job runs
+`./scripts/verify.sh --all --only <group>`, and one job that needs all of them
+is the required check. Every check stays declared in `scripts/verify.conf`
+or `scripts/verify-workflow.conf`; none is declared in the workflow file.
+Such a CI has to run **every** group, `default` included, or a check that is
+added without a group runs on a laptop and never in CI. Compare the output of
+`--groups` with the groups of the workflow file in a test of the project.
+
+A partial run is never a verification. With `--only` nothing is recorded as
+passed and `--reuse` is refused, so `review-feature.sh` and
+`finish-feature.sh` still run every check. A failing partial run removes an
+existing record, like any failing run. The workflow self-tests keep their own
+rule with `--only`: they run when a workflow file changed, or with `--all`.
+
 ### Recorded verification
 
 A run in which every check passed is recorded in `.agents/verification/passed`,
