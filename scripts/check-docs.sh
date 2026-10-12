@@ -7,11 +7,16 @@
 # - a relative link must lead to a file or directory that exists, seen from
 #   the file that holds the link: [text](path), [text](path "title"),
 #   [text](<path with spaces>), and the definition of a reference link,
-#   [name]: path, also when the path stands on the next line. A link that
-#   leaves the repository is checked too;
+#   [name]: path, also when the path stands on the next line. A destination
+#   may hold balanced parentheses. A link that leaves the repository is
+#   checked too;
 # - a path in backticks that starts with a tracked top-level directory and
 #   names a .md, .sh, .conf, .json, .yml, or .yaml file must exist, seen from
 #   the root of the repository.
+#
+# Not read: fenced code blocks, and links inside inline code; they show
+# Markdown, they do not use it. Paths in inline code are read: that is how a
+# document names a file.
 #
 # Not checked, for links and for paths alike: anchors, external links, a path
 # with a placeholder ('<', '>', '*', '$', '{', '}', '...'), and a path that
@@ -96,6 +101,94 @@ missing() {
   [[ ! -e "$1" ]] && ! comes_later "$1" && ! git check-ignore -q "$1"
 }
 
+# link_destinations <file>: prints the destination of every link of a
+# Markdown file, one per line; a destination in angle brackets keeps them.
+# Read: inline links, where a destination may hold balanced parentheses and
+# may be followed by a title, and the definitions of reference links, also
+# when the destination stands on the next line. Not read: fenced code blocks
+# and inline code, which show Markdown instead of using it.
+link_destinations() {
+  awk '
+    function run_length(text, at, mark,    count) {
+      count = 0
+      while (substr(text, at + count, 1) == mark) count++
+      return count
+    }
+    # Inline code is delimited by runs of backticks of the same length.
+    function without_code(line,    out, i, n, len, j, other, closed) {
+      out = ""
+      i = 1
+      n = length(line)
+      while (i <= n) {
+        if (substr(line, i, 1) != "`") { out = out substr(line, i, 1); i++; continue }
+        len = run_length(line, i, "`")
+        j = i + len
+        closed = 0
+        while (j <= n) {
+          if (substr(line, j, 1) != "`") { j++; continue }
+          other = run_length(line, j, "`")
+          if (other == len) { closed = 1; break }
+          j += other
+        }
+        if (closed) { out = out " "; i = j + len } else { out = out substr(line, i, len); i += len }
+      }
+      return out
+    }
+    function inline_links(line,    i, n, c, depth, dest, close_at) {
+      line = without_code(line)
+      n = length(line)
+      i = 1
+      while (i < n) {
+        if (substr(line, i, 2) != "](") { i++; continue }
+        i += 2
+        while (i <= n && substr(line, i, 1) ~ /[ \t]/) i++
+        if (substr(line, i, 1) == "<") {
+          close_at = index(substr(line, i), ">")
+          if (close_at > 0) { print substr(line, i, close_at); i += close_at }
+          continue
+        }
+        dest = ""
+        depth = 0
+        while (i <= n) {
+          c = substr(line, i, 1)
+          if (c == "(") depth++
+          else if (c == ")") { if (depth == 0) break; depth-- }
+          else if (c ~ /[ \t]/ && depth == 0) break
+          dest = dest c
+          i++
+        }
+        if (dest != "") print dest
+      }
+    }
+    # A fenced code block opens with at least three backticks or tildes and
+    # closes with a line of the same character, at least as many of them, and
+    # nothing else. Another fence inside it is text.
+    /^ ? ? ?(```|~~~)/ {
+      fence = $0
+      sub(/^ +/, "", fence)
+      mark = substr(fence, 1, 1)
+      count = run_length(fence, 1, mark)
+      if (!fenced) {
+        fenced = 1; fence_mark = mark; fence_count = count; waiting = 0
+        next
+      }
+      if (mark == fence_mark && count >= fence_count && substr(fence, count + 1) ~ /^[ \t]*$/) fenced = 0
+      next
+    }
+    fenced { next }
+    waiting {
+      waiting = 0
+      if ($0 !~ /^[ \t]*$/) { sub(/^[ \t]+/, ""); print; next }
+    }
+    /^ ? ? ?\[[^]]+\]:/ {
+      sub(/^ ? ? ?\[[^]]+\]:[ \t]*/, "")
+      if ($0 == "") waiting = 1; else print
+      next
+    }
+    { inline_links($0) }
+  ' "$1"
+}
+
 top_levels="$(git ls-files | sed -n 's|/.*||p' | sort -u)"
 problems=0
 
@@ -136,24 +229,7 @@ while IFS= read -r file; do
       continue
     fi
     ! missing "$resolved" || problem "$file links to $target, which does not exist"
-  done < <(
-    {
-      # Inline links: what stands between "](" and ")".
-      grep -oE '\]\([^)]+\)' "$file" | sed -E 's/^\]\([[:space:]]*//; s/\)$//'
-      # Definitions of reference links: "[name]: destination", where the
-      # destination may stand on the next line.
-      awk '
-        waiting {
-          waiting = 0
-          if ($0 !~ /^[ \t]*$/) { sub(/^[ \t]+/, ""); print; next }
-        }
-        /^ ? ? ?\[[^]]+\]:/ {
-          sub(/^ ? ? ?\[[^]]+\]:[ \t]*/, "")
-          if ($0 == "") waiting = 1; else print
-        }
-      ' "$file"
-    } || true
-  )
+  done < <(link_destinations "$file" || true)
 
   while IFS= read -r path; do
     has_placeholder "$path" && continue

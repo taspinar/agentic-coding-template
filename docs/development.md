@@ -85,8 +85,10 @@ that exist: every relative link (inline, with or without a title, and the
 definition of a reference link; also one that leaves the repository), and
 every path in backticks that starts with
 a tracked top-level directory and names a `.md`, `.sh`, `.conf`, `.json`,
-`.yml`, or `.yaml` file. It does not check anchors or external links, and it
-skips a path with a placeholder and a path that Git ignores. Name the files
+`.yml`, or `.yaml` file. It does not check anchors or external links, it
+skips a path with a placeholder and a path that Git ignores, and it does not
+read links that are shown as an example in a fenced code block or in inline
+code. Name the files
 that come later, or a directory that will hold them, after `--later`:
 
 ```text

@@ -132,6 +132,66 @@ check "$repo"
 if grep -Fq "outside-of-the-repository.md" "$repo.out"; then fail "an existing file outside the repository was reported"; fi
 rm "$tmp/outside-of-the-repository.md"
 
+# A destination may hold balanced parentheses, and a link that is shown as an
+# example, in a fenced code block or in inline code, is not a link.
+repo="$(setup_repo shown)"
+printf '# Guide, second version\n' >"$repo/docs/guide(v2).md"
+{
+  printf 'Read [the second version](guide(v2).md) and [a lost one](lost(v3).md "Lost").\n\n'
+  printf 'Write a link as `[text](no-such-file.md)`.\n\n'
+  printf '```markdown\n[an example](example-that-is-not-there.md)\n[ref]: nowhere.md\n```\n\n'
+  printf '~~~\n[another](also-not-there.md)\n~~~\n\n'
+  printf 'After the blocks: [gone](gone-after.md).\n'
+} >>"$repo/docs/guide.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm "Show links as examples"
+check "$repo"
+[[ "$status" -eq 1 ]] || fail "links around code blocks were accepted ($status)"
+for target in "lost(v3).md" gone-after.md; do
+  grep -Fq "links to $target" "$repo.out" || {
+    cat "$repo.out" >&2
+    fail "the link to '$target' was not reported"
+  }
+done
+if grep -Eq "guide\(v2\)|no-such-file|example-that-is-not-there|nowhere|also-not-there" "$repo.out"; then
+  cat "$repo.out" >&2
+  fail "a destination with parentheses that exists, or a link shown as an example, was reported"
+fi
+[[ "$(grep -c "links to" "$repo.out")" -eq 2 ]] || {
+  cat "$repo.out" >&2
+  fail "more or fewer links were reported than the two that are broken"
+}
+
+# A fence closes only with its own character and at least its own length, so
+# another fence inside a block is text, and a link after the block is read.
+# Inline code may be delimited by more than one backtick.
+repo="$(setup_repo fences)"
+{
+  printf '```markdown\n~~~\n[inside one](inside-one.md)\n```\n\n'
+  printf 'Between: [between](gone-between.md).\n\n'
+  printf '````markdown\n```\n[inside two](inside-two.md)\n```\n[still inside](still-inside.md)\n````\n\n'
+  printf '~~~~\n~~~\n[inside three](inside-three.md)\n~~~~\n\n'
+  printf 'Write ``[text](double-backticks.md)`` or ```[text](triple `one` inside.md)```.\n\n'
+  printf 'After: [after](gone-after-fences.md) and an unclosed ``run [open](gone-open.md).\n'
+} >>"$repo/docs/guide.md"
+git -C "$repo" commit -qam "Nest fences and inline code"
+check "$repo"
+[[ "$status" -eq 1 ]] || fail "links around nested fences were accepted ($status)"
+for target in gone-between.md gone-after-fences.md gone-open.md; do
+  grep -Fq "links to $target" "$repo.out" || {
+    cat "$repo.out" >&2
+    fail "the link to '$target' was not reported"
+  }
+done
+if grep -Eq "inside-one|inside-two|still-inside|inside-three|double-backticks|triple" "$repo.out"; then
+  cat "$repo.out" >&2
+  fail "a link inside a fenced block or inline code was reported"
+fi
+[[ "$(grep -c "links to" "$repo.out")" -eq 3 ]] || {
+  cat "$repo.out" >&2
+  fail "more or fewer links were reported than the three that are broken"
+}
+
 # A link is exempt like a path: an ignored working file, a placeholder, and a
 # file that comes later, also when the link climbs out of its directory.
 repo="$(setup_repo exempt)"
