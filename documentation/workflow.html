@@ -17,6 +17,7 @@
       <li><a href="index.html">Introduction</a></li>
       <li><a href="getting-started.html">Getting started</a></li>
       <li><a href="workflow.html" aria-current="page">The workflow</a></li>
+      <li><a href="configuration.html">Configuration and security</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
       <li><a href="future.html">Possible improvements</a></li>
@@ -345,8 +346,36 @@
   <h3>One command per feature</h3>
   <p>Run <code>./scripts/run-feature.sh &lt;issue&gt;</code>. The workflow handles implementation, verification, review, fixes, and the pull request without interrupting you for routine decisions. It stops if an agent needs your input, if a step keeps failing, or when the maximum number of review rounds is reached.</p>
   <div class="note"><p><strong>Important:</strong> in an unattended run an agent decides what to do with the review findings, without your approval. Read those decisions and the pull request afterward. The command does <strong>not</strong> merge the pull request.</p></div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th></th><th>Step by step</th><th>Unattended (<code>run-feature.sh</code>)</th></tr></thead>
+    <tbody>
+      <tr><td>Review findings</td><td>You review and approve the proposed decisions</td><td>An agent decides and records its decisions; you read them afterward</td></tr>
+      <tr><td>Interruptions</td><td>You can step in between any two steps</td><td>The run retries a temporary failure, lets the implementer repair a failing check, and stops when it cannot safely continue</td></tr>
+      <tr><td>Result</td><td>You move through the steps yourself</td><td>An open pull request, or an explanation of why the run stopped. Never a merge</td></tr>
+      <tr><td>Merging</td><td>By your repository's permissions and branch rules</td><td>The same: an unattended run does not change who may merge</td></tr>
+    </tbody>
+  </table>
+  </div>
+
   <h3>Experimental: several features together</h3>
   <p>We have also tried a supervising agent that coordinates several feature runs. This is <strong>not part of the template</strong>. It needs extra coordination: what to do about conflicts between features, failed runs, and merges. A built-in task queue and parallel execution are among the <a href="future.html">possible improvements</a>.</p>
+
+  <h2 id="handles">Situations the workflow handles</h2>
+  <dl class="handles">
+    <dt>The plan has to change</dt>
+    <dd>You do not edit an approved plan by hand. A change request goes through review and approval again: <a class="popup-link" href="#step-change">update an approved plan</a>.</dd>
+    <dt>A run is interrupted</dt>
+    <dd>The implementer keeps a handoff note with what is done and what remains, so the work continues without the earlier conversation: <code>start-feature.sh &lt;issue&gt; --resume</code>, or <code>run-feature.sh &lt;issue&gt;</code> again. An unattended run retries a temporary failure itself. When an agent needs a decision from you, it stops and leaves its question in the note.</dd>
+    <dt>Results are no longer current</dt>
+    <dd>A verification result belongs to the exact content that was checked: change the code and the checks run again. A review belongs to the content that was reviewed: when that changes, the scripts ask for a new review. If the base branch was merged into the feature in the meantime, a later review has to cover the complete feature, not only the recent changes. The approval of the plan lapses in the same way when the requirements or the roadmap change. See <a href="configuration.html#verification">project checks and workflow checks</a> for the details.</dd>
+    <dt>A review has findings</dt>
+    <dd>Each finding gets one of three recorded decisions: fix it now (<code>FIX_NOW</code>), defer it to a follow-up issue (<code>DEFER</code>), or accept it with a reason (<code>ACCEPT</code>). See <a class="popup-link" href="#step-triage">decide what to do with review findings</a>.</dd>
+    <dt>You need a review although a check fails</dt>
+    <dd><code>review-feature.sh &lt;issue&gt; --unverified "&lt;reason&gt;"</code> reviews work whose verification fails, and records the reason. It is an exception, not a pass: the checks still count as failed, and the feature cannot be committed until they pass.</dd>
+    <dt>Your checks, and the checks of the workflow</dt>
+    <dd>Your project's tests and linters are one list; the tests of the workflow scripts are another. See <a href="configuration.html#verification">project checks and workflow checks</a>.</dd>
+  </dl>
 
   <h2 id="steps">Every step in detail</h2>
   <h3>Stage 1 · Plan the project</h3>
@@ -369,7 +398,7 @@
         <dt>Script</dt><dd><code>./scripts/start-planning.sh &lt;name&gt;</code></dd>
         <dt>Input</dt><dd>The project description and your answers</dd>
         <dt>Result</dt><dd><code>docs/PROJECT_REQUIREMENTS.md</code> in the planning worktree, a separate working copy of the repository</dd>
-        <dt>Approval</dt><dd>You approve the requirements</dd>
+        <dt>Your approval</dt><dd>You approve the requirements</dd>
       </dl>
     </section>
     <section class="detail" id="step-plan">
@@ -379,7 +408,7 @@
         <dt>Who</dt><dd>Planning agent</dd>
         <dt>Script</dt><dd>The same run of <code>start-planning.sh</code></dd>
         <dt>Result</dt><dd><code>docs/architecture.md</code>, <code>docs/roadmap.md</code>, <code>docs/decisions/</code></dd>
-        <dt>Stops if</dt><dd>The agent needs you to make a decision</dd>
+        <dt>Blocked if</dt><dd>The agent needs you to make a decision</dd>
       </dl>
     </section>
     <section class="detail" id="step-planning-review">
@@ -398,7 +427,7 @@
       <dl class="human">
         <dt>Who</dt><dd>You and the planning agent</dd>
         <dt>Script</dt><dd><code>./scripts/revise-planning.sh</code></dd>
-        <dt>Approval</dt><dd>You approve the decisions; an escalated finding needs your answer</dd>
+        <dt>Your approval</dt><dd>You approve the decisions; an escalated finding needs your answer</dd>
         <dt>Repeat</dt><dd>Review again after every change, until a round changes nothing</dd>
       </dl>
     </section>
@@ -409,7 +438,7 @@
         <dt>Who</dt><dd>You</dd>
         <dt>Script</dt><dd><code>./scripts/finish-planning.sh</code></dd>
         <dt>Result</dt><dd><code>docs/PLANNING_APPROVAL.md</code> and the planning commit</dd>
-        <dt>Stops if</dt><dd>The review is outdated or a required decision is missing</dd>
+        <dt>Blocked if</dt><dd>The review is outdated or a required decision is missing</dd>
       </dl>
     </section>
     <section class="detail" id="step-planning-merge">
@@ -443,7 +472,7 @@
         <dt>Script</dt><dd><code>./scripts/create-feature-issue.sh F01</code></dd>
         <dt>Input</dt><dd>The approved roadmap entry</dd>
         <dt>Result</dt><dd>A GitHub issue</dd>
-        <dt>Stops if</dt><dd>The approval of the plan is no longer valid</dd>
+        <dt>Blocked if</dt><dd>The approval of the plan is no longer valid</dd>
       </dl>
     </section>
     <section class="detail" id="step-implement">
@@ -454,7 +483,7 @@
         <dt>Script</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt;</code></dd>
         <dt>Resume</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt; --resume</code></dd>
         <dt>Result</dt><dd>Changes in the feature worktree</dd>
-        <dt>Stops if</dt><dd>The agent needs a decision from you</dd>
+        <dt>Blocked if</dt><dd>The agent needs a decision from you</dd>
       </dl>
     </section>
     <section class="detail" id="step-verify">
@@ -465,7 +494,7 @@
         <dt>Script</dt><dd><code>./scripts/verify.sh</code></dd>
         <dt>Configuration</dt><dd><code>scripts/verify.conf</code></dd>
         <dt>Rule</dt><dd>Verification has to pass before a feature is reviewed and before it is committed</dd>
-        <dt>Exception</dt><dd><code>review-feature.sh --unverified "&lt;reason&gt;"</code> reviews work whose verification fails. The review records the reason; the checks still count as failed, and the commit still requires them to pass</dd>
+        <dt>Exception</dt><dd><code>review-feature.sh &lt;issue&gt; --unverified "&lt;reason&gt;"</code> reviews work whose verification fails. The review records the reason; the checks still count as failed, and the commit still requires them to pass</dd>
       </dl>
     </section>
     <section class="detail" id="step-review">
@@ -486,7 +515,7 @@
         <dt>Who</dt><dd>You, step by step. An agent, in an unattended run</dd>
         <dt>Script</dt><dd><code>./scripts/triage-review.sh &lt;review&gt;</code></dd>
         <dt>Result</dt><dd>Recorded decisions, published on the feature issue</dd>
-        <dt>Approval</dt><dd>Step by step, you approve the decisions. In an unattended run an agent decides without you: read its decisions afterward</dd>
+        <dt>Your approval</dt><dd>Step by step, you approve the decisions. In an unattended run an agent decides without you: read its decisions afterward</dd>
       </dl>
     </section>
     <section class="detail" id="step-fix">

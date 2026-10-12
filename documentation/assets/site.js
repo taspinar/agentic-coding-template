@@ -1,6 +1,7 @@
 // The documentation site of the template. Everything on a page reads without
-// this script; it adds the menu on a narrow screen, the theme switch, and the
-// dialog that shows a diagram or the details of a step. A page marks the
+// this script; it adds the menu on a narrow screen, the theme switch, a copy
+// button on commands, and the dialog that shows a diagram or the details of a
+// step. A page marks the
 // document with the class js in its head, so that the style sheet folds the
 // navigation behind the menu button only when this script can open it.
 
@@ -60,6 +61,30 @@
         document.body.classList.remove("menu-open");
         menu.setAttribute("aria-expanded", "false");
       }
+    });
+  }
+
+  // --- Copy a command ---------------------------------------------------------
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    Array.prototype.forEach.call(document.querySelectorAll("pre"), function (block) {
+      var code = block.querySelector("code");
+      if (!code) {
+        return;
+      }
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-button";
+      button.textContent = "Copy";
+      button.addEventListener("click", function () {
+        navigator.clipboard.writeText(code.textContent).then(function () {
+          button.textContent = "Copied";
+          setTimeout(function () {
+            button.textContent = "Copy";
+          }, 1600);
+        });
+      });
+      block.appendChild(button);
     });
   }
 

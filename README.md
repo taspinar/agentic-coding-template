@@ -1,6 +1,6 @@
 # Agentic Coding Template
 
-A lightweight, model-agnostic repository template for agentic software engineering. It applies the useful parts of GH-600 at individual/small-team scale: plan → act → evaluate, GitHub as control plane, isolated execution, explicit agent contracts, risk-based autonomy, evidence, independent review, CI, and human gates for high-risk actions.
+A GitHub repository template for building software with AI coding agents. It combines established software engineering practices with AI coding tools: a reviewed plan before any feature, each feature in its own Git branch and worktree, an independent read-only review, recorded verification, and human approval for the decisions that matter.
 
 ## How it works
 

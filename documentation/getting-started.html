@@ -17,6 +17,7 @@
       <li><a href="index.html">Introduction</a></li>
       <li><a href="getting-started.html" aria-current="page">Getting started</a></li>
       <li><a href="workflow.html">The workflow</a></li>
+      <li><a href="configuration.html">Configuration and security</a></li>
       <li><a href="research.html">Research and design choices</a></li>
       <li><a href="history.html">History</a></li>
       <li><a href="future.html">Possible improvements</a></li>
@@ -41,9 +42,17 @@
     <li>At least one supported coding agent: Claude Code or Codex. Using two, one to implement and one to review, gives you a more independent review.</li>
   </ul>
 
+  <h2>Sign in</h2>
+  <p>Sign in to GitHub once with <code>gh auth login</code>. Each coding agent signs in through its own command-line tool. The workflow reads no tokens: do not put API keys or tokens in a file of the repository.</p>
+
   <h2>1. Create your repository</h2>
   <p><a href="https://github.com/taspinar/agentic-coding-template/generate">Create a repository from the template</a> and clone it. Then delete <code>documentation/</code> and <code>.github/workflows/pages.yml</code>: they are this website, not part of your project.</p>
-  <p>The <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">repository setup guide</a> lists the GitHub settings that go with the workflow, such as branch protection for <code>main</code>.</p>
+  <p>Then set up GitHub. The scripts point out risky changes, but only GitHub can enforce who merges:</p>
+  <ul>
+    <li>Add a ruleset for <code>main</code> that requires a pull request and the CI check.</li>
+    <li>Replace the placeholder <code>@YOUR_GITHUB_USERNAME</code> in <code>.github/CODEOWNERS</code> with your account.</li>
+  </ul>
+  <p>The <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">repository setup guide</a> has every setting; <a href="configuration.html#github">Configuration and security</a> explains why they matter.</p>
 
   <h2>2. Check your setup</h2>
 <pre><code>./scripts/doctor.sh</code></pre>
@@ -53,7 +62,7 @@
   <p>Each role in the workflow has an agent and a model. Set them in <code>.agents/agents.conf</code>, one role per line:</p>
 <pre><code>implementer: codex &lt;model&gt;
 reviewer: claude &lt;model&gt;</code></pre>
-  <p>The file lists every role, including the planner and the planning reviewer. A different agent for writing and for reviewing is a good default.</p>
+  <p>The file lists every role, including the planner and the planning reviewer; <a href="configuration.html#roles">Configuration and security</a> explains each one. A different agent for writing and for reviewing is a good default.</p>
 
   <h2>4. Plan your project</h2>
   <p>Write a short description of what you want to build, and start the planning with it:</p>
@@ -73,6 +82,27 @@ git pull</code></pre>
 ./scripts/run-feature.sh &lt;issue&gt;</code></pre>
   <p>The run implements the feature, runs your checks, has it reviewed, fixes what the review finds, and opens a pull request. It does not merge. Read the pull request and the decisions about the review findings, then merge it yourself.</p>
   <p>To stay closer to the work, run the steps one at a time, starting with <code>./scripts/start-feature.sh &lt;issue&gt;</code>. <a href="workflow.html">The workflow</a> explains each step.</p>
+
+  <h2>Update an existing project</h2>
+  <p>A repository created from the template does not receive later improvements of the workflow. To bring them over, run this from your repository, with no uncommitted changes:</p>
+<pre><code>./scripts/sync-template.sh</code></pre>
+  <p>It updates only the files that belong to the template, and never commits or pushes. On <code>main</code> it first creates a branch; on another branch it works there, so start from <code>main</code> to keep the update apart from other work. Your code, your plan, and your own checks are not touched. <a href="configuration.html#sync">More about updates</a>.</p>
+
+  <h2>If something goes wrong</h2>
+  <dl class="handles">
+    <dt>A tool is missing, or GitHub is not signed in</dt>
+    <dd>Run <code>./scripts/doctor.sh</code>. It names what is missing.</dd>
+    <dt>An agent does not start, or rejects the model</dt>
+    <dd>Check the agent and the model of that role in <code>.agents/agents.conf</code>, and that the agent's command-line tool is signed in. The workflow passes the model name on as you wrote it.</dd>
+    <dt>A check fails</dt>
+    <dd><code>./scripts/verify.sh</code> prints which check failed and its output. A feature cannot be reviewed or committed until the checks pass.</dd>
+    <dt>A script says a review is no longer current</dt>
+    <dd>The code changed after the review. Run <code>./scripts/review-feature.sh &lt;issue&gt;</code> again.</dd>
+    <dt>A script says the plan approval is not current</dt>
+    <dd>The requirements or the roadmap changed after you approved them. Changes to an approved plan go through <a href="workflow.html#step-change">the change process</a>.</dd>
+    <dt>A session or a run was interrupted</dt>
+    <dd>Continue with <code>./scripts/start-feature.sh &lt;issue&gt; --resume</code>, or run <code>./scripts/run-feature.sh &lt;issue&gt;</code> again: it picks up where it stopped.</dd>
+  </dl>
 
   <h2>Where to go next</h2>
   <ul>
