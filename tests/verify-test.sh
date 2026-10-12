@@ -337,4 +337,109 @@ if PATH="$tmp/bin:/usr/bin:/bin" "$project/scripts/verify.sh" --everything >"$pr
 fi
 [[ ! -e "$project/tools.log" ]] || fail "checks ran despite an unknown option"
 
+# Groups: a check may name one, and --only runs the checks of the named
+# groups. run_with <project> [option...] runs verify.sh with a fresh tool log.
+run_with() {
+  local project="$1"
+
+  shift
+  rm -f "$project/tools.log"
+  PATH="$tmp/bin:/usr/bin:/bin" MOCK_TOOL_LOG="$project/tools.log" \
+    "$project/scripts/verify.sh" "$@" >"$project/out.log" 2>&1
+}
+
+# ran <project>: the commands that ran, on one line.
+ran() {
+  tr '\n' ';' <"$1/tools.log" 2>/dev/null || true
+}
+
+project="$(setup_project groups "lint [code]: ruff check ." "tests[code]: pytest unit" \
+  "slow  [e2e-1]: pytest e2e" "plain: ruff plain")"
+
+# Without --only every check runs, as before.
+run_with "$project" || fail "a configuration with groups failed"
+[[ "$(ran "$project")" == "ruff check .;pytest unit;pytest e2e;ruff plain;" ]] ||
+  fail "not every check ran without --only: $(ran "$project")"
+
+run_with "$project" --groups || fail "--groups failed"
+[[ "$(tr '\n' ',' <"$project/out.log")" == "code,e2e-1,default," ]] ||
+  fail "--groups did not print the groups in the order of their first check: $(cat "$project/out.log")"
+[[ ! -e "$project/tools.log" ]] || fail "--groups ran a check"
+
+run_with "$project" --only code || fail "--only with one group failed"
+[[ "$(ran "$project")" == "ruff check .;pytest unit;" ]] || fail "--only code ran: $(ran "$project")"
+grep -Fq "Not a verification" "$project/out.log" || fail "a partial run did not say that it is not a verification"
+if grep -Fq "Verification passed" "$project/out.log"; then fail "a partial run reported a passed verification"; fi
+
+# A check without a group is in 'default', and several groups run in the
+# order of the file, not of the option.
+run_with "$project" --only default,code || fail "--only with two groups failed"
+[[ "$(ran "$project")" == "ruff check .;pytest unit;ruff plain;" ]] || fail "--only default,code ran: $(ran "$project")"
+
+if run_with "$project" --only code,nope; then fail "an unknown group was accepted"; fi
+grep -Fq "no check is in the group 'nope'" "$project/out.log" || fail "the unknown group was not named"
+[[ ! -e "$project/tools.log" ]] || fail "a check ran although a group was unknown"
+if run_with "$project" --only; then fail "--only without a group was accepted"; fi
+if run_with "$project" --only "Code"; then fail "a group name with a capital was accepted"; fi
+if run_with "$project" --only code --reuse; then fail "--only was accepted together with --reuse"; fi
+grep -Fq "nothing to reuse" "$project/out.log" || fail "the refusal of --reuse did not say why"
+
+# A failing check of a selected group fails the partial run; a failing check
+# of another group does not.
+if MOCK_PYTEST_EXIT=1 run_with "$project" --only code; then fail "a failing check of the group passed"; fi
+MOCK_PYTEST_EXIT=1 run_with "$project" --only default || fail "a failing check of another group failed the run"
+
+# A malformed group is a malformed line.
+project="$(setup_project bad-group "lint [Code]: ruff check .")"
+expect_failure "$project" "a group name with a capital must fail"
+project="$(setup_project empty-group "lint []: ruff check .")"
+expect_failure "$project" "an empty group must fail"
+
+# A partial run is never a verification: it records nothing, whichever
+# groups it runs, and it leaves a record of a complete run alone. A failing
+# partial run removes the record, like any failing run.
+project="$(setup_recorded_project partial)"
+printf '%s\n' "lint [code]: ruff check ." "tests: pytest" >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "Give a check a group"
+for group in code default code,default; do
+  run_with "$project" --only "$group" || fail "--only $group failed"
+  [[ ! -e "$project$record" ]] || fail "a partial run of '$group' recorded a passed verification"
+done
+run_with "$project" --reuse || fail "a complete run failed"
+[[ "$(ran "$project")" == "ruff check .;pytest ;" ]] || fail "--reuse took partial runs for a verification: $(ran "$project")"
+[[ -f "$project$record" ]] || fail "a complete run was not recorded"
+before="$(cat "$project$record")"
+run_with "$project" --only code || fail "a partial run after a complete one failed"
+[[ "$(cat "$project$record")" == "$before" ]] || fail "a passing partial run changed the record of a complete run"
+if MOCK_RUFF_EXIT=1 run_with "$project" --only code; then fail "a failing partial run returned success"; fi
+[[ ! -e "$project$record" ]] || fail "a failing partial run left the record of a passed verification"
+
+# The workflow self-tests have groups too, and keep their own rule: they run
+# when a workflow file changed, or with --all.
+project="$(setup_workflow_project workflow-groups)"
+printf '%s\n' "lint [code]: ruff check ." >"$project/scripts/verify.conf"
+printf '%s\n' "paths: scripts" "selftest [workflow]: pytest selftest" >"$project/scripts/verify-workflow.conf"
+git -C "$project" add -A
+git -C "$project" commit -qm "Group the checks"
+git -C "$project" branch -f main HEAD
+run_with "$project" --groups || fail "--groups failed with workflow self-tests"
+[[ "$(tr '\n' ',' <"$project/out.log")" == "code,workflow," ]] || fail "--groups left out the group of a self-test"
+run_with "$project" --only workflow || fail "--only workflow failed"
+[[ ! -e "$project/tools.log" ]] || fail "--only ran a self-test although no workflow file changed"
+grep -Fq "SKIP  workflow self-tests" "$project/out.log" || fail "the skipped self-tests were not reported"
+run_with "$project" --all --only workflow || fail "--all --only workflow failed"
+[[ "$(ran "$project")" == "pytest selftest;" ]] || fail "--all --only workflow ran: $(ran "$project")"
+run_with "$project" --all --only code || fail "--all --only code failed"
+[[ "$(ran "$project")" == "ruff check .;" ]] || fail "--all --only code ran a self-test: $(ran "$project")"
+
+# A check name is unique across both files, also when the two checks name
+# different groups: the name identifies the check in the summary.
+project="$(setup_workflow_project same-name-groups)"
+printf '%s\n' "lint [code]: ruff check ." >"$project/scripts/verify.conf"
+printf '%s\n' "paths: scripts" "lint [workflow]: pytest selftest" >"$project/scripts/verify-workflow.conf"
+if run_with "$project" --all; then fail "the same check name in both files, in different groups, was accepted"; fi
+grep -Fq "duplicate check name" "$project/out.log" || fail "the duplicate name was not reported"
+[[ ! -e "$project/tools.log" ]] || fail "a check ran although a check name is used twice"
+if run_with "$project" --groups; then fail "--groups accepted a duplicate check name"; fi
+
 echo "verify tests passed"

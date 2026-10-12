@@ -11,16 +11,24 @@ set -euo pipefail
 # A run in which every check passed is recorded for the content it verified
 # (scripts/lib/verification.sh). With --reuse, a second run on identical
 # content is skipped.
+#
+# A check may name a group: '<name> [<group>]: <command>'. A check without one
+# belongs to the group 'default'. --only runs the checks of the named groups,
+# for a CI that spreads the same checks over parallel jobs. Such a partial
+# run is never a verification: it records nothing.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 config="$root/scripts/verify.conf"
 workflow_config="$root/scripts/verify-workflow.conf"
 
 comment_pattern='^[[:space:]]*(#.*)?$'
-check_pattern='^([a-z0-9][a-z0-9-]*):[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
+check_pattern='^([a-z0-9][a-z0-9-]*)([[:space:]]*\[([a-z0-9][a-z0-9-]*)\])?:[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
+default_group="default"
 
 usage() {
   echo "Usage: $0 [--all] [--reuse]"
+  echo "       $0 [--all] --only <group>[,<group>...]"
+  echo "       $0 --groups"
   echo
   echo "Runs the checks in scripts/verify.conf. The workflow self-tests in"
   echo "scripts/verify-workflow.conf run only when a file listed under 'paths:' in"
@@ -28,24 +36,49 @@ usage() {
   echo
   echo "--reuse skips the run when verification already passed for exactly the"
   echo "current content, as recorded by an earlier run."
+  echo
+  echo "--only runs the checks of the named groups only. A check names its group"
+  echo "as '<name> [<group>]: <command>'; one without a group is in 'default'."
+  echo "A partial run records nothing and cannot be combined with --reuse: only"
+  echo "a run of every check verifies the content."
+  echo
+  echo "--groups prints the groups that have a check, one per line."
   exit 1
 }
 
 config_fail() {
   echo "Error: $*" >&2
-  echo "Declare required checks as '<name>: <command>'." >&2
+  echo "Declare required checks as '<name>: <command>' or '<name> [<group>]: <command>'." >&2
   exit 1
 }
 
 run_all=0
 reuse=0
-for argument in "$@"; do
-  case "$argument" in
+list_groups=0
+only=""
+partial=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --all) run_all=1 ;;
     --reuse) reuse=1 ;;
+    --groups) list_groups=1 ;;
+    --only)
+      [[ $# -ge 2 && "$2" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]] || usage
+      only="$2"
+      partial=1
+      shift
+      ;;
     *) usage ;;
   esac
+  shift
 done
+if [[ "$partial" -eq 1 && "$reuse" -eq 1 ]]; then
+  echo "Error: --only cannot be combined with --reuse: a partial run is not a verification, so there is nothing to reuse." >&2
+  exit 1
+fi
+if [[ "$list_groups" -eq 1 && ( "$partial" -eq 1 || "$reuse" -eq 1 || "$run_all" -eq 1 ) ]]; then
+  usage
+fi
 
 # A passed run is recorded only where the record is a file that Git ignores.
 recordable=0
@@ -63,6 +96,7 @@ fi
 
 names=()
 commands=()
+groups=()
 workflow_paths=""
 
 # load_checks <file> <paths-entry>
@@ -75,6 +109,7 @@ load_checks() {
   local line
   local line_number=0
   local name
+  local group
   local value
   local existing
 
@@ -85,8 +120,10 @@ load_checks() {
       config_fail "malformed check on line $line_number of $label: $line"
 
     name="${BASH_REMATCH[1]}"
-    value="${BASH_REMATCH[2]}"
+    group="${BASH_REMATCH[3]}"
+    value="${BASH_REMATCH[4]}"
     if [[ "$paths_entry" == "yes" && "$name" == "paths" ]]; then
+      [[ -z "$group" ]] || config_fail "'paths' takes no group on line $line_number of $label."
       [[ -z "$workflow_paths" ]] ||
         config_fail "'paths' is declared more than once in $label."
       workflow_paths="$value"
@@ -98,7 +135,13 @@ load_checks() {
     done
     names+=("$name")
     commands+=("$value")
+    groups+=("${group:-$default_group}")
   done <"$file"
+}
+
+# in_list <value> <comma-separated-list>
+in_list() {
+  [[ ",$2," == *",$1,"* ]]
 }
 
 # workflow_files_changed
@@ -130,7 +173,7 @@ workflow_files_changed() {
   [[ -n "$changed" ]]
 }
 
-echo "== Agentic project verification =="
+[[ "$list_groups" -eq 1 ]] || echo "== Agentic project verification =="
 
 [[ -f "$config" ]] || config_fail "verification config not found: $config"
 load_checks "$config" no
@@ -162,6 +205,24 @@ if [[ -f "$workflow_config" ]]; then
   fi
 fi
 
+# The groups that have a check, in the order of their first check.
+known_groups=""
+for group in "${groups[@]}"; do
+  in_list "$group" "$known_groups" || known_groups="${known_groups:+$known_groups,}$group"
+done
+if [[ "$list_groups" -eq 1 ]]; then
+  printf '%s\n' "${known_groups//,/$'\n'}"
+  exit 0
+fi
+if [[ "$partial" -eq 1 ]]; then
+  IFS=, read -r -a wanted <<<"$only"
+  for group in "${wanted[@]}"; do
+    in_list "$group" "$known_groups" ||
+      config_fail "no check is in the group '$group'. The groups are: ${known_groups//,/, }."
+  done
+  echo "Only the groups: ${only//,/, }. A partial run is not a verification and records nothing."
+fi
+
 # With --reuse, a recorded pass for exactly this content stands in for a run.
 # A record made without the workflow self-tests does not cover a run that
 # needs them.
@@ -189,6 +250,9 @@ for index in "${!names[@]}"; do
   fi
   name="${names[$index]}"
   command="${commands[$index]}"
+  if [[ "$partial" -eq 1 ]] && ! in_list "${groups[$index]}" "$only"; then
+    continue
+  fi
   read -r tool _ <<<"$command"
 
   echo
@@ -217,13 +281,20 @@ done
 
 echo
 echo "== Verification summary =="
-printf '%s\n' "${results[@]}"
+[[ "${#results[@]}" -eq 0 ]] || printf '%s\n' "${results[@]}"
 [[ -z "$workflow_skipped" ]] || echo "$workflow_skipped"
 
 if [[ "$failed" -ne 0 ]]; then
   [[ "$recordable" -eq 0 ]] || verification_forget "$root"
   echo "Verification failed." >&2
   exit 1
+fi
+
+# A partial run passed its own checks and says nothing about the others: an
+# existing record is left as it is, and none is written.
+if [[ "$partial" -eq 1 ]]; then
+  echo "The checks of the groups ${only//,/, } passed. Not a verification: run ./scripts/verify.sh without --only for that."
+  exit 0
 fi
 
 # Record the pass for the content that was verified. When a check changed a
