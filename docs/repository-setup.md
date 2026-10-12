@@ -7,6 +7,22 @@ These settings are intentionally not all encoded in repository files,
 because some GitHub settings and rulesets are not inherited
 automatically when creating a new repository from a template.
 
+**What GitHub enforces, and what the scripts only detect.** The workflow
+scripts check and report: `check-guardrails.sh` flags a change that needs
+the owner, `doctor.sh` warns when `main` has no required check, and no
+script of the workflow merges a pull request. None of that stops a person,
+or an agent that runs with your GitHub permissions, from merging. Only the
+settings below do: a ruleset for `main`, a required status check, and, in a
+team, required reviews.
+
+How the workflow itself runs is not described here: the steps are in
+[`docs/workflow.md`](workflow.md) and the commands in
+[`docs/development.md`](development.md).
+
+A new repository also holds the website of the template itself. Delete
+`documentation/` and `.github/workflows/pages.yml`: they are not part of
+your project.
+
 ------------------------------------------------------------------------
 
 ## 1. General repository settings
@@ -96,6 +112,19 @@ Human approval can be added later for:
 -   production-critical repositories
 -   regulated environments
 -   high-risk production deployments
+
+### Code owners
+
+`.github/CODEOWNERS` lists the paths that need the owner: the rules for
+agents, the policies, the CI workflows, and the decision records. It ships
+with the placeholder `@YOUR_GITHUB_USERNAME`. Replace it with your account,
+or with a team; until then the file names nobody and has no effect.
+
+The file takes effect only when the ruleset of `main` requires a review from
+code owners. For one developer that would mean approving your own pull
+requests, which GitHub does not allow, so leave that setting off and rely on
+the merge approval gate of the workflow, which flags these paths in the
+commit message and the pull request. In a team, turn it on.
 
 ------------------------------------------------------------------------
 
@@ -199,7 +228,7 @@ Example:
 
 ------------------------------------------------------------------------
 
-## 7. GCP authentication
+## 7. Optional: GCP authentication
 
 For projects deployed to Google Cloud, prefer:
 
@@ -217,157 +246,33 @@ Agents must not receive unnecessary production credentials.
 
 ------------------------------------------------------------------------
 
-## 8. GitHub Issues as the system of record
+## 8. How work reaches `main`
 
-Enable GitHub Issues and use them for:
-
--   backlog
--   features
--   bugs
--   acceptance criteria
--   priority
--   discussion
--   linking implementation work
-
-The repository should follow this separation:
+Enable GitHub Issues: an Issue says what has to be done, and a pull request
+that closes it is the record of review and integration. Nobody implements on
+`main`; planning and every feature get their own branch and worktree, with
+one writing agent per worktree.
 
 ``` text
-GitHub Issue
-= what needs to be done
-
-.agents/plans/
-= how a complex issue will be implemented
-
-Git history
-= what actually changed
-
-Pull Request
-= review, discussion and integration record
+GitHub Issue    what needs to be done, and its acceptance criteria
+.agents/plans/  how a complex Issue will be implemented
+Git history     what actually changed
+Pull request    review, checks, and the decision to merge
 ```
 
-Do not replace GitHub Issues with local feature files.
+A pull request references its Issue (`Closes #12`), carries the result of
+the verification and of the independent review, and is merged by a person.
+The steps in between, who acts in each, and what is recorded are in
+[`docs/workflow.md`](workflow.md); the commands are in
+[`docs/development.md`](development.md).
+
+Agents are contributors, not authorities. CI remains the final technical
+check, and a high-risk action needs explicit human approval; the rules are in
+`AGENTS.md` and `.agents/policies/`.
 
 ------------------------------------------------------------------------
 
-## 9. Recommended branch workflow
-
-Never implement directly on `main`.
-
-Bootstrap a new project first with:
-
-``` text
-./scripts/start-planning.sh
-```
-
-This creates `planning/project-bootstrap` in an isolated sibling worktree,
-runs Project Grill, requires approval of `docs/PROJECT_REQUIREMENTS.md`, and
-then starts architecture and roadmap planning. Merge the verified planning
-branch through a Pull Request before creating feature Issues.
-
-Use:
-
-``` text
-main
-  |
-  +-- feature/12-authentication
-  |
-  +-- feature/13-user-profile
-```
-
-For parallel agents, use separate worktrees:
-
-``` text
-project/
-project-12-authentication/
-project-13-user-profile/
-```
-
-One writing agent per worktree.
-
-Multiple read-only reviewers may inspect the same stable branch or
-commit.
-
-------------------------------------------------------------------------
-
-## 10. Pull Request workflow
-
-Recommended lifecycle:
-
-``` text
-GitHub Issue
-    ↓
-Feature plan when warranted
-    ↓
-Feature branch / worktree
-    ↓
-Implementation
-    ↓
-Local verification
-    ↓
-Independent AI review when required
-    ↓
-Review triage with human approval
-    ↓
-Create approved deferred follow-up Issues
-    ↓
-Apply approved FIX_NOW findings
-    ↓
-Verification
-    ↓
-Commit (finish-feature.sh)
-    ↓
-Push and Pull Request (publish-feature.sh)
-    ↓
-GitHub Actions; the required check keeps a failure from being merged
-    ↓
-Merge, by you
-    ↓
-Automatic Issue closure
-    ↓
-Worktree cleanup
-```
-
-Pull Requests should reference their issue.
-
-Example:
-
-``` text
-Closes #12
-```
-
-------------------------------------------------------------------------
-
-## 11. AI-generated work
-
-AI agents are contributors, not authorities.
-
-For substantial changes:
-
--   implementation should be attributable to an agent or human
--   independent review should be performed when required by the
-    project's risk model
--   deterministic CI remains the final technical verification gate
--   high-risk actions may require explicit human approval
-
-Recommended PR metadata:
-
-``` md
-## Agent involvement
-
-Planner:
-Implementer:
-Reviewer:
-
-## Verification
-
-- [ ] Independent review completed
-- [ ] `./scripts/verify.sh` passed
-- [ ] GitHub Actions passed
-```
-
-------------------------------------------------------------------------
-
-## 12. Production deployment
+## 9. Optional: production deployment
 
 For applications with production infrastructure, avoid direct deployment
 from feature branches.
@@ -397,7 +302,7 @@ configure required approval before deployment.
 
 ------------------------------------------------------------------------
 
-## 13. Production database controls
+## 10. Optional: production database controls
 
 Agents may:
 
@@ -418,7 +323,7 @@ Production database changes require explicit approval.
 
 ------------------------------------------------------------------------
 
-## 14. Recommended repository checklist
+## 11. Recommended repository checklist
 
 Complete this checklist after creating a new repository from the
 template.
@@ -426,6 +331,7 @@ template.
 ### General
 
 -   [ ] Repository created from template
+-   [ ] `documentation/` and `.github/workflows/pages.yml` deleted
 -   [ ] Correct visibility configured
 -   [ ] Issues enabled
 
@@ -442,6 +348,8 @@ template.
 -   [ ] Deletion of `main` blocked
 -   [ ] Force pushes blocked
 -   [ ] Pull Request required before merge
+-   [ ] `@YOUR_GITHUB_USERNAME` replaced in `.github/CODEOWNERS`
+-   [ ] In a team: code owner review required for the paths in `CODEOWNERS`
 
 ### CI
 
@@ -470,7 +378,7 @@ If applicable:
 
 ------------------------------------------------------------------------
 
-## 15. Template repository specific setting
+## 12. Template repository specific setting
 
 Only for the template repository itself:
 
