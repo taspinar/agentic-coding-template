@@ -256,6 +256,17 @@ printf 'another change\n' >>"$repo/feature.txt"
 run_review "$repo" 7 || fail "a review of changed content failed"
 [[ "$(verification_runs "$repo")" -eq 2 ]] || fail "verification did not run again for changed content"
 
+# A partial run of one group is not a verification: the review still runs
+# every check before it starts.
+repo="$(setup_repo partial-run)"
+(cd "$repo" && ./scripts/verify.sh --only default >/dev/null 2>&1) || fail "a partial run failed"
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "the partial run did not run its check"
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review after a partial run failed"
+}
+[[ "$(verification_runs "$repo")" -eq 2 ]] || fail "the review took a partial run for a verification"
+
 repo="$(setup_repo verification-fails)"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"
 expect_no_review "$repo" "verification fails" 7
