@@ -3,6 +3,28 @@
 What each part of the template is for. The workflow that connects them is in
 `docs/workflow.md`.
 
+## Where each topic is described
+
+One place is authoritative for each topic; the others summarize it and link
+to it. When a script changes, change the authoritative place, and check the
+summaries. The files in the repository describe the version a project has;
+the website describes the current template.
+
+| Topic | Authoritative | Summarized in |
+|---|---|---|
+| What the template is, in short | `README.md` | The introduction of the website |
+| GitHub settings: rulesets, required checks, code owners, permissions | `docs/repository-setup.md` | "Getting started" and "Configuration and security" on the website |
+| Commands, options, and how to resume or recover | `docs/development.md` and the usage text of each script | Selected commands on the website and in the README |
+| Steps, artifacts, approvals, and what stops a step | `docs/workflow.md` | The workflow page of the website |
+| Principles: where state lives, roadmap versus Issues, plans versus Issues | `docs/agentic-workflow.md` | `AGENTS.md`, briefly |
+| What makes a check or a review worth having | `docs/evaluation.md` | "Configuration and security" on the website |
+| What each file is for | This file | The repository tree on the website |
+| A complete run | `docs/example.md` | Linked, not repeated |
+| Rules and boundaries for agents | `AGENTS.md`, `.agents/policies/`, `.agents/prompts/` | Never replaced by a page of the website |
+| Reporting a security problem | `SECURITY.md` | Linked from the website |
+| Research, history, and proposals | The website (`documentation/`) | Not repeated in `docs/` |
+| Requirements, architecture, roadmap, and decisions of a project | The project's own `docs/` | The website explains only how they come about |
+
 ## Rules and configuration
 
 | Path | Purpose |

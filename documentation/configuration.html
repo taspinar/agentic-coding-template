@@ -35,6 +35,8 @@
   <p class="lede">Which agent does what, what an agent is allowed to do, how the workflow flags risky changes, and what you have to set up in GitHub yourself.</p>
   <div class="note"><p><strong>The short version:</strong> the scripts decide what an agent may do on your machine and point out changes that need your attention. They do not control who can merge on GitHub. For that you configure branch rules and permissions in the repository.</p></div>
 
+  <p>This page summarizes. The exact behavior of the version your project has is in its own files: the scripts, <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/workflow.md"><code>docs/workflow.md</code></a>, and <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md"><code>docs/development.md</code></a>.</p>
+
   <h2 id="roles">Agent roles and models</h2>
   <p>A role is a job in the workflow, not a person or an account. Each role has an agent and a model, set in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/agents.conf"><code>.agents/agents.conf</code></a>, one role per line:</p>
 <pre><code>implementer: codex &lt;model&gt;
@@ -93,6 +95,7 @@ reviewer: claude &lt;model&gt;</code></pre>
     <li><strong><code>.github/CODEOWNERS</code></strong> ships with the placeholder <code>@YOUR_GITHUB_USERNAME</code>. Replace it with your own account before you require code owner reviews; until then the file has no effect.</li>
     <li><strong>Bypass rights:</strong> a repository administrator can usually bypass a ruleset. Decide whether that should apply to you.</li>
   </ul>
+  <p>The complete list of settings is the <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md">repository setup checklist</a>. What to keep out of a repository, and how to report a security problem, is in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/SECURITY.md"><code>SECURITY.md</code></a>.</p>
   <p><strong>One identity:</strong> an agent runs with the GitHub permissions of the account that started it. If that account may merge, so may the agent, and no script can prevent it. A separate GitHub identity with limited permissions for agents is not built yet (<a href="https://github.com/taspinar/agentic-coding-template/issues/99">Issue 99</a>).</p>
 
   <h2 id="verification">Project checks and workflow checks</h2>
