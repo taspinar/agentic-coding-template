@@ -477,12 +477,13 @@
     </section>
     <section class="detail" id="step-implement">
       <h3>Implement the feature</h3>
-      <p>The implementer works in a separate branch and worktree. It reads the feature issue and the approved project documents, writes the code and the tests, and leaves notes so that the work can be resumed.</p>
+      <p>The implementer works in a separate branch and worktree. It reads the feature issue and the approved project documents, writes the code and the tests, and leaves notes so that the work can be resumed. Before it ends, it records how far the issue is done: complete, partial, or blocked, with evidence for each acceptance criterion.</p>
       <dl class="agent">
         <dt>Who</dt><dd>Implementer agent</dd>
         <dt>Script</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt;</code></dd>
         <dt>Resume</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt; --resume</code></dd>
-        <dt>Result</dt><dd>Changes in the feature worktree</dd>
+        <dt>Result</dt><dd>Changes in the feature worktree, and a completion record</dd>
+        <dt>Not done if</dt><dd>The record does not say complete, or the notes list remaining work. A session that ends is not a finished feature: the workflow continues to the review only when the record says complete</dd>
         <dt>Blocked if</dt><dd>The agent needs a decision from you</dd>
       </dl>
     </section>
@@ -503,7 +504,8 @@
       <dl class="agent">
         <dt>Who</dt><dd>Reviewer agent</dd>
         <dt>Script</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt;</code></dd>
-        <dt>Option</dt><dd><code>--changes</code> for a follow-up review of the recent fixes only</dd>
+        <dt>Option</dt><dd><code>--changes</code> for a follow-up review of the recent fixes only. The review before the commit always covers the complete feature</dd>
+        <dt>Checks</dt><dd>Every acceptance criterion of the issue against the code and the tests. The implementer's completion record is a claim; the reviewer reports a claim the code does not support</dd>
         <dt>Result</dt><dd>A review tied to the current version of the code. If the code changes afterward, another review is required</dd>
         <dt>Next</dt><dd>Decide on the findings, or commit when there are none</dd>
       </dl>
@@ -525,22 +527,23 @@
         <dt>Who</dt><dd>Implementer agent</dd>
         <dt>Script</dt><dd><code>./scripts/apply-triage.sh &lt;triage&gt;</code></dd>
         <dt>Result</dt><dd>Verified fixes that wait for another review</dd>
-        <dt>Next</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt; --changes</code></dd>
+        <dt>Next</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt; --changes</code> to confirm the fixes, then <code>./scripts/review-feature.sh &lt;issue&gt;</code> for the complete feature</dd>
       </dl>
     </section>
     <section class="detail" id="step-commit">
       <h3>Commit the feature</h3>
-      <p>Before committing, the script checks that verification passed and that the latest review is still valid. The commit message records both, and whether the change needs additional approval.</p>
+      <p>Before committing, the script checks that the feature is complete, that verification passed, and that the latest review is still valid and covers the complete feature. The commit message records all three, and whether the change needs additional approval.</p>
       <dl class="script">
         <dt>Who</dt><dd>Script</dd>
         <dt>Script</dt><dd><code>./scripts/finish-feature.sh &lt;issue&gt; "&lt;summary&gt;"</code></dd>
-        <dt>Result</dt><dd>A commit with the verification and review information</dd>
+        <dt>Result</dt><dd>A commit with the completion, verification, and review information</dd>
+        <dt>Refuses if</dt><dd>The implementer's completion record is missing or does not say complete. <code>--partial</code> commits unfinished work as your explicit choice</dd>
         <dt>Important</dt><dd>This step does not push or merge</dd>
       </dl>
     </section>
     <section class="detail" id="step-publish">
       <h3>Open the pull request</h3>
-      <p>Push the feature branch and open a pull request linked to its GitHub issue. CI runs the project's checks again.</p>
+      <p>Push the feature branch and open a pull request linked to its GitHub issue. CI runs the project's checks again. The pull request closes the issue only when the feature is complete; unfinished work becomes a draft that leaves the issue open.</p>
       <dl class="script">
         <dt>Who</dt><dd>Script</dd>
         <dt>Script</dt><dd><code>./scripts/publish-feature.sh &lt;issue&gt;</code></dd>

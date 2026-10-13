@@ -37,3 +37,6 @@ credentials*.json
 # implementer, and the final messages of unattended agent sessions.
 .agents/summaries/
 .agents/run/
+# The implementer's record of how far the Issue is done. The scripts go on to
+# the commit and the pull request only when it says complete.
+.agents/completion/

@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
+source "$script_dir/lib/completion.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>] [--unattended]"
@@ -101,11 +102,23 @@ $AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
   fi
   echo "The implementation session ended. Nothing is committed yet."
   echo
-  echo "Next, in the feature worktree:"
-  echo "  cd \"$session_worktree\""
-  echo "  ./scripts/review-feature.sh $issue    # verifies first, unless the session verified this content"
-  echo
-  echo "When the work is not complete, continue it with: $0 $issue --resume"
+  # A session that ended is not a feature that is complete: the completion
+  # gate says where the work stands, from the implementer's own record and
+  # its handoff note.
+  session_gate="$(completion_gate "$session_worktree" "$issue" 2>/dev/null || true)"
+  if [[ "$(printf '%s\n' "$session_gate" | sed -n 1p)" == "complete" ]]; then
+    echo "The implementer reports the Issue as complete ($COMPLETION_DIR/$issue.json)."
+    echo
+    echo "Next, in the feature worktree:"
+    echo "  cd \"$session_worktree\""
+    echo "  ./scripts/review-feature.sh $issue    # verifies first, unless the session verified this content"
+  else
+    echo "The Issue is not complete ($(printf '%s\n' "$session_gate" | sed -n 1p)):"
+    printf '%s\n' "$session_gate" | sed '1d; s/^/  - /'
+    echo
+    echo "Continue the work with: $0 $issue --resume"
+    echo "finish-feature.sh commits only a feature whose completion gate passes."
+  fi
 }
 
 if [[ "$resume" -eq 1 ]]; then
@@ -197,7 +210,9 @@ Before you change anything, establish where the work stands:
 - Check what a handoff note claims against the files before relying on it.
 
 Then tell the human in a few lines what is done and what remains, and
-continue. Do not redo work that is complete; verify it instead.
+continue. Do not redo work that is complete; verify it instead. Before you
+end, bring the completion record, the handoff note, and the summary up to
+date with where the work stands then (implementer contract, 'Completion').
 
 Work only on this issue.
 

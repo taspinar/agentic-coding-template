@@ -160,8 +160,11 @@ the Issue it would create from the `F01` block, and asks
 
 This creates `feature/12-recipes` in `../recipe-box-12-recipes` and starts the
 implementer there. It writes code and tests, runs the verification at the end,
-and does not commit. If the session ends before the work is complete, continue
-it with `./scripts/start-feature.sh 12 --resume`.
+and does not commit. Before it ends, it records in
+`.agents/completion/12.json` how far the Issue is done; the script shows that
+and offers the review only when the record says complete. If the session ends
+before the work is complete, continue it with
+`./scripts/start-feature.sh 12 --resume`.
 
 ## 5. Review, triage, and fix
 
@@ -218,8 +221,9 @@ When round 2 passes, there is nothing to triage.
 ./scripts/finish-feature.sh 12 "Add recipes"
 ```
 
-The script runs the verification and checks that round 2 is current and that
-round 1's triage was published. Your editor opens with:
+The script checks that the completion record says complete, runs the
+verification, and checks that round 2 is current, reviewed the complete
+feature, and that round 1's triage was published. Your editor opens with:
 
 ```text
 Add recipes
@@ -229,6 +233,10 @@ Issue: #12
 Changes:
 - Adds a page that lists the recipes, sorted by name.
 - Stores recipes in the browser, so the list survives a reload.
+
+Completion: complete
+- met: The page lists the recipes, sorted by name (tests/test_list.py::test_sorted_by_name)
+- met: Recipes survive a reload (tests/test_storage.py::test_reload_keeps_recipes)
 
 Verification:
 - ./scripts/verify.sh passed

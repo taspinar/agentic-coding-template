@@ -6,9 +6,14 @@ usage() {
   echo "Usage: $0 <issue-number> [--wait]"
   echo
   echo "Run in the feature worktree after finish-feature.sh. Pushes the branch and"
-  echo "opens the pull request that closes the Issue. The description is the latest"
-  echo "commit message and the manual steps; an open pull request gets it again,"
-  echo "replacing its description. It never merges."
+  echo "opens the pull request. The description is the latest commit message and"
+  echo "the manual steps; an open pull request gets it again, replacing its"
+  echo "description. It never merges."
+  echo
+  echo "The pull request closes the Issue only when the feature is complete: the"
+  echo "commit carries 'Completion: complete' of finish-feature.sh and the"
+  echo "completion gate still passes. Otherwise it is opened as a draft that"
+  echo "refers to the Issue and says why it does not close it."
   echo
   echo "The script ends once the pull request is open; follow its checks on the pull"
   echo "request page and merge after they passed. It warns when the base branch does"
@@ -32,6 +37,8 @@ wait_for_checks=0
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/github.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/completion.sh"
+command -v jq >/dev/null 2>&1 || fail "jq is required."
 
 root="$(git rev-parse --show-toplevel)"
 branch="$(git branch --show-current)"
@@ -48,6 +55,51 @@ if [[ -f "$manual_file" ]] && grep -q '[^[:space:]]' "$manual_file"; then
   manual_steps="$(grep '[^[:space:]]' "$manual_file")"
 fi
 
+# Whether this pull request may close the Issue. finish-feature.sh recorded
+# the outcome of the completion gate in the commit; the gate is asked again
+# here, because the pull request is what closes the Issue on a merge. A
+# commit without the statement, for example one made by hand, closes nothing.
+committed_completion="$(git -C "$root" log -1 --format=%b | sed -n 's/^Completion: //p' | sed -n 1p)"
+gate="$(completion_gate "$root" "$issue")"
+gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
+closes=0
+if [[ "$committed_completion" == "complete" && "$gate_status" == "complete" ]]; then
+  closes=1
+elif [[ "$committed_completion" == "complete" ]]; then
+  not_closing="the commit says the feature is complete, but the completion gate does not pass now ($gate_status)"
+elif [[ -n "$committed_completion" ]]; then
+  not_closing="the feature was committed as $committed_completion"
+else
+  not_closing="the commit has no completion statement of finish-feature.sh"
+fi
+
+# GitHub also closes an Issue from the message of a commit that reaches the
+# default branch, whatever the pull request says. Work that may not close the
+# Issue is therefore not published while a commit of the branch carries a
+# closing keyword for it: nothing here can take that back after a merge.
+if [[ "$closes" -eq 0 ]]; then
+  feature_base="$(git -C "$root" config --get "branch.$branch.workflow-base" || true)"
+  feature_base="${feature_base:-main}"
+  commit_range="HEAD -1"
+  for candidate in "origin/$feature_base" "$feature_base"; do
+    if git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+      commit_range="$candidate..HEAD"
+      break
+    fi
+  done
+  # shellcheck disable=SC2086
+  closing_commits="$(git -C "$root" log --format='%h%x09%s%x09%B%x00' $commit_range |
+    tr '\n' ' ' | tr '\0' '\n' | sed 's/^ *//' |
+    grep -Ei "$(completion_closing_pattern "$issue")" | cut -f1,2 | tr '\t' ' ' || true)"
+  if [[ -n "$closing_commits" ]]; then
+    echo "Error: this work may not close Issue #$issue ($not_closing), but a commit of the branch says that it does:" >&2
+    printf '%s\n' "$closing_commits" | sed 's/^/  /' >&2
+    echo "GitHub closes the Issue when such a commit is merged, whatever the pull request says." >&2
+    echo "Reword the commit (for example 'Refs #$issue'), or complete the feature and commit it with ./scripts/finish-feature.sh. Nothing was pushed." >&2
+    exit 1
+  fi
+fi
+
 echo "Pushing $branch..."
 git -C "$root" push -u origin "$branch" || fail "could not push $branch."
 echo
@@ -60,12 +112,21 @@ url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // emp
 # both.
 body="$(mktemp "${TMPDIR:-/tmp}/publish-feature-body.XXXXXX")"
 trap 'rm -f "$body"' EXIT
+# closing_allowed: copies standard input; in a description that may not close
+# the Issue, a closing keyword for it becomes a reference.
+closing_allowed() {
+  if [[ "$closes" -eq 1 ]]; then
+    cat
+  else
+    completion_neutralize_closing "$issue"
+  fi
+}
 {
-  git -C "$root" log -1 --format=%b
+  git -C "$root" log -1 --format=%b | closing_allowed
   echo
   echo "## Manual steps"
   echo
-  printf '%s\n' "${manual_steps:-None.}"
+  printf '%s\n' "${manual_steps:-None.}" | closing_allowed
   echo
   # The decision of the merge approval gate was made for this commit; a
   # later commit on the branch needs a new decision by finish-feature.sh.
@@ -73,7 +134,13 @@ trap 'rm -f "$body"' EXIT
     echo "The merge approval above was decided for commit \`$(git -C "$root" rev-parse HEAD)\`."
     echo
   fi
-  echo "Closes #$issue"
+  if [[ "$closes" -eq 1 ]]; then
+    echo "Closes #$issue"
+  else
+    # Worded without a closing keyword next to the number: GitHub would
+    # follow "does not close #<issue>" too.
+    echo "Issue #$issue stays open after a merge of this pull request: $not_closing."
+  fi
 } >"$body"
 
 if [[ -n "$url" ]]; then
@@ -81,11 +148,36 @@ if [[ -n "$url" ]]; then
   gh pr edit "$url" --body-file "$body" >/dev/null ||
     fail "could not update the description of $url. The branch is pushed."
   echo "Updated its description from the latest commit."
+  is_draft="$(gh pr view "$url" --json isDraft --jq '.isDraft' 2>/dev/null)" || is_draft=""
+  if [[ "$closes" -eq 1 && "$is_draft" == "true" ]]; then
+    # Opened as a draft for partial work that is complete now.
+    gh pr ready "$url" >/dev/null ||
+      echo "Warning: could not mark $url as ready for review; do that on GitHub." >&2
+  elif [[ "$closes" -eq 0 && "$is_draft" != "true" ]]; then
+    # A pull request that is ready for review, with work that is not
+    # complete: back to a draft, so that it is not merged as a finished
+    # feature. When that fails, the description still says that the Issue
+    # stays open, and the script says so.
+    if gh pr ready "$url" --undo >/dev/null; then
+      echo "Converted it to a draft: the work is not complete."
+    else
+      echo "Warning: could not convert $url to a draft; do that on GitHub. Its description says that it does not close Issue #$issue." >&2
+    fi
+  fi
 else
-  url="$(gh pr create --head "$branch" --title "$(git -C "$root" log -1 --format=%s)" --body-file "$body")" ||
-    fail "could not open the pull request. The branch is pushed; open it by hand with 'Closes #$issue' in its description."
+  create_options=()
+  [[ "$closes" -eq 1 ]] || create_options=(--draft)
+  url="$(gh pr create --head "$branch" --title "$(git -C "$root" log -1 --format=%s)" --body-file "$body" ${create_options[@]+"${create_options[@]}"})" ||
+    fail "could not open the pull request. The branch is pushed; open it by hand, with 'Closes #$issue' in its description only when the feature is complete."
   url="$(printf '%s\n' "$url" | tail -n 1)"
-  echo "Opened pull request: $url"
+  if [[ "$closes" -eq 1 ]]; then
+    echo "Opened pull request: $url"
+  else
+    echo "Opened draft pull request: $url"
+  fi
+fi
+if [[ "$closes" -eq 0 ]]; then
+  echo "It does not close Issue #$issue: $not_closing."
 fi
 echo
 

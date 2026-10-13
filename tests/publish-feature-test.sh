@@ -26,7 +26,10 @@ fail() {
 #   MOCK_CREATE_EXIT   exit status of 'pr create'
 #   MOCK_REQUIRED      number of status checks the base branch requires
 #                      (default 0); 'unreadable' makes the question fail
+#   MOCK_DRAFT         'true' when the open pull request is a draft
+#   MOCK_UNDO_EXIT     exit status of 'pr ready --undo'
 mkdir -p "$tmp/bin"
+ln -sf "$(command -v jq)" "$tmp/bin/jq"
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -44,7 +47,13 @@ case "${1:-} ${2:-}" in
     [[ "$2" != "create" ]] || echo "https://github.com/example/project/pull/7"
     ;;
   "pr view")
-    echo "main"
+    case "$*" in
+      *isDraft*) echo "${MOCK_DRAFT:-false}" ;;
+      *) echo "main" ;;
+    esac
+    ;;
+  "pr ready")
+    [[ "$*" != *"--undo"* || "${MOCK_UNDO_EXIT:-0}" -eq 0 ]] || exit "$MOCK_UNDO_EXIT"
     ;;
   "api repos/{owner}/{repo}/rules/branches/main")
     [[ "${MOCK_REQUIRED:-0}" != "unreadable" ]] || exit 1
@@ -69,9 +78,26 @@ esac
 GH
 chmod +x "$tmp/bin/gh"
 
+# set_completion <repo> <status>: the implementer's completion record.
+set_completion() {
+  local remaining='[]'
+
+  [[ "$2" == "complete" ]] || remaining='["Plan steps 3 to 9"]'
+  mkdir -p "$1/.agents/completion"
+  jq -n --arg status "$2" --argjson remaining "$remaining" '{
+    schema: "completion/v1", status: $status,
+    criteria: [{criterion: "The marker exists", status: "met", evidence: "feature.txt"}],
+    remaining: $remaining
+  }' >"$1/.agents/completion/12.json"
+}
+
 # Creates a clone on a committed feature branch of Issue 12, with a remote.
+# The feature is complete: the commit says so, as finish-feature.sh writes
+# it, and the completion record agrees. COMMITTED_COMPLETION sets another
+# statement of the commit; 'none' leaves it out.
 setup_repo() {
   local label="$1"
+  local statement="Completion: ${COMMITTED_COMPLETION:-complete}"
   local remote="$tmp/$label-remote.git"
   local repo="$tmp/$label"
 
@@ -79,8 +105,8 @@ setup_repo() {
   git clone -q "$remote" "$repo" 2>/dev/null
   mkdir -p "$repo/scripts/lib"
   cp "$source_root/scripts/publish-feature.sh" "$repo/scripts/"
-  cp "$source_root/scripts/lib/github.sh" "$repo/scripts/lib/"
-  printf '.agents/manual-steps/\n' >"$repo/.gitignore"
+  cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$repo/scripts/lib/"
+  printf '.agents/manual-steps/\n.agents/completion/\n.agents/handoffs/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
   git -C "$repo" config user.email "publish-test@example.com"
   git -C "$repo" checkout -q -b main
@@ -90,7 +116,13 @@ setup_repo() {
   git -C "$repo" checkout -q -b feature/12-marker
   printf 'marker\n' >"$repo/feature.txt"
   git -C "$repo" add feature.txt
-  git -C "$repo" commit -qm "Add the marker" -m "Issue: #12" -m "Review: round 1, PASS, by claude (model-r)"
+  if [[ "${COMMITTED_COMPLETION:-}" == "none" ]]; then
+    git -C "$repo" commit -qm "Add the marker" -m "Issue: #12" -m "Review: round 1, PASS, by claude (model-r)"
+  else
+    git -C "$repo" commit -qm "Add the marker" -m "Issue: #12" -m "$statement
+- met: The marker exists (feature.txt)" -m "Review: round 1, PASS, by claude (model-r)"
+  fi
+  set_completion "$repo" complete
   printf '%s\n' "$repo"
 }
 
@@ -134,6 +166,165 @@ grep -Fq "https://github.com/example/project/pull/7" "$repo.out" || fail "the pu
 grep -Fq "Enable GitHub Pages" "$repo.out" || fail "the manual steps were not shown"
 grep -Fq "./scripts/cleanup-worktree.sh 12" "$repo.out" || fail "the next step was not printed"
 if grep -Eq "pr merge" "$repo.gh"; then fail "the pull request was merged"; fi
+if grep -Fq -- "--draft" "$repo.gh"; then fail "the pull request of a complete feature was opened as a draft"; fi
+
+# The pull request closes the Issue only when the completion gate passed:
+# the commit says complete and the record still agrees. Everything else is a
+# draft that refers to the Issue and says why it does not close it.
+# expect_open <repo> <description> <reason>
+expect_open() {
+  if grep -Eiq '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#12([^0-9]|$)' "$1.gh.body"; then
+    cat "$1.gh.body" >&2
+    fail "the Issue would be closed although $2"
+  fi
+  grep -Fqx "Issue #12 stays open after a merge of this pull request: $3." "$1.gh.body" ||
+    fail "the description does not say why the Issue stays open although $2"
+  grep -Fq -- "--draft" "$1.gh" || fail "the pull request is not a draft although $2"
+  grep -Fq "Opened draft pull request" "$1.out" || fail "the draft was not announced although $2"
+  grep -Fq "It does not close Issue #12: $3." "$1.out" || fail "the reason was not printed although $2"
+}
+
+repo="$(COMMITTED_COMPLETION=partial setup_repo partial)"
+set_completion "$repo" partial
+run_publish "$repo" 12 || fail "publishing partial work failed"
+pushed "$repo" || fail "partial work was not pushed"
+expect_open "$repo" "the feature was committed as partial" "the feature was committed as partial"
+grep -Fqx "Completion: partial" "$repo.gh.body" || fail "the description of partial work does not carry the completion statement"
+
+repo="$(COMMITTED_COMPLETION=none setup_repo no-statement)"
+run_publish "$repo" 12 || fail "publishing a commit without a completion statement failed"
+expect_open "$repo" "the commit has no completion statement" "the commit has no completion statement of finish-feature.sh"
+
+# The gate is asked again: a commit that says complete does not close the
+# Issue when the record is gone, says something else, or the handoff note
+# lists remaining work.
+repo="$(setup_repo record-gone)"
+rm "$repo/.agents/completion/12.json"
+run_publish "$repo" 12 || fail "publishing without a completion record failed"
+expect_open "$repo" "the completion record is missing" "the commit says the feature is complete, but the completion gate does not pass now (missing)"
+
+repo="$(setup_repo record-partial)"
+set_completion "$repo" partial
+run_publish "$repo" 12 || fail "publishing with a record that says partial failed"
+expect_open "$repo" "the completion record says partial" "the commit says the feature is complete, but the completion gate does not pass now (partial)"
+
+repo="$(setup_repo handoff-remaining)"
+mkdir -p "$repo/.agents/handoffs"
+printf 'Remaining: steps 3 to 9\n' >"$repo/.agents/handoffs/12.md"
+run_publish "$repo" 12 || fail "publishing with remaining work in the handoff note failed"
+expect_open "$repo" "the handoff note lists remaining work" "the commit says the feature is complete, but the completion gate does not pass now (partial)"
+
+# A draft that was opened for partial work is marked ready once the feature
+# is complete; an open pull request of work that is not complete stays as it
+# is and gets the reason in its description.
+repo="$(setup_repo draft-completed)"
+MOCK_DRAFT=true MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 ||
+  fail "publishing a completed feature with an open draft failed"
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "the completed feature does not close the Issue"
+grep -Fq "pr ready https://github.com/example/project/pull/3" "$repo.gh" || fail "the draft was not marked ready"
+
+repo="$(setup_repo open-complete)"
+MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 || fail "publishing to an open pull request failed"
+if grep -Fq "pr ready" "$repo.gh"; then fail "a pull request that is not a draft was marked ready"; fi
+
+repo="$(COMMITTED_COMPLETION=partial setup_repo open-partial)"
+set_completion "$repo" partial
+MOCK_DRAFT=true MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 ||
+  fail "publishing partial work to an open draft failed"
+if grep -Fq "Closes #12" "$repo.gh.body"; then fail "partial work closes the Issue through an open pull request"; fi
+if grep -Fq "pr ready" "$repo.gh"; then fail "a draft of partial work was marked ready or converted again"; fi
+
+# An open pull request that is ready for review goes back to a draft when the
+# work published to it is not complete.
+repo="$(COMMITTED_COMPLETION=partial setup_repo ready-to-partial)"
+set_completion "$repo" partial
+MOCK_DRAFT=false MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 ||
+  fail "publishing partial work to a ready pull request failed"
+grep -Fq "pr ready https://github.com/example/project/pull/3 --undo" "$repo.gh" ||
+  fail "a ready pull request with partial work was not converted to a draft"
+grep -Fq "Converted it to a draft" "$repo.out" || fail "the conversion to a draft was not reported"
+if grep -Fq "Closes #12" "$repo.gh.body"; then fail "partial work closes the Issue through a ready pull request"; fi
+# The same when the gate does not pass any more for a commit that says complete.
+repo="$(setup_repo ready-record-gone)"
+rm "$repo/.agents/completion/12.json"
+MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 || fail "publishing without a record to a ready pull request failed"
+grep -Fq "pr ready https://github.com/example/project/pull/3 --undo" "$repo.gh" ||
+  fail "a ready pull request whose gate does not pass was not converted to a draft"
+# When GitHub refuses the conversion, the run says so and the description
+# still keeps the Issue open.
+repo="$(COMMITTED_COMPLETION=partial setup_repo ready-undo-fails)"
+set_completion "$repo" partial
+MOCK_UNDO_EXIT=1 MOCK_OPEN_PR="https://github.com/example/project/pull/3" run_publish "$repo" 12 ||
+  fail "a refused conversion to a draft failed the publication"
+grep -Fq "could not convert https://github.com/example/project/pull/3 to a draft" "$repo.out" ||
+  fail "the refused conversion to a draft was not reported"
+grep -Fqx "Issue #12 stays open after a merge of this pull request: the feature was committed as partial." "$repo.gh.body" ||
+  fail "the description does not keep the Issue open after a refused conversion"
+
+# A closing keyword that the description takes over from the commit message
+# or the manual steps becomes a reference when the gate did not pass.
+repo="$(COMMITTED_COMPLETION=partial setup_repo keyword-in-steps)"
+set_completion "$repo" partial
+mkdir -p "$repo/.agents/manual-steps"
+printf -- '- After the merge this fixes #12, close the milestone by hand.\n' >"$repo/.agents/manual-steps/12.md"
+run_publish "$repo" 12 || fail "publishing partial work with a closing keyword in the manual steps failed"
+if grep -Eiq '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#12([^0-9]|$)' "$repo.gh.body"; then
+  cat "$repo.gh.body" >&2
+  fail "the description of partial work kept a closing keyword for the Issue"
+fi
+grep -Fq "this Refs #12, close the milestone by hand." "$repo.gh.body" || fail "the closing keyword was not turned into a reference"
+# The sentence that the script adds itself names the Issue without a keyword.
+grep -Fqx "Issue #12 stays open after a merge of this pull request: the feature was committed as partial." "$repo.gh.body" ||
+  fail "the description does not say that the Issue stays open"
+
+# GitHub closes an Issue from a merged commit message too, so work that may
+# not close the Issue is not published while a commit of the branch says so.
+# keyword_commit <label> <message>: a commit made by hand, without the
+# completion statement of finish-feature.sh.
+keyword_commit() {
+  local repo
+
+  repo="$(COMMITTED_COMPLETION=none setup_repo "$1")"
+  printf 'more\n' >>"$repo/feature.txt"
+  git -C "$repo" commit -qam "Finish the marker" -m "$2"
+  printf '%s\n' "$repo"
+}
+for keyword in "Closes #12" "closes: #12" "This fixes #12." "Resolved example/project#12" \
+  "Fixed https://github.com/example/project/issues/12"; do
+  keyword_count=$((${keyword_count:-0} + 1))
+  repo="$(keyword_commit "keyword-commit-$keyword_count" "$keyword")"
+  if run_publish "$repo" 12; then
+    cat "$repo.out" >&2
+    fail "a commit without a completion statement that says '$keyword' was published"
+  fi
+  pushed "$repo" && fail "a commit that would close the Issue was pushed: $keyword"
+  if grep -Eq "pr (create|edit)" "$repo.gh" 2>/dev/null; then fail "a pull request was opened for a commit that says '$keyword'"; fi
+  grep -Fq "a commit of the branch says that it does" "$repo.out" || fail "the closing commit was not given as the reason: $keyword"
+  grep -Fq "Finish the marker" "$repo.out" || fail "the closing commit was not named: $keyword"
+  grep -Fq "Nothing was pushed" "$repo.out" || fail "the refusal does not say that nothing was pushed: $keyword"
+done
+# An earlier commit of the branch counts as well, not only the latest.
+repo="$(keyword_commit keyword-earlier "Closes #12")"
+printf 'again\n' >>"$repo/feature.txt"
+git -C "$repo" commit -qam "One more change" -m "Refs #12"
+if run_publish "$repo" 12; then fail "an earlier commit that closes the Issue was published"; fi
+grep -Fq "Finish the marker" "$repo.out" || fail "the earlier closing commit was not named"
+# A keyword for another Issue, or no keyword, does not stop the publication.
+for harmless in "Closes #123" "Refs #12" "This encloses #12" "Fixes #1"; do
+  harmless_count=$((${harmless_count:-0} + 1))
+  repo="$(keyword_commit "keyword-harmless-$harmless_count" "$harmless")"
+  run_publish "$repo" 12 || {
+    cat "$repo.out" >&2
+    fail "a commit that says '$harmless' was refused"
+  }
+  expect_open "$repo" "the commit has no completion statement" "the commit has no completion statement of finish-feature.sh"
+done
+# A complete feature may say that it closes its Issue.
+repo="$(setup_repo keyword-complete)"
+printf 'more\n' >>"$repo/feature.txt"
+git -C "$repo" commit -qam "Finish the marker" -m "Completion: complete" -m "Closes #12"
+run_publish "$repo" 12 || fail "a complete feature whose commit closes its Issue was refused"
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "a complete feature does not close its Issue"
 
 # Without manual steps the description says so.
 repo="$(setup_repo no-steps)"

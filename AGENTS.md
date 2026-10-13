@@ -21,7 +21,10 @@ This repository uses a plan → act → evaluate workflow. Git and GitHub are th
 If a material conflict remains, stop and report it.
 
 ## Definition of Done
-- Acceptance criteria are satisfied.
+- Acceptance criteria are satisfied, and the completion record
+  (`.agents/completion/<issue-number>.json`) says so with evidence for each.
+  A session that ends is not a finished Issue: work that is not complete is
+  recorded as `partial` or `blocked`.
 - Tests are added/updated where appropriate.
 - `./scripts/verify.sh` passes.
 - No unrelated changes are included.

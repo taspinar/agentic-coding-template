@@ -619,6 +619,60 @@ After a resumed session, continue as after `start-feature.sh`: review, triage,
 fixes. When the interrupted session was `apply-triage.sh`, the partial fixes
 have made its review stale; resume, then run `review-feature.sh` again.
 
+### The completion gate
+
+A session that ends is not a feature that is complete. An implementer can
+stop after two of nine plan steps and end normally, and nothing in the exit
+status says so. The scripts therefore decide from what the implementer
+recorded, not from the fact that it stopped.
+
+The implementer writes a completion record before it ends, in every session:
+`.agents/completion/<issue>.json`, a working file that Git ignores.
+
+```json
+{
+  "schema": "completion/v1",
+  "status": "partial",
+  "criteria": [
+    {"criterion": "Recipes can be searched by ingredient",
+     "status": "met",
+     "evidence": "tests/test_search.py::test_search_by_ingredient passes"},
+    {"criterion": "The search page works without JavaScript",
+     "status": "not_met",
+     "evidence": "not started; plan step 4"}
+  ],
+  "remaining": ["Plan steps 4 to 6: the page without JavaScript, the documentation"]
+}
+```
+
+`status` is `complete`, `partial`, or `blocked`. A criterion is `met`,
+`not_met`, or `not_applicable`, each with evidence. `complete` needs every
+criterion met or not applicable and nothing remaining; the other two need
+something that remains. A record that breaks these rules is invalid.
+
+The gate passes when the record is valid and says `complete`, and the handoff
+note lists nothing under "Remaining". The note outweighs the record: remaining
+work listed there means not complete, whatever the record says.
+
+| Script | What the gate decides there |
+|---|---|
+| `start-feature.sh` | After the session it says whether the Issue is complete, and offers the review only then |
+| `run-feature.sh` | Goes on to the review only when the gate passes and the summary of the changes exists; otherwise it resumes the implementer with the reasons in the handoff note, at most four sessions in a run. `blocked` stops the run with status 3. The gate is asked again before every later review, because a session that repairs the verification is a session of the implementer too |
+| `review-feature.sh` | Gives the record to the reviewer of the complete feature, as a claim to check |
+| `finish-feature.sh` | Refuses a missing, invalid, partial, or blocked record. `--partial` commits partial work as your explicit choice |
+| `publish-feature.sh` | Asks the gate again. The pull request closes the Issue only when the commit says `Completion: complete` and the gate still passes; otherwise it is a draft that refers to the Issue and says why it does not close it |
+
+The record is a claim of the implementer, and an implementer can claim
+`complete` wrongly. The scripts only read the status. What checks the claim
+is the independent review of the complete feature: the reviewer goes through
+every acceptance criterion of the Issue against the diff and the tests, and
+reports a criterion that is not met, or a `met` the code does not support, as
+a major finding. That is why a feature is committed only on a review of the
+complete feature (see "Reviewing only the changes").
+
+When you implemented a feature yourself, write the record yourself: it is the
+statement that the Issue is done, with where to see it.
+
 ### Reviewing a feature
 
 After the implementation agent exits, enter the feature worktree. When
@@ -796,6 +850,11 @@ costs a full review each time, and it is what finds a problem that an earlier
 round missed: a later complete round regularly reports something in code that
 did not change.
 
+A review of changes confirms fixes. It does not establish that the Issue is
+done, so **a feature is committed on a review of the complete feature**:
+`finish-feature.sh` refuses when the latest round reviewed only changes, and
+asks for a complete round. A round of changes is for the rounds in between.
+
 After a small fix you can limit a round to what changed since the previous
 one:
 
@@ -863,9 +922,11 @@ worktree:
 ```
 
 The script refuses another branch than `feature/12-*` or a tree without
-changes, verifies the result with `./scripts/verify.sh --reuse`, and checks the
-latest review of the
-feature: it must be current and have no critical or major finding. Every
+changes, and a feature whose completion gate does not pass (see "The
+completion gate"). It verifies the result with `./scripts/verify.sh --reuse`,
+and checks the latest review of the
+feature: it must be current, cover the complete feature, and have no critical
+or major finding. Every
 review round with findings needs an approved triage that was published on the
 Issue (the newest triage of that round counts), and the latest round may have
 no `FIX_NOW` findings left to apply. After fixes, run a new review round first;
@@ -875,7 +936,8 @@ publication can be repeated with `./scripts/triage-review.sh --publish
 
 It then stages all changes (review and triage files are ignored) and opens a
 structured commit message in your editor: the summary, the Issue, the list of
-changes, the verification, the review round and verdict, and `Refs #12`.
+changes, the completion statement with the evidence per criterion, the
+verification, the review round and verdict, and `Refs #12`.
 Emptying the message aborts the commit and leaves the changes staged. The
 script never pushes, opens a PR, or merges.
 
@@ -883,7 +945,21 @@ The list of changes comes from `.agents/summaries/<issue>.md`, which the
 implementer writes and keeps up to date when fixes change what the feature
 does: every line that starts with `- ` is taken over. Like the manual steps
 it is a working file and is not committed. Without it the message has a line
-for you to fill in.
+for you to fill in; an unattended commit, which nobody edits, is refused.
+
+Work that is not complete is committed only as your explicit choice:
+
+```bash
+./scripts/finish-feature.sh 12 "Add the first part of player movement" --partial
+```
+
+The completion record has to say `partial` or `blocked` itself, with what
+remains: a record that says `complete` against a handoff note with remaining
+work is refused also with `--partial`, because the commit message is made
+from the record. The commit message
+carries `Completion: partial` with the criteria and what remains, and
+`publish-feature.sh` opens a draft pull request that does not close the Issue.
+`run-feature.sh` never uses the option.
 
 A change that `.agents/policies/autonomy.md` classifies as low risk may be
 finished without an independent review; the reason is recorded in the commit
@@ -909,6 +985,23 @@ The script pushes the branch and opens a pull request whose description is
 the commit message, the manual steps, and `Closes #12`. For a pull request
 that is already open it pushes and replaces the description with the current
 one, since a fix round can change the manual steps. It never merges.
+
+`Closes #12` is written only for a complete feature: the commit carries
+`Completion: complete` of `finish-feature.sh`, and the completion gate, asked
+again, still passes. In every other case the pull request is opened as a
+draft, refers to the Issue, and says why it does not close it: the feature
+was committed as partial, the gate does not pass any more, or the commit was
+made without `finish-feature.sh` and has no completion statement. A draft is
+marked ready when a later publish finds the feature complete, and a pull
+request that was ready goes back to a draft when the work published to it is
+not complete.
+
+GitHub closes an Issue on a closing keyword (`Closes`, `Fixes`, `Resolves`,
+and their forms) next to its number, in a pull request description and in the
+message of a merged commit. For work that may not close the Issue the script
+therefore turns such a keyword in the text it takes over into `Refs`, and it
+refuses to publish, before pushing, while a commit of the branch carries one:
+reword that commit, or complete the feature.
 
 The script ends once the pull request is open and prints its address. Follow
 the checks there and merge after they passed. Local verification during a
@@ -957,13 +1050,14 @@ itself, so a script can run one step after the other.
 | `start-feature.sh <issue> [--resume]` | The implementer runs with the `unattended` profile instead of in your terminal. Its final message is stored in `.agents/run/<issue>-implementer.md` in the feature worktree and shown. |
 | `triage-review.sh <review-json>` | The proposed triage is approved without a question. The proposal is validated as always: a critical or major finding cannot be deferred or accepted. |
 | `apply-triage.sh <triage-json>` | The fixes start without confirmation, with the `unattended` profile. The final message is stored in `.agents/run/<issue>-fixes.md` and shown. |
-| `finish-feature.sh <issue> "<summary>"` | The commit message is used as it is, without an editor. Without a summary of the changes, the message says that the implementer supplied none. |
+| `finish-feature.sh <issue> "<summary>"` | The commit message is used as it is, without an editor. Without a summary of the changes the commit is refused: nobody would write one. |
 
 `review-feature.sh` and `publish-feature.sh` ask nothing as they are. The
 planning is yours to decide: its steps refuse the option.
 
 The option needs the working files to be ignored by Git, as the template's
-`.gitignore` does with `.agents/run/` and `.agents/summaries/`; a step stops
+`.gitignore` does with `.agents/run/`, `.agents/summaries/`, and
+`.agents/completion/`; a step stops
 when they are not. A project that was created from an earlier version of the
 template gets the rules with `./scripts/sync-template.sh`.
 
@@ -1012,19 +1106,26 @@ implementation to the open pull request, without asking anything:
 From the primary checkout it runs:
 
 1. `start-feature.sh <issue> [slug] [base-branch] --unattended`: the worktree
-   and the implementation.
+   and the implementation. The run goes on only when the completion gate
+   passes and the implementer wrote the summary of the changes. Otherwise it
+   resumes the implementer, with the reasons in the handoff note, for at most
+   four sessions in a run (`RUN_FEATURE_SESSIONS`).
 2. `review-feature.sh`, and for a review with findings `triage-review.sh
    --unattended` and, when the triage has `FIX_NOW` findings,
    `apply-triage.sh --unattended`, followed by the next review round. This
-   repeats until a review has no findings or its triage has nothing to fix.
+   repeats until a review of the complete feature has no findings or its
+   triage has nothing to fix.
 3. `finish-feature.sh --unattended`, with the title of the Issue as the
    summary of the commit, and `publish-feature.sh`.
 
 It uses at most five review rounds. The first round reviews the complete
-feature; a later round reviews only what changed since the round before it
-(`review-feature.sh --changes`). That review knows what was decided about
+feature; a round after fixes reviews only what changed since the round before
+it (`review-feature.sh --changes`). That review knows what was decided about
 the earlier findings, so a finding that was deferred or accepted is not
 reported, triaged, and turned into a follow-up Issue again in every round.
+The round that ends the run reviews the complete feature again, against the
+Issue and the completion record: a feature with one fix round therefore has
+three reviews, the complete feature, the fix, and the complete feature.
 When the base of the branch changed between two rounds, for example because
 you merged `main` into it while the run was stopped, the next round reviews
 the complete feature.
@@ -1044,7 +1145,8 @@ only together with what it recorded:
 | Temporary | An agent or a connection fails: a usage limit, a timeout, the network | Tries the step again, three times, with a wait that doubles from two minutes. A fix session that had already changed the content is taken up with `apply-triage.sh <triage-json> --continue`: the same findings, contract, and protections, for the session of this triage that was left unfinished, and for nothing else |
 | Unstable check | The verification is repeated once, and no check failed in both runs | Records the checks and goes on, at most three times in a run |
 | Failed verification | A check failed in both runs | Resumes the implementer with those checks in the handoff note, at most three times (`AGENTS.md`); a review follows. A repair session is retried like any other |
-| Blocked | An agent ends with `BLOCKED:` and the handoff note holds a question under "Open questions" | Stops with status 3. Without such a question there is nothing to answer: the line is ignored and the run goes on |
+| Blocked | An agent ends with `BLOCKED:` and the handoff note holds a question under "Open questions", or the completion record says `blocked` | Stops with status 3. Without such a question there is nothing to answer: the line is ignored and the run goes on |
+| Not complete | The implementer ended normally, but the completion gate does not pass: no record, an invalid one, `partial`, remaining work in the handoff note, or no summary of the changes | Resumes the implementer with the reasons in the handoff note, at most four sessions in a run. Nothing is reviewed or committed before the gate passes |
 
 Every interruption is written to `.agents/run/<issue>-log` in the feature
 worktree, one line each: the time, the step, the outcome, the reason, and
@@ -1062,7 +1164,9 @@ The run stops with a non-zero status, and keeps the worktree, when:
 | An agent or a connection keeps failing after the retries | 1 |
 | The verification still fails after three repairs, or checks are unstable more than three times | 1 |
 | The proposed triage is invalid, for example because it defers a critical or major finding | 1 |
-| Five rounds are used and the last one still has a finding that must be fixed | 1 |
+| Five rounds are used and the last one still has a finding that must be fixed, or reviewed only changes | 1 |
+| The implementer ended four sessions without completing the Issue | 1 |
+| The completion record says `blocked` | 3 |
 | The fixes changed nothing, the commit is refused, or the pull request cannot be opened after the retries | 1 |
 
 It then says why it stopped and which command resolves it. After that, run
@@ -1070,13 +1174,15 @@ the same command again: `./scripts/run-feature.sh <issue>`. The run reads
 where the feature stands from the worktree, so every step that is done is
 skipped: a current review is not repeated, a stored triage is not made again,
 and a committed feature is only published. The one thing it records itself is
-that the implementation was completed, in `.agents/run/<issue>-state`. As long
+that the completion gate passed, in `.agents/run/<issue>-state`. As long
 as that is missing, the next run resumes the implementer, as
 `start-feature.sh <issue> --resume` does. The same happens after a fixing
 agent stopped for a decision of yours: the implementer reads your answer in
 the handoff note and continues, and a review follows. When you completed the
 implementation in a session of your own, say so with `--implemented`, and the
-run continues with the review. You can also take over by hand at any point:
+run continues with the review without a session of the implementer; the
+completion gate has to pass for that too, so write the completion record and
+the summary first. You can also take over by hand at any point:
 the single scripts work on the same files.
 
 Know what you hand over before you use it:
@@ -1090,10 +1196,12 @@ Know what you hand over before you use it:
   can be accepted or deferred wrongly. You see that in the pull request and
   on the Issue, where every finding is published with its decision, instead
   of before the fixes. Read that record before you merge.
-- A part of the feature that no fix touched is reviewed once, in round 1.
-  After a large fix you can run a complete review by hand in the worktree,
-  `./scripts/review-feature.sh <issue>`, before the run continues.
-- Up to five review rounds, each with a triage and a fix session, use the
+- The completion record is the implementer's own claim. The run acts on its
+  status; whether the claim holds is judged by the reviewer of the complete
+  feature, and by you in the pull request, where the commit message lists
+  every criterion with its evidence.
+- Up to four implementer sessions and up to five review rounds, each with a
+  triage and a fix session, use the
   usage limits of your agents without a moment at which you can stop them.
 - The commit message is not edited: its summary is the title of the Issue
   and its list of changes is what the implementer wrote.

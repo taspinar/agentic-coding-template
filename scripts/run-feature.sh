@@ -5,8 +5,13 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/completion.sh"
 
 MAX_ROUNDS=5
+# A session of the implementer that ends without an error has not completed
+# the feature by that alone: the completion gate decides. While it does not
+# pass, the implementer is resumed, for at most this many sessions in a run.
+MAX_SESSIONS="${RUN_FEATURE_SESSIONS:-4}"
 # A step whose agent or connection fails is tried again, with a wait that
 # doubles. A verification that fails is repeated once; when it fails again,
 # the implementer repairs it, a limited number of times (AGENTS.md).
@@ -25,8 +30,13 @@ usage() {
   echo "apply-triage.sh until a review leaves nothing to fix, then finish-feature.sh"
   echo "and publish-feature.sh. Agents run unattended and the triage is approved"
   echo "without you; at most $MAX_ROUNDS review rounds are used, of which the later ones"
-  echo "review only the changes since the round before. It never merges and never"
-  echo "removes a worktree."
+  echo "review only the changes since the round before, and the last one reviews the"
+  echo "complete feature again. It never merges and never removes a worktree."
+  echo
+  echo "The review starts only when the completion gate passes: the implementer's"
+  echo "completion record says complete, its handoff note lists no remaining work,"
+  echo "and it wrote the summary of the changes. Until then the implementer is"
+  echo "resumed, for at most $MAX_SESSIONS sessions in a run."
   echo
   echo "The run stops with a non-zero status when a step fails or needs you, and"
   echo "says which command continues. Status 3 means that an agent needs a decision"
@@ -35,7 +45,8 @@ usage() {
   echo
   echo "--implemented says that the implementation in the feature worktree is"
   echo "complete, for example after you finished it in a session of your own, so"
-  echo "the run continues with the review."
+  echo "the run continues with the review without a session of the implementer."
+  echo "The completion gate has to pass for that too."
   echo
   echo "Examples:"
   echo "  $0 3"
@@ -354,23 +365,96 @@ git -C "$worktree" check-ignore -q ".agents/run/$issue-state" ||
   fail "Git does not ignore .agents/run/ in $worktree. Add '.agents/run/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
 mkdir -p "$(dirname "$state_file")"
 
-if [[ "$first_session" -eq 1 || "$implemented" -eq 1 ]]; then
-  echo "implemented" >"$state_file"
-fi
+# The completion gate. The state 'implemented' is written only when it
+# passes; an implementer that stopped partway is resumed with the reasons in
+# its handoff note. A missing state after an earlier run means that a session
+# has to establish where the work stands before the gate is asked.
+#
+# await_completion <resume-first>
+# Returns when the gate passes. Until then it resumes the implementer, for at
+# most MAX_SESSIONS sessions in a run, and stops the run when the record says
+# blocked or the sessions are used. With <resume-first> 1 a session runs
+# before the gate is asked. It is called before the first review and again
+# before every later one: a session that repairs the verification is a
+# session of the implementer too, and may leave the work partial or blocked.
+sessions="$first_session"
+await_completion() {
+  local resume_first="$1"
+  local gate
+  local gate_status
+  local gate_reasons
+  local gate_summary
 
-if [[ ! -f "$state_file" ]]; then
-  # An earlier run stopped during the implementation, or the worktree was
-  # made by hand: the implementer establishes where the work stands.
-  step "implementation, resumed" ./scripts/start-feature.sh "$issue" --resume --unattended
-  if [[ "$step_status" -eq 3 ]]; then
-    stop 3 "the implementer needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
-      "answer the question in the handoff note, or change the Issue"
-  elif [[ "$step_status" -ne 0 ]]; then
-    stop 1 "the implementation failed (start-feature.sh exited with status $step_status)." \
-      "resolve what the output above reports"
-  fi
-  echo "implemented" >"$state_file"
-fi
+  while true; do
+    if [[ "$resume_first" -eq 0 ]]; then
+      gate="$(completion_gate "$worktree" "$issue")"
+      gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
+      gate_reasons="$(printf '%s\n' "$gate" | sed 1d)"
+      if [[ "$gate_status" == "complete" ]] && ! completion_summary_present "$worktree" "$issue"; then
+        # Nobody edits the commit message of this run, so the summary of the
+        # changes has to come from the implementer.
+        gate_status="no summary"
+        gate_reasons="the implementer wrote no summary of the changes (.agents/summaries/$issue.md)"
+      fi
+      gate_summary="$(printf '%s' "$gate_reasons" | tr '\n' ';' | sed 's/;/; /g')"
+      case "$gate_status" in
+        complete)
+          echo "implemented" >"$state_file"
+          return 0
+          ;;
+        blocked)
+          rm -f "$state_file"
+          note "implementation" "blocked" "the completion record says blocked: $gate_summary" "Stopping"
+          stop 3 "the implementer reports that it cannot complete the Issue without you: $gate_summary" \
+            "read the handoff note (.agents/handoffs/$issue.md) and the completion record ($COMPLETION_DIR/$issue.json); answer in the handoff note, or change the Issue"
+          ;;
+      esac
+      rm -f "$state_file"
+      if [[ "$implemented" -eq 1 ]]; then
+        stop 1 "--implemented was given, but the completion gate does not pass ($gate_status): $gate_summary" \
+          "write the completion record and the summary as .agents/prompts/implementer.md describes under 'Completion', or run without --implemented to let the implementer establish them"
+      fi
+      if [[ "$sessions" -ge "$MAX_SESSIONS" ]]; then
+        note "implementation" "failed" "not complete after $sessions sessions of the implementer ($gate_status): $gate_summary" "Stopping"
+        stop 1 "the implementer ended $sessions sessions without completing the Issue ($gate_status): $gate_summary" \
+          "cd \"$worktree\"" \
+          "./scripts/start-feature.sh $issue --resume    # or split the Issue; nothing was reviewed or committed"
+      fi
+      note "implementation" "not complete" "$gate_status: $gate_summary" "Resuming the implementer, session $((sessions + 1)) of at most $MAX_SESSIONS"
+      mkdir -p "$worktree/.agents/handoffs"
+      {
+        echo
+        echo "## Not complete ($(date -u +'%Y-%m-%dT%H:%M:%SZ'), recorded by run-feature.sh)"
+        echo
+        echo "The session ended, but the completion gate does not pass ($gate_status):"
+        echo
+        # Not as a list under a 'Remaining' label: the gate reads the note.
+        printf '%s\n' "$gate_reasons" | sed 's/^/- gate: /'
+        echo
+        echo "Continue the work on the Issue. Nothing is reviewed or committed before"
+        echo "$COMPLETION_DIR/$issue.json says complete with evidence for every acceptance"
+        echo "criterion, the list of what is left in this note is empty, and"
+        echo ".agents/summaries/$issue.md exists (.agents/prompts/implementer.md,"
+        echo "'Completion'). When the Issue cannot be completed without a decision of the"
+        echo "human, record the status 'blocked'."
+      } >>"$worktree/.agents/handoffs/$issue.md"
+    fi
+    resume_first=0
+    sessions=$((sessions + 1))
+    step "implementation, session $sessions" ./scripts/start-feature.sh "$issue" --resume --unattended
+    if [[ "$step_status" -eq 3 ]]; then
+      stop 3 "the implementer needs a decision of yours; its question is in the handoff note (.agents/handoffs/$issue.md)." \
+        "answer the question in the handoff note, or change the Issue"
+    elif [[ "$step_status" -ne 0 ]]; then
+      stop 1 "the implementation failed (start-feature.sh exited with status $step_status)." \
+        "resolve what the output above reports"
+    fi
+  done
+}
+
+resume_first=0
+[[ -f "$state_file" || "$first_session" -eq 1 || "$implemented" -eq 1 ]] || resume_first=1
+await_completion "$resume_first"
 
 # ------------------------------------------------------ review, triage, fix
 slug="${branch//\//-}"
@@ -404,8 +488,20 @@ uncommitted() {
   [[ -n "$(git -C "$worktree" status --porcelain)" ]]
 }
 
+# changes_only <review>
+# Succeeds when a review covered only the changes since an earlier round.
+changes_only() {
+  [[ "$(jq -r '.scope.kind // "full"' "$1")" == "changes" ]]
+}
+
+# The round that ends the run reviews the complete feature against the Issue,
+# also when the rounds before it reviewed only changes: a review of changes
+# confirms fixes, it does not establish that the Issue is done.
+complete_review=0
 if uncommitted; then
   while true; do
+    # A repair session may have left the work partial or blocked.
+    await_completion 0
     review="$(latest_review)"
     round=0
     current=1
@@ -418,8 +514,14 @@ if uncommitted; then
           "cd \"$worktree\" && ./scripts/check-review.sh ${review#"$worktree"/}"
     fi
 
-    if [[ "$current" -ne 0 ]]; then
-      # No review yet, or the content changed since the latest one.
+    if [[ "$current" -ne 0 || "$complete_review" -eq 1 ]]; then
+      # No review yet, the content changed since the latest one, or the
+      # latest one covered only changes and nothing is left to fix.
+      if [[ "$round" -ge "$MAX_ROUNDS" && "$complete_review" -eq 1 ]]; then
+        stop 1 "$MAX_ROUNDS review rounds are used, and round $round reviewed only changes, so no review of the complete feature confirms that the Issue is done." \
+          "cd \"$worktree\"" \
+          "./scripts/review-feature.sh $issue $base    # and continue by hand: triage-review.sh, apply-triage.sh, finish-feature.sh, publish-feature.sh"
+      fi
       if [[ "$round" -ge "$MAX_ROUNDS" ]]; then
         stop 1 "$MAX_ROUNDS review rounds are used, and the content changed after round $round, so it is not confirmed by a review." \
           "cd \"$worktree\"" \
@@ -431,10 +533,14 @@ if uncommitted; then
       # When the base of the branch changed in between, for example by a
       # merge of main, the round reviews the complete feature instead.
       review_options=()
-      if [[ -n "$review" ]] && changes_reviewable "$review"; then
+      review_title="review"
+      if [[ "$complete_review" -eq 1 ]]; then
+        review_title="review of the complete feature"
+      elif [[ -n "$review" ]] && changes_reviewable "$review"; then
         review_options=(--changes)
       fi
-      step "review, round $((round + 1)) of at most $MAX_ROUNDS" \
+      complete_review=0
+      step "$review_title, round $((round + 1)) of at most $MAX_ROUNDS" \
         ./scripts/review-feature.sh "$issue" "$base" ${review_options[@]+"${review_options[@]}"}
       if [[ "$step_status" -eq 3 ]]; then
         rm -f "$state_file"
@@ -452,7 +558,11 @@ if uncommitted; then
     fi
 
     review_relative="${review#"$worktree"/}"
-    [[ "$(jq '.findings | length' "$review")" -gt 0 ]] || break
+    if [[ "$(jq '.findings | length' "$review")" -eq 0 ]]; then
+      changes_only "$review" || break
+      complete_review=1
+      continue
+    fi
 
     triage="$(review_latest_triage "$worktree" "$review")"
     if [[ -z "$triage" ]]; then
@@ -472,7 +582,11 @@ if uncommitted; then
       continue
     fi
 
-    [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage")" -gt 0 ]] || break
+    if [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage")" -eq 0 ]]; then
+      changes_only "$review" || break
+      complete_review=1
+      continue
+    fi
 
     if [[ "$round" -ge "$MAX_ROUNDS" ]]; then
       stop 1 "$MAX_ROUNDS review rounds are used and round $round still has findings that must be fixed; see $review_relative." \

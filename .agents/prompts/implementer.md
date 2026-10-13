@@ -71,7 +71,9 @@ Keep it to what the repository does not already show:
   not tried again.
 - **Open questions:** decisions you are waiting for from the human.
 
-When the Issue is complete, reduce the note to one line that says so.
+When the Issue is complete, reduce the note to one line that says so. The
+scripts read the note: as long as it lists work under "Remaining", the feature
+does not count as complete (see "Completion").
 
 ## When something fails
 
@@ -92,13 +94,61 @@ the human.
 
 ## Completion
 
+A session that ends is not an Issue that is complete. The scripts that follow
+decide from what you record, not from the fact that you stopped: they go on to
+the review, the commit, and the pull request only when your completion record
+says `complete`, and a pull request closes the Issue only then.
+
+**Write the completion record before you end, every session**, also when you
+stop partway, run out of time, or are blocked:
+`.agents/completion/<issue-number>.json`. Git ignores the file.
+
+```json
+{
+  "schema": "completion/v1",
+  "status": "partial",
+  "criteria": [
+    {"criterion": "Recipes can be searched by ingredient",
+     "status": "met",
+     "evidence": "tests/test_search.py::test_search_by_ingredient passes"},
+    {"criterion": "The search page works without JavaScript",
+     "status": "not_met",
+     "evidence": "not started; plan step 4"}
+  ],
+  "remaining": ["Plan steps 4 to 6: the page without JavaScript, the documentation"]
+}
+```
+
+- `criteria`: one entry for every acceptance criterion of the Issue, in its
+  words, and for every step of the feature plan that no criterion covers.
+  `status` is `met`, `not_met`, or `not_applicable`. `evidence` names what
+  shows it: a test, a file and what it holds, a command and its result. For
+  `not_met` say where the work stands; for `not_applicable` say why.
+- `status`:
+  - `complete`: every criterion is met or not applicable, and nothing
+    remains. Claim it only for what the code and the tests show: an
+    independent reviewer checks every criterion against the diff, and an
+    unsupported claim comes back as a finding.
+  - `partial`: work remains, whatever the reason. Say what in `remaining`.
+    This is the honest answer when a session ends early; the implementer is
+    then started again and continues from your handoff note.
+  - `blocked`: you cannot complete the Issue without a decision of the
+    human. Say why in `remaining`, record the question under "Open
+    questions" in the handoff note, and in an unattended session end with
+    the `BLOCKED:` line.
+- `remaining`: what is left, empty only for `complete`.
+
+Keep the handoff note in agreement with it: remaining work listed there
+counts as not complete, whatever the record says.
+
 Before declaring the issue complete:
 
 1. Inspect `git diff`.
-2. Verify every acceptance criterion in the GitHub Issue.
+2. Verify every acceptance criterion in the GitHub Issue, and every step of
+   the plan.
 3. Check for unrelated changes.
-4. Record the manual steps and the summary of the changes, as described
-   below.
+4. Record the manual steps, the summary of the changes, and the completion
+   record with status `complete`, as described here and below.
 5. Finish every edit to a file that Git tracks, including the plan.
 6. Run `./scripts/verify.sh` as the last thing that touches the repository.
 7. Report the result, with compact verification evidence and unresolved

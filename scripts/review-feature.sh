@@ -9,6 +9,7 @@ source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/review-run.sh"
 source "$script_dir/lib/guardrails.sh"
+source "$script_dir/lib/completion.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -285,6 +286,38 @@ guardrails="$(printf '%s\n' "$guardrail_findings" |
   fi
 } >>"$context_file"
 
+# What the implementer says about how far the Issue is done. It is given to
+# the reviewer as a claim to check, in a review of the complete feature: the
+# scripts only read the status, and only a reviewer can tell whether the code
+# and the tests support it.
+if [[ "$changes_only" -eq 0 ]]; then
+  completion_file="$(completion_record "$root" "$issue")"
+  handoff_left="$(handoff_remaining "$root/.agents/handoffs/$issue.md")"
+  {
+    echo
+    echo "## Completion record of the implementer"
+    echo
+    echo "This is the implementer's own statement, not evidence. Check every"
+    echo "acceptance criterion of the Issue against the diff and the tests, whatever"
+    echo "the record says, and report a criterion that is not met, or a claim that"
+    echo "the code does not support, as a finding (reviewer contract, 'Completion')."
+    echo
+    if [[ -f "$completion_file" ]]; then
+      echo "$COMPLETION_DIR/$issue.json:"
+      echo
+      sed 's/^/    /' "$completion_file"
+    else
+      echo "The implementer wrote no completion record ($COMPLETION_DIR/$issue.json)."
+    fi
+    if [[ -n "$handoff_left" ]]; then
+      echo
+      echo "The handoff note lists remaining work:"
+      echo
+      printf '%s\n' "$handoff_left" | sed 's/^/- /'
+    fi
+  } >>"$context_file"
+fi
+
 echo "Preparing independent review:"
 echo "  Issue:    #$issue"
 echo "  Branch:   $branch"
@@ -318,7 +351,8 @@ else
 
 Your assigned work item is GitHub Issue #${issue}.
 
-Standard input contains the Issue title and body, the list of changed files,
+Standard input contains the Issue title and body, the implementer's
+completion record, the list of changed files,
 and the complete diff of the current implementation against ${base_ref},
 including uncommitted and untracked changes. Review that complete diff. Read
 the files in the repository for surrounding context.
