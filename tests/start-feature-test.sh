@@ -69,8 +69,21 @@ run_start() {
 
 # Without a slug, the branch and worktree are named after the Issue title,
 # and the implementer starts write-capable in the new worktree.
+# record <status> <issue>: a write action of the fake implementer that leaves
+# a completion record with that status.
+record() {
+  local remaining='[]'
+  local met="met"
+
+  if [[ "$1" != "complete" ]]; then
+    remaining='["Plan steps 3 to 9"]'
+    met="not_met"
+  fi
+  printf '%s' "mkdir -p .agents/completion && printf '%s\\n' '{\"schema\": \"completion/v1\", \"status\": \"$1\", \"criteria\": [{\"criterion\": \"The thing works\", \"status\": \"$met\", \"evidence\": \"tests/thing-test.sh\"}], \"remaining\": $remaining}' >.agents/completion/$2.json"
+}
+
 repo="$(setup_repo derived)"
-run_start "$repo" 3 || {
+MOCK_WRITE_ACTION="$(record complete 3)" run_start "$repo" 3 || {
   cat "$repo.out" >&2
   fail "starting a feature without a slug failed"
 }
@@ -82,6 +95,7 @@ worktree="$tmp/derived-3-published-site-skeleton-with"
   fail "the feature branch does not start at origin/main"
 grep -Fq -- "--sandbox workspace-write" "$repo.log" || fail "the implementer was not started write-capable"
 grep -Fq -- "--model model-i" "$repo.log" || fail "the configured model was not passed"
+grep -Fq "The implementer reports the Issue as complete" "$repo.out" || fail "a complete record was not reported"
 grep -Fq "./scripts/review-feature.sh 3" "$repo.out" || fail "the next steps were not printed"
 grep -Fq "GitHub Issue #3" "$repo.log" || fail "the implementer was not given its Issue"
 
@@ -168,6 +182,27 @@ grep -Fq "left no handoff note" "$repo.log" || fail "the session was not told th
 [[ "$(git -C "$worktree" rev-parse HEAD)" == "$head_before" ]] || fail "resuming changed the branch"
 grep -Fqx "half done" "$worktree/work.txt" || fail "resuming lost the work in progress"
 [[ "$(git -C "$repo" worktree list | grep -c .)" -eq 2 ]] || fail "resuming created another worktree"
+# A session that ends is not a feature that is complete: without a completion
+# record the review is not offered as the next step.
+grep -Fq "The Issue is not complete (missing)" "$repo.out" || fail "a session without a completion record was not reported as not complete"
+grep -Fq "./scripts/start-feature.sh 10 --resume" "$repo.out" || fail "resuming was not offered for work that is not complete"
+if grep -Fq "./scripts/review-feature.sh 10" "$repo.out"; then fail "the review was offered for work that is not complete"; fi
+
+# The same for a record that says partial, with what remains, and for a
+# record that says complete while the handoff note lists remaining work.
+MOCK_WRITE_ACTION="$(record partial 10)" run_start "$repo" 10 --resume || fail "resuming with a partial record failed"
+grep -Fq "The Issue is not complete (partial)" "$repo.out" || fail "a partial record was not reported"
+grep -Fq "remaining: Plan steps 3 to 9" "$repo.out" || fail "the remaining work of the record was not shown"
+if grep -Fq "./scripts/review-feature.sh 10" "$repo.out"; then fail "the review was offered for partial work"; fi
+
+mkdir -p "$worktree/.agents/handoffs"
+printf '**Done:** steps 1 and 2.\n**Remaining:** steps 3 to 9.\n' >"$worktree/.agents/handoffs/10.md"
+MOCK_WRITE_ACTION="$(record complete 10)" run_start "$repo" 10 --resume || fail "resuming with a contradicted record failed"
+grep -Fq "The Issue is not complete (partial)" "$repo.out" ||
+  fail "a record that says complete was believed although the handoff note lists remaining work"
+grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "the remaining work of the handoff note was not shown"
+printf 'Issue 10 is complete.\n' >"$worktree/.agents/handoffs/10.md"
+MOCK_WRITE_ACTION="$(record complete 10)" run_start "$repo" 10 --resume || fail "resuming with a complete record failed"
 grep -Fq "./scripts/review-feature.sh 10" "$repo.out" || fail "the next steps were not printed after resuming"
 
 # With a handoff note, the session is pointed at it. Changed files that are

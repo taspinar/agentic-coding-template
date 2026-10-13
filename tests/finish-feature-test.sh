@@ -25,7 +25,29 @@ make_fake_agents "$tmp/bin"
 review=".agents/reviews/feature-12-marker-review-01.json"
 triage=".agents/triage/feature-12-marker-review-01-triage.json"
 
-# Creates a feature repository with an uncommitted change and a current review.
+# set_completion <repo> <status>
+# Writes the implementer's completion record of the Issue with that status.
+set_completion() {
+  local remaining='[]'
+  local met="met"
+
+  if [[ "$2" != "complete" ]]; then
+    remaining='["Plan steps 3 to 9"]'
+    met="not_met"
+  fi
+  mkdir -p "$1/.agents/completion"
+  jq -n --arg status "$2" --arg met "$met" --argjson remaining "$remaining" '{
+    schema: "completion/v1", status: $status,
+    criteria: [
+      {criterion: "The marker exists", status: "met", evidence: "feature.txt"},
+      {criterion: "The marker is documented", status: $met, evidence: "docs/marker.md"}
+    ],
+    remaining: $remaining
+  }' >"$1/.agents/completion/12.json"
+}
+
+# Creates a feature repository with an uncommitted change, a completion record
+# that says complete, and a current review.
 # setup_repo <label> <verdict> <findings-json>
 setup_repo() {
   local repo="$tmp/$1"
@@ -42,6 +64,7 @@ setup_repo() {
   git -C "$repo" commit -qm "Seed"
   git -C "$repo" switch -q -c feature/12-marker
   printf 'feature work\n' >"$repo/feature.txt"
+  set_completion "$repo" complete
 
   jq -n --arg verdict "$2" --argjson findings "$3" '{
     schema: "review/v1", kind: "feature", issue: 12, round: 1,
@@ -162,8 +185,9 @@ record_reviewed_tree "$repo" "$repo/$review"
 run_finish "$repo" 12 "Add the marker" || fail "finishing changed content failed"
 [[ "$(count_runs "$repo")" -eq 2 ]] || fail "changed content was committed without a new verification"
 
-# A latest review of changes only counts when it builds on the content that
-# the round before it reviewed, back to a review of the complete feature.
+# A feature is committed on a review of the complete feature. A latest round
+# that reviewed only the changes since an earlier one confirms fixes; it does
+# not establish that the Issue is done, so it is refused.
 # add_changes_review <repo>: makes round 2 a passed review of the changes
 # since round 1, after a further change, and prints its path.
 add_changes_review() {
@@ -177,26 +201,20 @@ add_changes_review() {
   printf '%s\n' "$second"
 }
 
-repo="$(setup_repo changes-chain PASS "[]")"
+repo="$(setup_repo changes-latest PASS "[]")"
 second="$(add_changes_review "$repo")"
+expect_no_commit "$repo" "the latest review covers only changes" 12 "Add the marker"
+grep -Fq "covers only the changes since round 1" "$repo.out" || fail "the review of changes only was not given as the reason"
+grep -Fq "./scripts/review-feature.sh 12 (without --changes)" "$repo.out" ||
+  fail "the review of the complete feature was not asked for"
+# A third round that reviews the complete feature again is accepted.
+jq '.round = 3 | del(.scope)' "$second" >"$repo/.agents/reviews/feature-12-marker-review-03.json"
 run_finish "$repo" 12 "Add the marker" || {
   cat "$repo.out" >&2
-  fail "finishing after a review of changes only failed"
+  fail "finishing on a review of the complete feature after a review of changes failed"
 }
-message "$repo" | grep -Fqx "Review: round 2 (changes since round 1 only), PASS, by claude (model-r)" ||
-  fail "the commit message does not say that the last round reviewed changes only"
-
-repo="$(setup_repo changes-broken PASS "[]")"
-second="$(add_changes_review "$repo")"
-jq '.scope.base_tree = "0123456789012345678901234567890123456789"' "$second" >"$second.tmp" && mv "$second.tmp" "$second"
-expect_no_commit "$repo" "a review of changes does not build on the previous round" 12 "Add the marker"
-grep -Fq "Run a complete review" "$repo.out" || fail "the broken chain did not ask for a complete review"
-
-repo="$(setup_repo changes-orphan PASS "[]")"
-second="$(add_changes_review "$repo")"
-rm "$repo/$review"
-expect_no_commit "$repo" "the round a review of changes builds on is missing" 12 "Add the marker"
-grep -Fq "whose review is missing" "$repo.out" || fail "the missing earlier round was not reported"
+message "$repo" | grep -Fqx "Review: round 3, PASS, by claude (model-r)" ||
+  fail "the commit message does not name the review of the complete feature"
 
 # Minor findings that were triaged without FIX_NOW and published are fine.
 repo="$(setup_repo minor PASS_WITH_MINOR_FINDINGS "$minor")"
@@ -280,19 +298,123 @@ run_finish "$repo" 12 "Add the marker" || fail "finishing a feature without a su
 [[ "$(changes_of "$repo")" == "Changes:
 - TODO: summarize the main changes" ]] || fail "the list of changes to fill in is missing"
 
-# --unattended commits without an editor, and says so when the implementer
-# left no summary.
+# --unattended commits without an editor. Nobody edits that message, so it
+# refuses when the implementer left no summary of the changes.
+repo="$(setup_repo unattended-no-summary PASS "[]")"
+EDITOR_COMMAND=false expect_no_commit "$repo" "an unattended commit has no summary of the changes" 12 "Add the marker" --unattended
+grep -Fq "the implementer supplied no summary of the changes" "$repo.out" || fail "the missing summary was not given as the reason"
+grep -Fq "./scripts/start-feature.sh 12 --resume" "$repo.out" || fail "resuming the implementer was not offered for the missing summary"
+
 repo="$(setup_repo unattended PASS "[]")"
+mkdir -p "$repo/.agents/summaries"
+printf -- '- Adds the marker.\n' >"$repo/.agents/summaries/12.md"
 EDITOR_COMMAND=false run_finish "$repo" 12 "Add the marker" --unattended || {
   cat "$repo.out" >&2
   fail "finishing unattended failed"
 }
 [[ "$(git -C "$repo" rev-list --count HEAD)" -eq 2 ]] || fail "finishing unattended created no commit"
 [[ "$(changes_of "$repo")" == "Changes:
-- The implementer supplied no summary of the changes; see the diff and Issue #12." ]] ||
-  fail "an unattended commit without a summary does not say so"
-grep -Fq "Warning: the implementer supplied no summary" "$repo.out" || fail "the missing summary was not reported"
+- Adds the marker." ]] || fail "an unattended commit does not carry the implementer's summary"
 message "$repo" | grep -Fqx "Review: round 1, PASS, by claude (model-r)" || fail "the unattended commit lacks its review"
+
+# The completion gate. A feature is committed as done only on a completion
+# record of the implementer that says complete; the commit message carries
+# the statement with the evidence per criterion.
+repo="$(setup_repo completion-complete PASS "[]")"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a complete feature failed"
+[[ "$(message "$repo" | sed -n '/^Completion: /,/^$/p')" == "Completion: complete
+- met: The marker exists (feature.txt)
+- met: The marker is documented (docs/marker.md)" ]] || fail "the commit message does not carry the completion statement"
+if git -C "$repo" show --name-only --format= HEAD | grep -Fq "completion"; then
+  fail "the completion record was committed"
+fi
+
+repo="$(setup_repo completion-missing PASS "[]")"
+rm "$repo/.agents/completion/12.json"
+expect_no_commit "$repo" "the implementer wrote no completion record" 12 "Add the marker"
+grep -Fq "the implementer wrote no completion record (.agents/completion/12.json)" "$repo.out" ||
+  fail "the missing completion record was not given as the reason"
+grep -Fq "./scripts/start-feature.sh 12 --resume" "$repo.out" || fail "resuming was not offered for the missing record"
+# Your own choice does not replace the record either: --partial needs one.
+expect_no_commit "$repo" "no completion record, with --partial" 12 "Add the marker" --partial
+
+repo="$(setup_repo completion-partial PASS "[]")"
+set_completion "$repo" partial
+expect_no_commit "$repo" "the completion record says partial" 12 "Add the marker"
+grep -Fq "the feature is not complete (partial)" "$repo.out" || fail "the partial record was not given as the reason"
+grep -Fq "remaining: Plan steps 3 to 9" "$repo.out" || fail "the remaining work was not shown"
+grep -Fq "not met: The marker is documented" "$repo.out" || fail "the criterion that is not met was not shown"
+expect_no_commit "$repo" "the completion record says partial, unattended" 12 "Add the marker" --unattended
+
+repo="$(setup_repo completion-blocked PASS "[]")"
+set_completion "$repo" blocked
+expect_no_commit "$repo" "the completion record says blocked" 12 "Add the marker"
+
+# A record that says complete is not believed against the handoff note.
+repo="$(setup_repo completion-contradicted PASS "[]")"
+mkdir -p "$repo/.agents/handoffs"
+printf '**Done:** steps 1 and 2.\n**Remaining:** steps 3 to 9.\n**Open questions:** none\n' >"$repo/.agents/handoffs/12.md"
+expect_no_commit "$repo" "the handoff note lists remaining work" 12 "Add the marker"
+grep -Fq "the handoff note (.agents/handoffs/12.md) lists remaining work" "$repo.out" ||
+  fail "the handoff note was not given as the reason"
+grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "the remaining work of the handoff note was not shown"
+printf 'Issue 12 is complete.\n' >"$repo/.agents/handoffs/12.md"
+run_finish "$repo" 12 "Add the marker" || fail "a handoff note without remaining work stopped the commit"
+
+invalid_count=0
+for broken in 'not json' '{"schema": "completion/v1", "status": "complete", "criteria": [], "remaining": []}' \
+  '{"schema": "completion/v1", "status": "done", "criteria": [{"criterion": "a", "status": "met", "evidence": "b"}], "remaining": []}' \
+  '{"schema": "completion/v1", "status": "complete", "criteria": [{"criterion": "a", "status": "not_met", "evidence": "b"}], "remaining": []}' \
+  '{"schema": "completion/v1", "status": "complete", "criteria": [{"criterion": "a", "status": "met", "evidence": ""}], "remaining": []}' \
+  '{"schema": "completion/v1", "status": "complete", "criteria": [{"criterion": "a", "status": "met", "evidence": "b"}], "remaining": ["more"]}' \
+  '{"schema": "completion/v1", "status": "partial", "criteria": [{"criterion": "a", "status": "met", "evidence": "b"}], "remaining": []}'; do
+  invalid_count=$((invalid_count + 1))
+  repo="$(setup_repo "completion-invalid-$invalid_count" PASS "[]")"
+  printf '%s\n' "$broken" >"$repo/.agents/completion/12.json"
+  expect_no_commit "$repo" "an invalid completion record: $broken" 12 "Add the marker"
+  grep -Fq "the completion record cannot be used" "$repo.out" || fail "an invalid record was not refused as invalid: $broken"
+  expect_no_commit "$repo" "an invalid completion record with --partial: $broken" 12 "Add the marker" --partial
+done
+
+# --partial is your explicit choice to commit work that is not complete. The
+# commit says so, with what remains.
+repo="$(setup_repo completion-partial-chosen PASS "[]")"
+set_completion "$repo" partial
+run_finish "$repo" 12 "Add the first part of the marker" --partial || {
+  cat "$repo.out" >&2
+  fail "committing partial work with --partial failed"
+}
+[[ "$(message "$repo" | sed -n '/^Completion: /,/^$/p')" == "Completion: partial
+- met: The marker exists (feature.txt)
+- not met: The marker is documented (docs/marker.md)
+- remaining: Plan steps 3 to 9" ]] || fail "the commit message of partial work does not say what remains"
+grep -Fq "does not close Issue #12" "$repo.out" || fail "the draft pull request was not announced for partial work"
+
+# --partial takes what the record says into the commit, so a record that says
+# complete, contradicted by the handoff note, is not committed as partial: it
+# would be recorded as complete, without what remains.
+repo="$(setup_repo completion-partial-contradicted PASS "[]")"
+mkdir -p "$repo/.agents/handoffs"
+printf '**Remaining:** steps 3 to 9.\n' >"$repo/.agents/handoffs/12.md"
+expect_no_commit "$repo" "--partial with a record that says complete against the handoff note" 12 "Add the marker" --partial
+grep -Fq "the completion record says complete, so the work cannot be committed as partial" "$repo.out" ||
+  fail "the contradicted record was not given as the reason with --partial"
+grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "what the handoff note lists was not shown with --partial"
+# With the record corrected, the same work is committed as partial.
+set_completion "$repo" partial
+run_finish "$repo" 12 "Add the first part of the marker" --partial || fail "partial work with a corrected record was refused"
+message "$repo" | grep -Fqx "Completion: partial" || fail "the corrected record was not committed as partial"
+if message "$repo" | grep -Fqx "Completion: complete"; then fail "work with remaining steps was committed as complete"; fi
+
+repo="$(setup_repo completion-partial-refused PASS "[]")"
+expect_no_commit "$repo" "--partial for a complete feature" 12 "Add the marker" --partial
+grep -Fq "the feature is complete" "$repo.out" || fail "--partial for a complete feature was not explained"
+
+repo="$(setup_repo completion-not-ignored PASS "[]")"
+grep -v '^\.agents/completion/$' "$repo/.gitignore" >"$tmp/gitignore" && cp "$tmp/gitignore" "$repo/.gitignore"
+record_reviewed_tree "$repo" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then fail "a completion record that is not ignored was accepted"; fi
+grep -Fq ".agents/completion/" "$repo.out" || fail "the missing ignore rule for the completion record was not named"
 
 # The option may stand anywhere, and the checks before the commit still apply.
 repo="$(setup_repo unattended-no-review PASS "[]")"
@@ -411,23 +533,6 @@ for level in major breaking; do
     fail "the reason of the reviewer was not recorded for a $level impact"
   grep -Fq "no script or agent may merge it" "$repo.out" || fail "the needed approval was not announced"
 done
-
-# A later round that reviews only the changes cannot lower what an earlier
-# round found: the heaviest classification of the chain counts.
-repo="$(setup_repo gate-chain PASS "[]")"
-set_impact "$repo" major
-second=".agents/reviews/feature-12-marker-review-02.json"
-jq '.round = 2 | .scope = {kind: "changes", since_round: 1, base_tree: .reviewed_tree}
-    | .architecture_impact = {level: "minor", rationale: "Only a typo changed.", checked_against: []}' \
-  "$repo/$review" >"$repo/$second"
-run_finish "$repo" 12 "Add the marker" || {
-  cat "$repo.out" >&2
-  fail "finishing after a review of changes only failed"
-}
-approval_of "$repo" | grep -Fqx -- "- required from the project owner, for exactly this commit" ||
-  fail "a later review of changes only lowered an earlier major classification"
-approval_of "$repo" | grep -Fq "as major: found in an earlier review round" ||
-  fail "the earlier round was not given as the reason"
 
 # The rules on the diff outweigh a reviewer who calls the change minor.
 repo="$(setup_repo gate-adr PASS "[]")"

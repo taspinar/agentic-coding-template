@@ -6,6 +6,30 @@ Read `AGENTS.md`, the active plan, relevant architecture/ADRs, and `docs/evaluat
 
 Check correctness, issue/plan compliance, architecture, security, edge cases, test coverage, reliability, and unnecessary complexity.
 
+## Completion
+
+A review of the complete feature decides whether the Issue is done. The
+calling script supplies the implementer's completion record: its status and,
+per acceptance criterion, the evidence it names. That record is a claim. The
+scripts act on its status without understanding it, so you are the check:
+
+- Go through every acceptance criterion of the Issue, and every step of the
+  plan, and find in the diff and the tests what meets it. Do this also for a
+  criterion the record leaves out.
+- A criterion that is not met, or only in part, is a finding: `major`, or
+  `critical` when the feature does not work without it. Name the criterion in
+  the title.
+- A record that says `met` where the code or the tests do not show it is a
+  `major` finding, also when the evidence it names exists but does not prove
+  the criterion.
+- A record with the status `complete` while work is missing, a missing
+  record, or remaining work in the handoff note is a `major` finding.
+- A test that passes without checking the criterion is not evidence
+  (`docs/evaluation.md`, "Meaningful tests").
+
+A feature that was committed on purpose as partial work says so in its
+record; then review what is there and report what the record leaves unsaid.
+
 ## Review of changes only
 
 When the calling script says that this is a review of changes only, an earlier
@@ -24,6 +48,10 @@ instead of the complete feature diff. Then:
   worse.
 - State in `limitations` that this round covered only the changes since the
   previous round.
+
+A review of changes confirms fixes. It does not establish that the Issue is
+done: the round a feature is committed on is always a review of the complete
+feature.
 
 ## Result
 

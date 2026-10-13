@@ -48,4 +48,5 @@ The approved `.agents/triage/*.json` artifact is the source of truth for these
 decisions. Use `./scripts/apply-triage.sh` to hand only its `FIX_NOW` scope to a
 write-capable implementation agent. The helper verifies the result but does not
 commit it. The fixes make the review stale, so run a new review round before
-committing: complete, or with `--changes` after a small, local fix.
+committing. With `--changes` a round confirms a small, local fix; the round a
+feature is committed on reviews the complete feature against the Issue.

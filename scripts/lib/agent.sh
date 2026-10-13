@@ -77,7 +77,13 @@ BLOCKED is only for that. A verification is not a decision: when
 within your session, or cannot run here, do not write a BLOCKED line. Say in
 your final message and in the handoff note what happened and what you checked
 instead, and end normally. The script that started you verifies the result
-after your session and stops the run when the verification really fails."
+after your session and stops the run when the verification really fails.
+
+Ending normally does not mean that the Issue is done. Before you end, write
+the completion record that the implementer contract describes under
+'Completion', with the status complete, partial, or blocked as it really is.
+The scripts go on to the review and the commit only on 'complete', and start
+you again when work remains."
 
 # agent_blocked_reason <final-message-file>
 # Prints the reason of the last 'BLOCKED: ' line of an unattended session's

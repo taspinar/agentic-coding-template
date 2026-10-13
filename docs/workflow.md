@@ -148,7 +148,12 @@ flowchart TD
   review round. A passed newer round confirms the fixes of earlier rounds. A
   round reviews the complete feature; after a small fix,
   `review-feature.sh <issue> --changes` reviews only what changed since the
-  previous round.
+  previous round. The round a feature is committed on always covers the
+  complete feature: it is what establishes that the Issue is done.
+- A session that ends is not a feature that is complete. The implementer
+  records where the work stands in a completion record; the commit and a
+  pull request that closes the Issue need a record that says complete, which
+  the reviewer of the complete feature checks against the code.
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - `publish-feature.sh` pushes the branch and opens the pull request that
@@ -254,7 +259,7 @@ exits with status 3.
 | `revise-planning.sh` | `project-planner` (read-only, then write) | Approve the decisions | Revision JSON and report; architecture, roadmap, ADRs | Documents yes, revision no | No |
 | `finish-planning.sh` | None | Confirm earlier escalations; approve the planning | `docs/PLANNING_APPROVAL.md` | Yes | No |
 | `create-feature-issue.sh` | None | Create the Issue | Feature Issue on GitHub | Not applicable | No |
-| `start-feature.sh` | `implementer` (write) | None | Code and tests; the handoff note, manual steps, and summary of the changes as working files | Code and tests, by `finish-feature.sh` | By the agent, after its last change |
+| `start-feature.sh` | `implementer` (write) | None | Code and tests; the handoff note, manual steps, summary of the changes, and completion record as working files | Code and tests, by `finish-feature.sh` | By the agent, after its last change |
 | `review-feature.sh` | `reviewer` (read-only) | None | Review JSON and report | No | Yes, unless it already passed for this content |
 | `triage-review.sh` | `triage` (read-only) | Approve the triage | Triage JSON and report; follow-up Issues and a comment on GitHub | No | No |
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes, unless it already passed for this content |
@@ -325,6 +330,9 @@ Each kind of state has one place:
   human; copied into the commit message and the pull request. Working files.
 - `.agents/summaries/`: per Issue, the implementer's summary of the changes,
   which becomes the list of changes in the commit message. Working files.
+- `.agents/completion/`: per Issue, the implementer's completion record:
+  complete, partial, or blocked, with evidence per acceptance criterion. The
+  scripts commit and close the Issue only on `complete`. Working files.
 - `.agents/run/`: the final messages of agents that ran unattended. Working
   files.
 - `.agents/verification/`: the record of the last passed verification of the

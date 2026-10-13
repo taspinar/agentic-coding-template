@@ -73,9 +73,9 @@ the website describes the current template.
 | `scripts/review-feature.sh` | Independent, read-only review of the complete feature diff, or with `--changes` of what changed since the previous round |
 | `scripts/triage-review.sh` | Classifies review findings, creates follow-up Issues, and publishes the reports on the Issue |
 | `scripts/apply-triage.sh` | Lets an implementer resolve only the `FIX_NOW` findings |
-| `scripts/finish-feature.sh` | Checks the feature and creates the commit |
-| `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions, in at most five review rounds; never merges and never removes a worktree |
-| `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request; with `--wait` stays until CI finishes; never merges |
+| `scripts/finish-feature.sh` | Checks the feature, including the completion gate and a review of the complete feature, and creates the commit; `--partial` commits unfinished work as your choice |
+| `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions: resumes the implementer until the completion gate passes, then at most five review rounds, the last of the complete feature; never merges and never removes a worktree |
+| `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request, which closes the Issue only for a complete feature and is a draft otherwise; with `--wait` stays until CI finishes; never merges |
 | `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
@@ -93,6 +93,7 @@ the website describes the current template.
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
+| `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
 
@@ -123,6 +124,7 @@ the website describes the current template.
 | `.agents/verification/` | The record of the last passed verification, written by `verify.sh` | No |
 | `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
 | `.agents/summaries/` | Per Issue, the implementer's summary of the changes; becomes the list of changes in the commit message | No |
+| `.agents/completion/` | Per Issue, the implementer's completion record: `complete`, `partial`, or `blocked`, with evidence per acceptance criterion. The gate before the commit and before a pull request that closes the Issue | No |
 | `.agents/run/` | The final messages, and for Codex the session logs, of agents that ran with `--unattended`; the mark of `run-feature.sh` that the implementation was completed, its log of interruptions (`<issue>-log`), and the output of a failed verification | No |
 | `.agents/plans/` | Optional feature plans | Yes |
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |

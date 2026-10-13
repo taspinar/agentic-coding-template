@@ -53,6 +53,21 @@ case "$schema:$out" in
     ;;
 esac
 
+# completion <status> [remaining]: the implementer's completion record of the
+# Issue, as the implementer contract describes it.
+completion() {
+  local remaining='[]'
+  local met="met"
+
+  if [[ "$1" != "complete" ]]; then
+    remaining="[\"${2:-Plan steps 3 to 9}\"]"
+    met="not_met"
+  fi
+  mkdir -p .agents/completion
+  printf '{"schema": "completion/v1", "status": "%s", "criteria": [{"criterion": "The feature file exists", "status": "%s", "evidence": "feature.txt"}], "remaining": %s}\n' \
+    "$1" "$met" "$remaining" >".agents/completion/$RUN_ISSUE.json"
+}
+
 count="$(($(cat "$RUN_CONTROL/$role.count" 2>/dev/null || echo 0) + 1))"
 echo "$count" >"$RUN_CONTROL/$role.count"
 printf '%s\n' "$*" >>"$RUN_CONTROL/$role.args"
@@ -64,6 +79,7 @@ case "$role" in
     default='printf "feature\n" >>feature.txt
 mkdir -p .agents/summaries
 printf -- "- Adds the feature file.\n" >".agents/summaries/$RUN_ISSUE.md"
+completion complete
 reply="The feature is implemented."'
     ;;
   reviewer) default='reply="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"PASS\", \"limitations\": \"\", \"findings\": []}"' ;;
@@ -108,6 +124,10 @@ case "${1:-} ${2:-}" in
   "pr list") ;;
   "pr create")
     [[ ! -e "$RUN_CONTROL/pr-fails" ]] || exit 1
+    args=("$@")
+    for ((i = 0; i < ${#args[@]}; i++)); do
+      if [[ "${args[$i]}" == "--body-file" ]]; then cp "${args[$((i + 1))]}" "$RUN_CONTROL/pr-body"; fi
+    done
     echo "https://github.com/example/project/pull/7"
     ;;
   "pr view") echo "main" ;;
@@ -246,6 +266,17 @@ git -C "$repo-2-thing" log -1 --format=%s | grep -Fqx "F02 — Feature file" || 
 git -C "$repo-2-thing" log -1 --format=%B | grep -Fqx -- "- Adds the feature file." ||
   fail "the commit message lacks the implementer's summary"
 
+# The pull request closes the Issue, because the completion gate passed: the
+# commit carries the statement of the implementer's record.
+git -C "$repo-2-thing" log -1 --format=%B | grep -Fqx "Completion: complete" ||
+  fail "the commit does not carry the completion statement"
+grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "the pull request of a complete feature does not close the Issue"
+if grep -Fq -- "--draft" "$repo.control/gh.log"; then fail "the pull request of a complete feature is a draft"; fi
+grep -Fq "## Completion record of the implementer" "$repo.control/reviewer-1.context" ||
+  fail "the reviewer was not given the completion record"
+grep -Fq '"status": "complete"' "$repo.control/reviewer-1.context" || fail "the reviewer was not shown what the record says"
+grep -Fq "not evidence" "$repo.control/reviewer-1.context" || fail "the reviewer was not told that the record is a claim"
+
 if grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out"; then fail "ordinary work was reported as needing the owner's approval"; fi
 git -C "$repo-2-thing" log -1 --format=%B | grep -A1 -Fx "Merge approval:" | grep -Fqx -- "- not required" ||
   fail "the commit does not record that no approval is needed"
@@ -255,19 +286,157 @@ run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 1 1 0 0
 
-# Findings are triaged without a question and fixed, and a second round
-# confirms the fixes.
+# The completion gate. A session of the implementer that ends without an
+# error has not completed the feature by that alone: the run goes on to the
+# review only when the completion record says complete, the handoff note
+# lists nothing that remains, and the summary of the changes exists.
+# Otherwise the implementer is resumed with the reason in its handoff note.
+#
+# The case of the bug this guards against: the implementer stopped after two
+# of nine plan steps, said so in its handoff note, and ended normally.
+repo="$(setup_repo stopped-partway)"
+printf '%s\n' 'printf "steps 1 and 2\n" >>feature.txt
+mkdir -p .agents/handoffs
+printf "**Done:** steps 1 and 2.\n**Remaining:** steps 3 to 9.\n" >".agents/handoffs/$RUN_ISSUE.md"
+completion partial "Plan steps 3 to 9"
+reply="Steps 1 and 2 are done. I ran out of time."' >"$repo.control/implementer-1.sh"
+printf '%s\n' 'eval "$default"; printf "Issue %s is complete.\n" "$RUN_ISSUE" >".agents/handoffs/$RUN_ISSUE.md"' \
+  >"$repo.control/implementer-2.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+log_of() {
+  cat "$1-2-thing/.agents/run/2-log" 2>/dev/null || true
+}
+log_of "$repo" | grep -Fq "| implementation | not complete | partial: " || fail "the session that stopped partway is not in the log of the feature"
+log_of "$repo" | grep -Fq "remaining: Plan steps 3 to 9" || fail "what remained is not in the log of the feature"
+grep -Fq "You are resuming interrupted work" "$repo.control/implementer.args" || fail "the implementer was not resumed after it stopped partway"
+grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "the completed feature does not close the Issue"
+
+# The reason is put in the handoff note for the session that continues.
+repo="$(setup_repo stopped-partway-note)"
+printf '%s\n' 'completion partial "Plan steps 3 to 9"; reply="Stopped."' >"$repo.control/implementer-1.sh"
+printf '%s\n' 'cp ".agents/handoffs/$RUN_ISSUE.md" "$RUN_CONTROL/note-seen"; eval "$default"' >"$repo.control/implementer-2.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+grep -Fq "## Not complete" "$repo.control/note-seen" || fail "the resumed implementer was not told that the gate did not pass"
+grep -Fq -- "- gate: remaining: Plan steps 3 to 9" "$repo.control/note-seen" || fail "the resumed implementer was not told what remained"
+# What the run records there does not itself count as remaining work.
+[[ -n "$(git -C "$repo-2-thing" log -1 --format=%B | grep -Fx 'Completion: complete')" ]] ||
+  fail "the note of the run kept the gate from passing"
+
+# Without any completion record, the same: the end of a session says nothing.
+repo="$(setup_repo no-record)"
+printf '%s\n' 'printf "half\n" >>feature.txt; mkdir -p .agents/summaries
+printf -- "- Adds half of the feature file.\n" >".agents/summaries/$RUN_ISSUE.md"; reply="Done."' >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+log_of "$repo" | grep -Fq "| not complete | missing: the implementer wrote no completion record" ||
+  fail "the missing completion record is not in the log of the feature"
+
+# A record that says complete is not believed against the handoff note.
+repo="$(setup_repo record-contradicted)"
+printf '%s\n' 'eval "$default"; mkdir -p .agents/handoffs
+printf "## Done\nsteps 1 and 2\n\n## Remaining\n- step 3\n- step 4\n" >".agents/handoffs/$RUN_ISSUE.md"' >"$repo.control/implementer-1.sh"
+printf '%s\n' 'eval "$default"; printf "Issue %s is complete.\n" "$RUN_ISSUE" >".agents/handoffs/$RUN_ISSUE.md"' \
+  >"$repo.control/implementer-2.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+log_of "$repo" | grep -Fq "the completion record says complete, but the handoff note" ||
+  fail "the contradiction between the record and the handoff note is not in the log of the feature"
+
+# A complete record without the summary of the changes: the commit message
+# of an unattended run would say nothing, so the implementer is resumed.
+repo="$(setup_repo no-summary)"
+printf '%s\n' 'printf "feature\n" >>feature.txt; completion complete; reply="Done."' >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+log_of "$repo" | grep -Fq "| not complete | no summary: the implementer wrote no summary of the changes" ||
+  fail "the missing summary is not in the log of the feature"
+git -C "$repo-2-thing" log -1 --format=%B | grep -Fqx -- "- Adds the feature file." ||
+  fail "the commit message lacks the summary that the resumed implementer wrote"
+
+# The sessions are bounded: an implementer that never completes the Issue
+# stops the run before any review, commit, or pull request.
+repo="$(setup_repo never-complete)"
+printf '%s\n' 'printf "more\n" >>feature.txt; completion partial "Plan steps 3 to 9"; reply="Stopped again."' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "the implementer ended 4 sessions without completing the Issue (partial): not met: The feature file exists; remaining: Plan steps 3 to 9"
+expect_sessions "$repo" 4 0 0 0
+[[ -n "$(git -C "$repo-2-thing" status --porcelain)" ]] || fail "work that is not complete was committed"
+[[ "$(git -C "$repo-2-thing" rev-list --count origin/main..HEAD)" -eq 0 ]] || fail "work that is not complete was committed"
+if git -C "$repo" ls-remote --exit-code --heads origin feature/2-thing >/dev/null 2>&1; then
+  fail "work that is not complete was pushed"
+fi
+# Running again gives the implementer the same number of sessions again.
+run_feature "$repo" 2
+expect_stopped "$repo" 1 "without completing the Issue"
+expect_sessions "$repo" 8 0 0 0
+
+# A record that says blocked stops the run for the human, with status 3,
+# also without a BLOCKED line in the final message.
+repo="$(setup_repo record-blocked)"
+printf '%s\n' 'printf "part\n" >>feature.txt; completion blocked "The Issue contradicts ADR 002"; reply="I cannot go on."' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 3 "the implementer reports that it cannot complete the Issue without you: not met: The feature file exists; remaining: The Issue contradicts ADR 002"
+expect_sessions "$repo" 1 0 0 0
+
+# Findings are triaged without a question and fixed, a second round confirms
+# the fixes on the changes, and a third reviews the complete feature again:
+# the round a feature is committed on always covers the whole Issue.
 repo="$(setup_repo fixed)"
 printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
 run_feature "$repo" 2 thing
 expect_published "$repo"
-expect_sessions "$repo" 1 2 1 1
+expect_sessions "$repo" 1 3 1 1
+[[ "$(grep -c "Review of changes only" "$repo.control/reviewer.args")" -eq 1 ]] ||
+  fail "the round after the fixes did not review only the changes, or the last round did"
+if sed -n 3p "$repo.control/reviewer.args" | grep -Fq "Review of changes only"; then
+  fail "the last round reviewed only the changes"
+fi
+grep -Fq "## Complete diff against" "$repo.control/reviewer-3.context" || fail "the last round was not given the complete feature"
+grep -Fq "## Completion record of the implementer" "$repo.control/reviewer-3.context" ||
+  fail "the last round was not given the completion record"
+if grep -Fq "## Completion record of the implementer" "$repo.control/reviewer-2.context"; then
+  fail "a review of changes only was given the completion record to judge"
+fi
+log_of "$repo" >/dev/null
+grep -Fq "review of the complete feature, round 3 of at most 5" "$repo.out" || fail "the closing review was not announced"
 triage="$repo-2-thing/.agents/triage/feature-2-thing-review-01-triage.json"
 [[ "$(jq -r '.unattended' "$triage")" == "true" ]] || fail "the triage does not record that no human approved it"
 [[ "$(jq -r '[.decisions[].decision] | join(",")' "$triage")" == "FIX_NOW,DEFER" ]] || fail "the triage lost its decisions"
 grep -q '^issue comment 2 ' "$repo.control/gh.log" || fail "the triage was not published on the Issue"
 grep -q '^issue create ' "$repo.control/gh.log" || fail "the deferred finding got no follow-up Issue"
-git -C "$repo-2-thing" log -1 --format=%B | grep -q "^Review: round 2.*PASS" || fail "the commit does not name the confirming round"
+git -C "$repo-2-thing" log -1 --format=%B | grep -q "^Review: round 3, PASS" || fail "the commit does not name the review of the complete feature"
+
+# A finding of the closing review is fixed like any other, and the run ends
+# on a review of the complete feature again.
+repo="$(setup_repo closing-review-finds)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' "$only_major" >"$repo.control/reviewer-3.sh"
+printf '%s\n' "$fix_major" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 5 2 2
+git -C "$repo-2-thing" log -1 --format=%B | grep -q "^Review: round 5, PASS" || fail "the run did not end on the fifth round"
+if sed -n 5p "$repo.control/reviewer.args" | grep -Fq "Review of changes only"; then
+  fail "the run ended on a review of changes only"
+fi
+
+# When the rounds are used and the last one reviewed only changes, nothing
+# confirms that the Issue is done: the run stops before the commit.
+repo="$(setup_repo rounds-end-on-changes)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+for n in 2 3 4; do printf '%s\n' "$only_major" >"$repo.control/reviewer-$n.sh"; done
+printf '%s\n' "$fix_major" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "5 review rounds are used, and round 5 reviewed only changes"
+expect_sessions "$repo" 1 5 4 4
 grep -Fqx "fixed" "$repo-2-thing/feature.txt" || fail "the fixes are not in the feature"
 
 # A feature that adds an ADR still gets its pull request, and the run says
@@ -324,10 +493,6 @@ expect_sessions "$repo" 1 5 5 4
 
 # What a fake agent runs to record a question in the handoff note.
 ask='mkdir -p .agents/handoffs; printf "**Done:** part.\n\n**Open questions:** %s\n" "$question" >".agents/handoffs/$RUN_ISSUE.md"'
-
-log_of() {
-  cat "$1-2-thing/.agents/run/2-log" 2>/dev/null || true
-}
 
 # An implementer that needs a decision, with its question in the handoff
 # note, stops the run with status 3. After the answer, the same command
@@ -426,6 +591,58 @@ expect_sessions "$repo" 2 1 0 0
 log_of "$repo" | grep -Fq "Repair attempt 1 of 3" || fail "the repair is not in the log of the feature"
 grep -Fq "## Verification failed" "$repo-2-thing/.agents/handoffs/2.md" || fail "the failing checks were not recorded for the implementer"
 
+# A session that repairs the verification is a session of the implementer
+# too: when it repairs the check but leaves the work partial, the gate is
+# asked again before the review, and the implementer continues.
+repo="$(setup_repo repair-leaves-partial)"
+printf '%s\n' 'case "$count" in
+  1) eval "$default"; printf "x\n" >broken.txt ;;
+  2) rm -f broken.txt; completion partial "The documentation"; reply="Repaired; the documentation is left." ;;
+  *) eval "$default"; reply="Finished." ;;
+esac' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 3 1 0 0
+log_of "$repo" | grep -Fq "Repair attempt 1 of 3" || fail "the repair is not in the log of the feature"
+log_of "$repo" | grep -Fq "| not complete | partial: " || fail "the repair session that left work is not in the log of the feature"
+grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "the feature completed after the repair does not close the Issue"
+
+# The same for a repair session that removes the record, or that leaves
+# remaining work in the handoff note.
+repo="$(setup_repo repair-removes-record)"
+printf '%s\n' 'case "$count" in
+  1) eval "$default"; printf "x\n" >broken.txt ;;
+  2) rm -f broken.txt ".agents/completion/$RUN_ISSUE.json"; reply="Repaired." ;;
+  *) eval "$default"; reply="Finished." ;;
+esac' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 3 1 0 0
+log_of "$repo" | grep -Fq "| not complete | missing: " || fail "the repair session without a record is not in the log of the feature"
+
+repo="$(setup_repo repair-leaves-note)"
+printf '%s\n' 'case "$count" in
+  1) eval "$default"; printf "x\n" >broken.txt ;;
+  2) rm -f broken.txt; printf "**Remaining:** the documentation\n" >".agents/handoffs/$RUN_ISSUE.md"; reply="Repaired." ;;
+  *) eval "$default"; printf "Issue %s is complete.\n" "$RUN_ISSUE" >".agents/handoffs/$RUN_ISSUE.md"; reply="Finished." ;;
+esac' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 3 1 0 0
+log_of "$repo" | grep -Fq "the completion record says complete, but the handoff note" ||
+  fail "the repair session that left remaining work in the note is not in the log of the feature"
+
+# A repair session that records blocked stops the run for the human, with
+# status 3, also without a BLOCKED line: nothing is reviewed.
+repo="$(setup_repo repair-blocked)"
+printf '%s\n' 'case "$count" in
+  1) eval "$default"; printf "x\n" >broken.txt ;;
+  *) rm -f broken.txt; completion blocked "The check contradicts the Issue"; reply="I cannot repair this without a decision." ;;
+esac' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 3 "the implementer reports that it cannot complete the Issue without you"
+expect_sessions "$repo" 2 0 0 0
+
 # A repair session that fails once, for example on a usage limit, is tried
 # again like any other session.
 repo="$(setup_repo repair-fails-once)"
@@ -453,7 +670,7 @@ done
 
 # The repairs are bounded: after three the run stops and names the checks.
 repo="$(setup_repo unverified)"
-printf '%s\n' 'printf "x\n" >broken.txt; reply="Done. ./scripts/verify.sh did not finish in this session."' \
+printf '%s\n' 'eval "$default"; printf "x\n" >broken.txt; reply="Done. ./scripts/verify.sh did not finish in this session."' \
   >"$repo.control/implementer.sh"
 run_feature "$repo" 2 thing
 expect_stopped "$repo" 1 "the verification still fails"
@@ -482,7 +699,7 @@ printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; else rm -f broken.
   >"$repo.control/implementer.sh"
 run_feature "$repo" 2 thing
 expect_published "$repo"
-expect_sessions "$repo" 2 2 1 1
+expect_sessions "$repo" 2 3 1 1
 
 # A fixing agent that changed a file and then failed is continued with the
 # same triage and scope: apply-triage.sh would refuse a new session, because
@@ -493,7 +710,7 @@ printf '%s\n' 'printf "half fixed\n" >>feature.txt; exit 9' >"$repo.control/fixe
 printf '%s\n' 'printf "fixed\n" >>feature.txt; reply="Finished the fixes."' >"$repo.control/fixes.sh"
 run_feature "$repo" 2 thing
 expect_published "$repo"
-expect_sessions "$repo" 1 2 1 2
+expect_sessions "$repo" 1 3 1 2
 log_of "$repo" | grep -Fq "Continuing the interrupted session with the same scope" ||
   fail "the interrupted fix session is not in the log of the feature"
 [[ "$(grep -c "Wrong content" "$repo.control/fixes.args")" -eq 2 ]] ||
@@ -525,7 +742,7 @@ for code in 4 5; do
   printf '%s\n' "exit $code" >"$repo.control/fixes-1.sh"
   run_feature "$repo" 2 thing
   expect_published "$repo"
-  expect_sessions "$repo" 1 2 1 2
+  expect_sessions "$repo" 1 3 1 2
 done
 
 # A fixing agent that needs a decision stops the run with status 3, and one
@@ -545,7 +762,7 @@ expect_stopped "$repo" 3 "the agent that applies the fixes needs a decision of y
 printf '**Open questions:** none.\n\nWhich format?\nAnswer: JSON\n' >"$repo-2-thing/.agents/handoffs/2.md"
 run_feature "$repo" 2
 expect_published "$repo"
-expect_sessions "$repo" 2 2 1 1
+expect_sessions "$repo" 2 3 1 1
 grep -Fqx "answered" "$repo-2-thing/feature.txt" || fail "the answer in the handoff note did not reach an agent"
 
 repo="$(setup_repo fixes-nothing)"
@@ -590,10 +807,21 @@ run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 1 1 0 0
 
-# --implemented continues a feature that you implemented in your own session.
+# --implemented continues a feature that you implemented in your own session,
+# without a session of the implementer. Your word does not replace the
+# completion gate: without the record the run stops and says what is missing.
 repo="$(setup_repo by-hand)"
 git -C "$repo" worktree add -q -b feature/2-thing "$repo-2-thing" origin/main
 printf 'by hand\n' >"$repo-2-thing/feature.txt"
+run_feature "$repo" 2 --implemented
+expect_stopped "$repo" 1 "implemented was given, but the completion gate does not pass (missing)"
+expect_sessions "$repo" 0 0 0 0
+mkdir -p "$repo-2-thing/.agents/completion" "$repo-2-thing/.agents/summaries"
+printf '{"schema": "completion/v1", "status": "complete", "criteria": [{"criterion": "The feature file exists", "status": "met", "evidence": "feature.txt"}], "remaining": []}\n' \
+  >"$repo-2-thing/.agents/completion/2.json"
+run_feature "$repo" 2 --implemented
+expect_stopped "$repo" 1 "implemented was given, but the completion gate does not pass (no summary)"
+printf -- '- Adds the feature file by hand.\n' >"$repo-2-thing/.agents/summaries/2.md"
 run_feature "$repo" 2 --implemented
 expect_published "$repo"
 expect_sessions "$repo" 0 1 0 0

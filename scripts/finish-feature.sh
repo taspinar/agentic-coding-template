@@ -7,20 +7,29 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/planning.sh"
 source "$script_dir/lib/guardrails.sh"
+source "$script_dir/lib/completion.sh"
 
 usage() {
-  echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended]"
+  echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended] [--partial]"
   echo
-  echo "Run in the feature worktree. Checks that verification passes and that the"
-  echo "latest independent review is current and resolved, then commits the feature"
-  echo "with an editable, structured message. It never pushes or merges."
+  echo "Run in the feature worktree. Checks that the feature is complete, that"
+  echo "verification passes, and that the latest independent review is current,"
+  echo "resolved, and covers the complete feature, then commits the feature with an"
+  echo "editable, structured message. It never pushes or merges."
+  echo
+  echo "Complete means: the implementer's completion record (.agents/completion/"
+  echo "<issue>.json) says complete with evidence for every acceptance criterion,"
+  echo "and the handoff note lists no remaining work. --partial commits work that"
+  echo "is not complete, as your explicit choice: the commit message says what"
+  echo "remains, and publish-feature.sh then opens a draft pull request that does"
+  echo "not close the Issue."
   echo
   echo "--no-review is only for changes that .agents/policies/autonomy.md classifies"
   echo "as low risk; the reason is recorded in the commit message."
   echo
   echo "The list of changes in the message comes from .agents/summaries/<issue>.md,"
   echo "which the implementer writes. --unattended commits that message as it is,"
-  echo "without opening an editor."
+  echo "without opening an editor, and refuses when that summary is missing."
   exit 1
 }
 
@@ -30,13 +39,14 @@ fail() {
 }
 
 unattended=0
+partial=0
 arguments=()
 for argument in "$@"; do
-  if [[ "$argument" == "--unattended" ]]; then
-    unattended=1
-  else
-    arguments+=("$argument")
-  fi
+  case "$argument" in
+    --unattended) unattended=1 ;;
+    --partial) partial=1 ;;
+    *) arguments+=("$argument") ;;
+  esac
 done
 set -- ${arguments[@]+"${arguments[@]}"}
 
@@ -56,6 +66,52 @@ branch="$(git branch --show-current)"
 
 [[ -n "$(git -C "$root" status --porcelain)" ]] || fail "there are no changes to commit."
 review_data_require_jq
+
+# The completion gate: a feature is committed as done only when the
+# implementer's completion record says so and nothing contradicts it. The
+# record is a claim; the review of the complete feature, checked below, is
+# what confirms it against the code.
+completion_file="$(completion_record "$root" "$issue")"
+if [[ -f "$completion_file" ]]; then
+  git -C "$root" check-ignore -q "$COMPLETION_DIR/$issue.json" ||
+    fail "Git does not ignore $COMPLETION_DIR/$issue.json, so it would be committed. Add '$COMPLETION_DIR/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
+fi
+gate="$(completion_gate "$root" "$issue")"
+gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
+gate_reasons="$(printf '%s\n' "$gate" | sed 1d)"
+refuse_incomplete() {
+  echo "Error: $1" >&2
+  [[ -z "$gate_reasons" ]] || printf '%s\n' "$gate_reasons" | sed 's/^/  - /' >&2
+  echo "$2" >&2
+  echo "Nothing was committed." >&2
+  exit 1
+}
+case "$gate_status" in
+  complete)
+    [[ "$partial" -eq 0 ]] ||
+      fail "--partial was given, but the completion gate passes: the feature is complete. Run without --partial."
+    ;;
+  partial | blocked)
+    [[ "$partial" -eq 1 ]] ||
+      refuse_incomplete "the feature is not complete ($gate_status):" \
+        "Continue the work with ./scripts/start-feature.sh $issue --resume. To commit the work as it is, as your own choice, add --partial: the pull request then stays a draft and does not close Issue #$issue."
+    # The commit message is made from the record. A record that says complete
+    # while the handoff note lists remaining work would be committed as
+    # complete, so the record has to say what is left first.
+    [[ "$(jq -r '.status' "$completion_file")" != "complete" ]] ||
+      refuse_incomplete "the completion record says complete, so the work cannot be committed as partial:" \
+        "Correct $COMPLETION_DIR/$issue.json first: the status partial or blocked, the criteria that are not met, and what remains. Then run again with --partial."
+    ;;
+  missing)
+    refuse_incomplete "the completion gate does not pass:" \
+      "The implementer writes the completion record (.agents/prompts/implementer.md, 'Completion'); resume it with ./scripts/start-feature.sh $issue --resume, or write the record yourself."
+    ;;
+  *)
+    refuse_incomplete "the completion record cannot be used:" \
+      "Correct $COMPLETION_DIR/$issue.json (.agents/prompts/implementer.md, 'Completion'), or resume the implementer with ./scripts/start-feature.sh $issue --resume."
+    ;;
+esac
+completion_lines="$(completion_commit_lines "$root" "$issue")"
 
 # A feature keeps the architecture and the ADRs up to date, but it does not
 # change what the product is or which features it gets, nor the approval
@@ -125,21 +181,11 @@ else
     *) fail "could not compute the fingerprint of the working tree." ;;
   esac
 
-  # A review of changes only covers what changed since an earlier round. It
-  # counts when that round reviewed exactly the content it builds on, and so
-  # on back to a review of the complete feature.
-  cursor="$latest"
-  while [[ "$(jq -r '.scope.kind // "full"' "$cursor")" == "changes" ]]; do
-    since="$(jq -r '.scope.since_round' "$cursor")"
-    earlier="$root/.agents/reviews/${slug}-review-$(printf '%02d' "$since").json"
-    [[ -f "$earlier" ]] ||
-      fail "round $(jq -r '.round' "$cursor") reviewed only the changes since round $since, whose review is missing. Run a complete review: ./scripts/review-feature.sh $issue"
-    errors="$(review_artifact_errors "$earlier")"
-    [[ -z "$errors" ]] || fail "the review of round $since is invalid: ${errors//$'\n'/; }"
-    [[ "$(jq -r '.reviewed_tree' "$earlier")" == "$(jq -r '.scope.base_tree' "$cursor")" ]] ||
-      fail "round $(jq -r '.round' "$cursor") reviewed only the changes since round $since, but not from the content that round $since reviewed. Run a complete review: ./scripts/review-feature.sh $issue"
-    cursor="$earlier"
-  done
+  # The review that a commit rests on covers the complete feature. A round
+  # that reviewed only changes confirms fixes; whether the Issue is done is
+  # judged on the whole diff against the Issue.
+  [[ "$(jq -r '.scope.kind // "full"' "$latest")" != "changes" ]] ||
+    fail "the latest review (round $(jq -r '.round' "$latest")) covers only the changes since round $(jq -r '.scope.since_round' "$latest"). A feature is committed on a review of the complete feature: run ./scripts/review-feature.sh $issue (without --changes)."
 
   round="$(jq -r '.round' "$latest")"
   verdict="$(jq -r '.verdict | gsub("_"; " ")' "$latest")"
@@ -168,10 +214,7 @@ else
     fi
     triage_note="; triage published on #$issue"
   done
-  scope_note=""
-  [[ "$(jq -r '.scope.kind // "full"' "$latest")" != "changes" ]] ||
-    scope_note=" (changes since round $(jq -r '.scope.since_round' "$latest") only)"
-  review_line="Review: round $round$scope_note, $verdict, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")$triage_note"
+  review_line="Review: round $round, $verdict, by $(jq -r '"\(.reviewer.agent) (\(.reviewer.model))"' "$latest")$triage_note"
 fi
 
 # 3. Show the manual steps the implementer recorded for this feature.
@@ -195,8 +238,9 @@ fi
 if [[ -f "$summary_file" ]] && grep -q '^[[:space:]]*- [^[:space:]]' "$summary_file"; then
   changes="$(grep '^[[:space:]]*- [^[:space:]]' "$summary_file" | sed 's/^[[:space:]]*//')"
 elif [[ "$unattended" -eq 1 ]]; then
-  echo "Warning: the implementer supplied no summary of the changes (.agents/summaries/$issue.md); the commit message says so." >&2
-  changes="- The implementer supplied no summary of the changes; see the diff and Issue #$issue."
+  # Nobody edits the message of an unattended commit, so it would go out
+  # without saying what changed.
+  fail "the implementer supplied no summary of the changes (.agents/summaries/$issue.md), and an unattended commit is not edited. Resume the implementer with ./scripts/start-feature.sh $issue --resume, or write the summary. Nothing was committed."
 fi
 
 # The merge approval gate: whether the owner must approve the merge of this
@@ -238,6 +282,8 @@ Issue: #$issue
 Changes:
 $changes
 
+$completion_lines
+
 Verification:
 - ./scripts/verify.sh passed
 
@@ -262,6 +308,11 @@ fi
 echo
 echo "Committed $(git -C "$root" rev-parse --short HEAD) on $branch."
 echo
-echo "Next: push the branch and open the pull request; follow its checks there:"
+if [[ "$gate_status" == "complete" ]]; then
+  echo "Next: push the branch and open the pull request; follow its checks there:"
+else
+  echo "The work is committed as $gate_status. Next: push the branch; the pull request is"
+  echo "opened as a draft and does not close Issue #$issue:"
+fi
 echo "  ./scripts/publish-feature.sh $issue"
 echo "After the merge, from the primary checkout: ./scripts/cleanup-worktree.sh $issue"
