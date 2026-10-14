@@ -265,6 +265,10 @@ planner_allowed() {
 }
 
 snapshot_forbidden_paths() {
+  case "$1" in
+    grill) echo "Recording the files of the planning worktree, to check what Project Grill changes..." ;;
+    *) echo "Recording the files of the planning worktree, to check what the project planner changes..." ;;
+  esac
   scope_snapshot "$worktree" "${1}_allowed" "$2"
 }
 
@@ -274,7 +278,8 @@ require_scope_unchanged() {
   local phase="$3"
   local current_snapshot="$state_dir/${scope}-current.tsv"
 
-  snapshot_forbidden_paths "$scope" "$current_snapshot"
+  echo "Checking which files the session changed..."
+  scope_snapshot "$worktree" "${scope}_allowed" "$current_snapshot"
   scope_unchanged "$baseline" "$current_snapshot" ||
     post_creation_fail "$phase exceeded its allowed file scope."
 }

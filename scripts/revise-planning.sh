@@ -234,6 +234,7 @@ fi
 # direct Markdown ADRs. Everything else, including the requirements, the
 # description, and all review artifacts, must stay unchanged.
 baseline="$tmp_work/scope-before.tsv"
+echo "Recording the files of the planning worktree, to check what the planner changes..."
 scope_snapshot "$root" scope_planner_allowed "$baseline"
 head_before="$(git -C "$root" rev-parse HEAD)"
 
@@ -261,6 +262,7 @@ preserved() {
 
 [[ "$(git -C "$root" rev-parse HEAD)" == "$head_before" ]] ||
   preserved "the planner created a commit; planning agents must leave HEAD unchanged."
+echo "Checking which files the planner changed..."
 scope_snapshot "$root" scope_planner_allowed "$tmp_work/scope-after.tsv"
 scope_unchanged "$baseline" "$tmp_work/scope-after.tsv" ||
   preserved "the planner changed files outside the architecture, the roadmap, and the ADRs."
