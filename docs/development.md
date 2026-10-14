@@ -338,6 +338,15 @@ It uses role `project-planner` in two phases:
    a review artifact, and any commit fails the run and keeps the worktree for
    inspection.
 
+The scripts find such a change by recording the files of the worktree before
+the session and comparing them afterwards; they say when they do. The record
+covers every file that Git does not ignore, every ignored file outside an
+ignored directory (a `.env`, for example), and everything under `.agents/`.
+It leaves out the directories that Git ignores as a whole, such as a Python
+environment, `node_modules`, a build output, or a test cache: a session that
+runs a command may create or change them, and they are never reviewed or
+committed. A secret written into such a directory is therefore not reported.
+
 Escalated findings are listed with the next step: change the requirements
 through Project Grill and approve them again, or decide that the finding does
 not apply. When the write session fails, the approved decisions stay recorded;

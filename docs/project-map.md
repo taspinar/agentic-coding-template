@@ -94,7 +94,7 @@ the website describes the current template.
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
 | `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
-| `scripts/lib/scope.sh` | File-scope enforcement for write sessions |
+| `scripts/lib/scope.sh` | File-scope enforcement for write sessions: a snapshot of the worktree before and after, which leaves out the directories Git ignores as a whole |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
 
 ## Agent contracts and schemas
