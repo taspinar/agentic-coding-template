@@ -1028,8 +1028,14 @@ remove the merged worktree and its branch:
 ```
 
 The script asks GitHub whether the branch's pull request is merged, so it also
-works after a squash merge. It refuses an unmerged worktree, a branch with
-commits after its merged pull request, and a worktree with uncommitted changes;
+works after a squash merge. A branch counts as merged when its tip is the head
+of the merged pull request or an ancestor of it: after "Update branch" on the
+pull request, or a push from another checkout, the branch on GitHub is ahead
+of the local one, and the local branch still holds nothing that was not
+merged. A merged head that is not in the local repository is fetched from the
+pull request first; when that fails, the worktree is kept and the script says
+why. It refuses an unmerged worktree, a branch with a local commit that the
+merged pull request does not contain, and a worktree with uncommitted changes;
 ignored review and triage files do not count. After removing the worktree and
 the local branch it fast-forwards `main` when the primary checkout is on `main`
 without modified tracked files; untracked files do not prevent that. After a

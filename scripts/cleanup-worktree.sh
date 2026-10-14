@@ -68,10 +68,34 @@ linked_worktrees() {
   done
 }
 
-# merged_head <branch>: prints the head commit of the merged pull request of
-# a branch, or nothing when no pull request of it is merged.
-merged_head() {
-  gh pr list --head "$1" --state merged --limit 1 --json headRefOid --jq '.[0].headRefOid // empty' </dev/null
+# merged_pull_request <branch>: prints the head commit and the number of the
+# merged pull request of a branch, separated by a tab, or nothing when no pull
+# request of it is merged.
+merged_pull_request() {
+  gh pr list --head "$1" --state merged --limit 1 --json headRefOid,number \
+    --jq '.[0] // empty | "\(.headRefOid)\t\(.number)"' </dev/null
+}
+
+# contains_tip <path> <merged-head> <number> <tip>
+# Succeeds when the merged head contains the local tip, so that the branch
+# holds nothing the merged pull request did not: the tip is the merged head,
+# or an ancestor of it. The branch on GitHub can be ahead of the local one,
+# after "Update branch" on the pull request or a push from another checkout.
+# A merged head that is not in the local repository is fetched first, from
+# the pull request ref that GitHub keeps also after the branch is deleted.
+contains_tip() {
+  local path="$1"
+  local merged="$2"
+  local number="$3"
+  local tip="$4"
+
+  [[ "$merged" != "$tip" ]] || return 0
+  if ! git -C "$path" cat-file -e "$merged^{commit}" 2>/dev/null; then
+    git -C "$path" fetch -q origin "refs/pull/$number/head" 2>/dev/null ||
+      git -C "$path" fetch -q origin "$merged" 2>/dev/null || return 2
+    git -C "$path" cat-file -e "$merged^{commit}" 2>/dev/null || return 2
+  fi
+  git -C "$path" merge-base --is-ancestor "$tip" "$merged"
 }
 
 # cleanup <path> <branch>: removes one worktree and its branch when that is
@@ -82,7 +106,10 @@ cleanup() {
   local path="$1"
   local branch="$2"
   local head
+  local number
+  local merged
   local tip
+  local contained=1
   local answer=""
 
   path="$(cd "$path" && pwd -P)"
@@ -97,13 +124,19 @@ cleanup() {
     return 1
   fi
 
-  if ! head="$(merged_head "$branch")"; then
+  if ! merged="$(merged_pull_request "$branch")"; then
     echo "Kept $branch: could not ask GitHub about its pull request."
     return 1
   fi
+  head="${merged%%$'\t'*}"
+  number="${merged#*$'\t'}"
   tip="$(git -C "$path" rev-parse HEAD)"
+  if [[ -n "$head" ]]; then
+    contained=0
+    contains_tip "$path" "$head" "$number" "$tip" || contained=$?
+  fi
 
-  if [[ -z "$head" || "$head" != "$tip" ]]; then
+  if [[ "$contained" -ne 0 ]]; then
     if [[ "$discard" -eq 1 ]]; then
       printf "Discard %s and its worktree %s, although it is not merged? [y/N] " "$branch" "$path"
       read -r answer || true
@@ -116,6 +149,9 @@ cleanup() {
       esac
     elif [[ -z "$head" ]]; then
       echo "Kept $branch: its pull request is not merged."
+      return 1
+    elif [[ "$contained" -eq 2 ]]; then
+      echo "Kept $branch: the head of its merged pull request (#$number) could not be fetched from GitHub to compare it with the local branch."
       return 1
     else
       echo "Kept $branch: it has commits after its merged pull request."
@@ -132,7 +168,7 @@ cleanup() {
     return 2
   fi
   echo "Removed $branch and its worktree $path."
-  if [[ "$branch" == planning/* && -n "$head" && "$head" == "$tip" ]]; then
+  if [[ "$branch" == planning/* && -n "$head" && "$contained" -eq 0 ]]; then
     removed_planning=1
   fi
   return 0

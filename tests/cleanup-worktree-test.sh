@@ -23,8 +23,9 @@ fail() {
 mkdir -p "$tmp/bin"
 ln -sf "$(command -v jq)" "$tmp/bin/jq"
 
-# The fake GitHub CLI reports a merged pull request for each "<branch> <head>"
-# line in MOCK_MERGED_FILE.
+# The fake GitHub CLI reports a merged pull request for each
+# "<branch> <head> [<number>]" line in MOCK_MERGED_FILE, as the head and the
+# number separated by a tab.
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -35,7 +36,7 @@ if [[ "${1:-} ${2:-}" == "pr list" ]]; then
     [[ "$1" != "--head" ]] || head="$2"
     shift
   done
-  awk -v branch="$head" '$1 == branch { print $2 }' "$MOCK_MERGED_FILE" 2>/dev/null || true
+  awk -v branch="$head" '$1 == branch { print $2 "\t" ($3 == "" ? 1 : $3) }' "$MOCK_MERGED_FILE" 2>/dev/null || true
   exit 0
 fi
 echo "Unexpected gh invocation: $*" >&2
@@ -265,5 +266,74 @@ run_cleanup "$repo" "$tmp/fix-70" || {
 
 # An unknown target fails.
 if run_cleanup "$repo" 99; then fail "an unknown target succeeded"; fi
+
+# The branch on GitHub can be ahead of the local one: "Update branch" on the
+# pull request merged main into it, and the pull request was merged with that
+# head. The local tip is an ancestor of the merged head, so the branch holds
+# nothing that was not merged: the worktree is removed. The merged head is
+# not in the local repository; it is fetched from the pull request ref.
+# update_on_github <repo> <branch> <directory> <number>: merges main into the
+# branch in another clone, pushes the result only to refs/pull/<number>/head,
+# and records it as the head of the merged pull request.
+update_on_github() {
+  local other="$tmp/update-$RANDOM"
+  local updated
+
+  git clone -q "$(git -C "$1" remote get-url origin)" "$other"
+  git -C "$other" config user.name "Cleanup Test"
+  git -C "$other" config user.email "cleanup-test@example.com"
+  git -C "$other" fetch -q "$tmp/$3" "$2"
+  git -C "$other" checkout -q -b updated FETCH_HEAD
+  printf 'on main meanwhile\n' >"$other/main-$4.txt"
+  git -C "$other" commit -q --allow-empty -m "Merge main into $2"
+  updated="$(git -C "$other" rev-parse HEAD)"
+  git -C "$other" push -q origin "HEAD:refs/pull/$4/head"
+  printf '%s %s %s\n' "$2" "$updated" "$4" >>"$1.merged"
+}
+
+repo="$(setup_repo updated-on-github)"
+add_worktree "$repo" feature/31-updated updated-31
+update_on_github "$repo" feature/31-updated updated-31 7
+merged_head="$(awk '{ print $2 }' "$repo.merged")"
+if git -C "$repo" cat-file -e "$merged_head^{commit}" 2>/dev/null; then
+  fail "the test meant the merged head to be missing locally"
+fi
+run_cleanup "$repo" 31 || {
+  cat "$repo.out" >&2
+  fail "a worktree whose tip the merged head contains was kept"
+}
+[[ ! -d "$tmp/updated-31" ]] || fail "the worktree of a branch updated on GitHub is still there"
+if branch_exists "$repo" feature/31-updated; then fail "the branch of a branch updated on GitHub is still there"; fi
+grep -Fq "Removed feature/31-updated" "$repo.out" || fail "the removal was not reported"
+
+# The same with --merged, beside a worktree that is not merged.
+repo="$(setup_repo updated-on-github-all)"
+add_worktree "$repo" feature/32-updated updated-32
+update_on_github "$repo" feature/32-updated updated-32 8
+add_worktree "$repo" feature/33-open open-33
+run_cleanup "$repo" --merged || {
+  cat "$repo.out" >&2
+  fail "--merged failed with a branch updated on GitHub"
+}
+[[ ! -d "$tmp/updated-32" ]] || fail "--merged kept a worktree whose tip the merged head contains"
+[[ -d "$tmp/open-33" ]] || fail "--merged removed a worktree that is not merged"
+
+# A local commit after the updated head still keeps the worktree.
+repo="$(setup_repo updated-then-more)"
+add_worktree "$repo" feature/34-more more-34
+update_on_github "$repo" feature/34-more more-34 9
+printf 'after the merge\n' >>"$tmp/more-34/work.txt"
+git -C "$tmp/more-34" commit -qam "Work after the merge"
+if run_cleanup "$repo" 34; then fail "a worktree with a commit that the merged head does not contain was removed"; fi
+[[ -d "$tmp/more-34" ]] || fail "a worktree with a commit after the merged head is gone"
+grep -Fq "it has commits after its merged pull request" "$repo.out" || fail "the commit after the merge was not given as the reason"
+
+# A merged head that cannot be fetched keeps the worktree, and says why.
+repo="$(setup_repo head-unknown)"
+add_worktree "$repo" feature/35-unknown unknown-35
+printf 'feature/35-unknown 0123456789abcdef0123456789abcdef01234567 10\n' >>"$repo.merged"
+if run_cleanup "$repo" 35; then fail "a worktree was removed although the merged head could not be fetched"; fi
+[[ -d "$tmp/unknown-35" ]] || fail "a worktree whose merged head is unknown is gone"
+grep -Fq "could not be fetched from GitHub" "$repo.out" || fail "the unknown merged head was not given as the reason"
 
 echo "cleanup-worktree tests passed"
