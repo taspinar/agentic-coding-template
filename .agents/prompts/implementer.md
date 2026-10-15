@@ -184,6 +184,39 @@ done, report the result and ask the human to exit the session. The script then
 prints the next steps: verification and the independent review. Do not commit;
 `scripts/finish-feature.sh` creates the commit after the review.
 
+## Experience notes (optional)
+
+The scripts record what happened in a run themselves: the reviews and their
+triage, the verifications, why a run stopped, and your completion record. You
+may add what only you know, in `.agents/experience/<issue-number>.json`, which
+Git ignores. It is never required and never stops anything; it does not
+replace the handoff note or the completion record.
+
+```json
+{
+  "schema": "experience-notes/v1",
+  "observations": [
+    {"kind": "fact",
+     "what": "The integration test failed twice on a timeout before the fixture was cached",
+     "tried": "Cached the fixture in conftest.py",
+     "result": "The test passed three times in a row",
+     "evidence": [{"type": "check", "ref": "pytest tests/test_sync.py, run 3"}]},
+    {"kind": "hypothesis",
+     "what": "The timeout comes from the network call in the fixture",
+     "uncertainty": "Not measured; the cache removed the symptom"}
+  ]
+}
+```
+
+- `kind` is `fact`, `hypothesis`, or `proposal`. A fact names its `evidence`
+  (a review finding, a check result, a commit), or says in
+  `missing_evidence` why there is none.
+- Write `{"schema": "experience-notes/v1", "none": true}` when nothing is
+  worth noting.
+- Write from the artifacts and the results you saw in this session, not from
+  memory; no secrets, no transcripts, at most 20 observations.
+- Notes that are invalid are reported and not kept.
+
 ## Boundaries
 
 Follow:

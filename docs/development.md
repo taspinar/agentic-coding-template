@@ -1341,6 +1341,10 @@ brings the rules.
 | `intervention` | `what` you did that a script saw: an approval, a resume by hand, `--implemented`, `--partial` |
 | `resumed` | the run follows a run of the subject that stopped with `previous_status` other than 0 (`after` is that run); for a feature, `handoff_changed` says whether the handoff note changed after the stop (never its content). Who started the run or changed the note is not known, so this is not an intervention |
 | `note` | a line of the log of `run-feature.sh` (`.agents/run/<issue>-log`), which is written from the same event |
+| `completion-gate` | one check of the completion gate: `check` (its number in the run), `sessions` (the sessions of the implementer and the triage implementer that the run recorded before it, a repair or a retry too), `session` (the last of them, which the check judges; a check without a new session judges it again), `status`, `reasons`, and `content`, the fingerprint of what it judged |
+| `artifact` | a review or a triage that the run wrote: `kind` and `path` |
+| `experience-notes` | a session of the run changed the agent's experience notes: the `call` and the `hash` of the notes |
+| `experience` | the experience record of a feature run, under `record`: see below |
 
 **Token usage** keeps the field names of the provider, with `source` saying
 where it came from: `claude-result` (the result of an unattended or a
@@ -1358,7 +1362,9 @@ Codex reports input tokens that already include the cached ones.
 run is the difference between its start and its end; the sum of its calls can
 be higher when work runs side by side.
 
-No prompt, no answer, no secret, and no transcript is recorded. A record that
+No prompt, no answer, no secret, and no transcript is recorded: every event
+passes a filter that replaces what looks like a key or a token, a private key
+with its whole body, by `[redacted]`. A record that
 cannot be written is reported, and the work goes on with its own outcome.
 
 ### Reporting on the records
@@ -1410,6 +1416,68 @@ from an explicit list of numeric fields, so no log, path, time of day, status
 reason, or other text of the records reaches it; a role or a model name that
 does not look like one is shown as `other`. It is one comment, replaced when
 the feature is published again, and a failure to post it only warns.
+
+### Experience records
+
+At the end of every run of a feature, except a verification on its own, the
+run file gets an experience record: compact observations of the run, kept
+with its run records, copied with them, and never published. It supplements
+the handoff note, the completion record, the reviews, and the triage, and
+replaces none of them.
+
+**What a script derives, always.** Without an agent and without tokens, from
+what the run itself wrote, as it recorded it when it wrote it (an `artifact`
+event for a review or a triage), so that nothing of an earlier run or of a run
+beside it counts: the review rounds and their findings
+per severity, what the triage decided, the verifications that failed and
+those for which a later verification of the same checks passed, why the run
+stopped (status 3: a decision of yours; 130: interrupted), the outcome of the
+completion gate after each session
+(each check of the gate is a `completion-gate` event, with the number of
+sessions before it, its reasons, and the content it judged), and the completion record at the end. The
+artifacts are read from the worktree of the feature, also when the run was
+started from the primary checkout. The record names the code version: the
+commit, the content of the worktree with its uncommitted changes, and the
+commits and contents the reviews of the run covered. Each becomes an observation of
+the kind `fact`, with a reference to its evidence: the review and finding,
+the triage, the run record, the handoff note, or the completion record. A
+finding without a triage in the run says that its evidence is missing. A run
+with nothing to observe says so (`none_relevant`).
+
+**What the agent adds, optionally.** The implementer may write what only it
+knows in `.agents/experience/<issue>.json`, which Git ignores (the prompt
+shows the format): per observation its `kind` (`fact`, `hypothesis`, or
+`proposal`), `what` happened, the `circumstances`, what was `tried` and its
+`result`, the `evidence` (each with only a `type` and a `ref`) or the
+`missing_evidence`, the `uncertainty`, and
+`corrects` for an observation of an earlier run that it corrects. Notes count
+for the run whose session of the implementer or the triage implementer wrote
+them (an `experience-notes` event with their hash, never their content), and
+only while the file still holds what that session left. They are checked: notes that are not
+valid, such as a fact without evidence or a field the format does not know,
+are reported and not kept.
+
+**Never a gate.** A record that cannot be made is reported, and the run keeps
+its own outcome; nothing in a review, the completion gate, `finish-feature.sh`,
+or `publish-feature.sh` depends on it. A record is written once and never
+rewritten, so the original observations stay, and a correction is a new
+observation that names what it corrects. A record changes nothing in the
+repository. What looks like a secret is replaced by `[redacted]`, a private
+key with its whole body, and the handoff note and the transcripts are not
+copied. The limit of 20 observations applies to the notes of the agent; what
+a script derives is as long as the run was.
+
+```bash
+./scripts/show-experience.sh 12         # the records of feature 12, as Markdown
+./scripts/show-experience.sh 12 --json  # valid and invalid records apart
+```
+
+`show-experience.sh` checks every record and lists a record that is not valid
+under "Invalid records", with what is wrong, also a line that is not JSON,
+with its file and line, and a record that names
+another run or Issue than the one it belongs to: it is never a source for an
+analysis, and it hides no valid record. Nothing moves from a record to `.agents/lessons/` by itself; that is
+a proposal of an analysis and your decision.
 
 ## Linking a feature plan
 

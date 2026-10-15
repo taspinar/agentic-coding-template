@@ -421,6 +421,7 @@ await_completion() {
         gate_reasons="the implementer wrote no summary of the changes (.agents/summaries/$issue.md)"
       fi
       gate_summary="$(printf '%s' "$gate_reasons" | tr '\n' ';' | sed 's/;/; /g')"
+      records_gate "$worktree" "$gate_status" "$gate_reasons" 2>/dev/null || true
       case "$gate_status" in
         complete)
           echo "implemented" >"$state_file"

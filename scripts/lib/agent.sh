@@ -263,9 +263,18 @@ agent_run() {
     call="$(records_id)"
     records_agent_start "$call" "${AGENT_ROLE:-unknown}" "$1" "$2" "$3"
   fi
+  # The experience notes that an implementing session writes belong to its
+  # run (lib/experience.sh); only their hash is recorded here.
+  local notes_before=""
+  if declare -F experience_notes_hash >/dev/null; then
+    notes_before="$(experience_notes_hash "$4")"
+  fi
   agent_run_session "$@" || status=$?
   if declare -F records_agent_call >/dev/null; then
     records_agent_call "${AGENT_ROLE:-unknown}" "$1" "$2" "$3" "$(($(date +%s) - started))" "$status" "${6:-}" "$call"
+  fi
+  if declare -F experience_notes_written >/dev/null; then
+    experience_notes_written "$4" "$notes_before" "$call" 2>/dev/null || true
   fi
   return "$status"
 }

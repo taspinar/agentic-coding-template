@@ -8,6 +8,7 @@ records_arguments=("$@")
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/fingerprint.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>] [--unattended]"
@@ -115,6 +116,11 @@ $AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
   # gate says where the work stands, from the implementer's own record and
   # its handoff note.
   session_gate="$(completion_gate "$session_worktree" "$issue" 2>/dev/null || true)"
+  # Within run-feature.sh the run checks the gate itself, once per check.
+  local records_command="${RECORDS_COMMAND:-}"
+  if [[ "${records_command##*/}" == "start-feature.sh" ]]; then
+    records_gate "$session_worktree" "$(printf '%s\n' "$session_gate" | sed -n 1p)" "$(printf '%s\n' "$session_gate" | sed 1d)" 2>/dev/null || true
+  fi
   if [[ "$(printf '%s\n' "$session_gate" | sed -n 1p)" == "complete" ]]; then
     echo "The implementer reports the Issue as complete ($COMPLETION_DIR/$issue.json)."
     echo
