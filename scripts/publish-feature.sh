@@ -6,7 +6,7 @@ set -euo pipefail
 records_arguments=("$@")
 
 usage() {
-  echo "Usage: $0 <issue-number> [--wait]"
+  echo "Usage: $0 <issue-number> [--wait] [--summary]"
   echo
   echo "Run in the feature worktree after finish-feature.sh. Pushes the branch and"
   echo "opens the pull request. The description is the latest commit message and"
@@ -23,6 +23,11 @@ usage() {
   echo "not require a passing status check, since GitHub then allows a merge while a"
   echo "check fails. --wait stays until the checks finish and reports the result: it"
   echo "exits 0 when they pass and 1 when one fails."
+  echo
+  echo "--summary also posts the totals of the run records on the Issue: the elapsed"
+  echo "time, the runs, the review and repair rounds, and the tokens per role and"
+  echo "model; no log, no paths, no times of day. It is one comment, replaced when"
+  echo "the feature is published again. Off by default; a failure only warns."
   exit 1
 }
 
@@ -31,11 +36,21 @@ fail() {
   exit 1
 }
 
-# --no-wait is accepted for commands written before waiting became optional.
-[[ $# -eq 1 || ( $# -eq 2 && ( "$2" == "--wait" || "$2" == "--no-wait" ) ) ]] || usage
+[[ $# -ge 1 ]] || usage
 issue="$1"
+shift
 wait_for_checks=0
-[[ "${2:-}" != "--wait" ]] || wait_for_checks=1
+summary_wanted=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --wait) wait_for_checks=1 ;;
+    # Accepted for commands written before waiting became optional.
+    --no-wait) ;;
+    --summary) summary_wanted=1 ;;
+    *) usage ;;
+  esac
+  shift
+done
 
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
@@ -190,6 +205,44 @@ echo
 # (.agents/records/), also those of this publication, which is still running.
 if ! records_consolidate feature "$issue"; then
   echo "Warning: the run records of Issue #$issue could not be copied to .agents/records/; cleanup-worktree.sh tries again." >&2
+fi
+
+# post_summary: the totals of the run records as one comment on the Issue,
+# replacing the one of an earlier publication. Only report-runs.sh
+# --github-summary writes its text, from numeric fields. A failure warns and
+# changes nothing else.
+post_summary() {
+  local summary
+  local comment
+
+  summary="$(mktemp "${TMPDIR:-/tmp}/run-summary.XXXXXX")" || return 1
+  if ! "$root/scripts/report-runs.sh" --github-summary "$issue" >"$summary"; then
+    rm -f "$summary"
+    return 1
+  fi
+  comment="$(gh api "repos/{owner}/{repo}/issues/$issue/comments" --paginate \
+    --jq '.[] | select(.body | startswith("<!-- run-records-summary -->")) | .id' | head -n 1)" || {
+    rm -f "$summary"
+    return 1
+  }
+  if [[ -n "$comment" ]]; then
+    gh api --method PATCH "repos/{owner}/{repo}/issues/comments/$comment" -F "body=@$summary" >/dev/null || {
+      rm -f "$summary"
+      return 1
+    }
+    echo "Replaced the run summary on Issue #$issue."
+  else
+    gh issue comment "$issue" --body-file "$summary" >/dev/null || {
+      rm -f "$summary"
+      return 1
+    }
+    echo "Posted the run summary on Issue #$issue."
+  fi
+  rm -f "$summary"
+}
+
+if [[ "$summary_wanted" -eq 1 ]] && ! post_summary; then
+  echo "Warning: the run summary could not be posted on Issue #$issue; the pull request is published." >&2
 fi
 
 print_manual_steps() {

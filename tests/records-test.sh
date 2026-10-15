@@ -113,6 +113,22 @@ in_repo "$repo" 'records_begin feature 12 publish-feature.sh; records_end 0; rec
 [[ "$(jq -r -s '[.[] | select(.type == "run-start")] | length' "$copy")" -eq 4 ]] || fail "a later copy lost a run"
 git -C "$repo" check-ignore -q ".agents/records/feature-12.jsonl" || fail "Git does not ignore the copy"
 git -C "$repo" check-ignore -q ".agents/run/records/x.jsonl" || fail "Git does not ignore the run files"
+# A run whose file is gone stays in the copy, and a later run is added to it.
+# A copy that cannot be read is left as it is.
+mkdir "$tmp/gone" && cp "$repo"/.agents/run/records/*.jsonl "$tmp/gone/"
+rm -f "$repo"/.agents/run/records/*.jsonl
+in_repo "$repo" 'records_consolidate feature 12'
+[[ "$(jq -r -s '[.[] | select(.type == "run-start")] | length' "$copy")" -eq 4 ]] || fail "a copy without the run files lost runs"
+in_repo "$repo" 'records_begin feature 12 publish-feature.sh; records_end 0; records_consolidate feature 12'
+[[ "$(jq -r -s '[.[] | select(.type == "run-start")] | length' "$copy")" -eq 5 ]] || fail "a later run was not added to a copy of runs without files"
+[[ "$(jq -r -s '[.[] | select(.type == "run-start") | .run] | unique | length' "$copy")" -eq 5 ]] || fail "a run is twice in the copy"
+cp "$copy" "$tmp/copy-before"
+printf 'not json\n' >>"$copy"
+cp "$copy" "$tmp/copy-damaged"
+if in_repo "$repo" 'records_consolidate feature 12' 2>/dev/null; then fail "a copy that cannot be read was replaced"; fi
+cmp -s "$copy" "$tmp/copy-damaged" || fail "a copy that cannot be read was changed"
+cp "$tmp/copy-before" "$copy"
+cp "$tmp/gone"/*.jsonl "$repo/.agents/run/records/"
 in_repo "$repo" 'records_consolidate planning final-curriculum'
 [[ -s "$repo/.agents/records/planning-final-curriculum.jsonl" ]] || fail "a planning was not copied by its name"
 

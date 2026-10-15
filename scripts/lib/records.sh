@@ -498,11 +498,27 @@ records_consolidate() {
     [[ -z "$found" ]] || runs+="$found"$'\n'
   done
   runs="${runs%$'\n'}"
-  if [[ -n "$runs" ]]; then
-    while IFS= read -r run; do
-      cat "$dir/$run.jsonl"
-    done <<<"$runs" |
-      jq -c -s 'to_entries | sort_by(.value.epoch, .value.run, .key) | .[].value' >"$tmp" || status=1
+  # A run whose file is gone stays in the copy: the copy is all that is left
+  # of it. A run that has its file is taken from the file, which is newer.
+  # A copy that cannot be read is kept as it is.
+  local known
+  local kept=""
+  known="$(printf '%s\n' "$runs" | jq -R 'select(length > 0)' | jq -cs '.')" || status=1
+  if [[ "$status" -eq 0 && -f "$target" ]]; then
+    if ! kept="$(jq -c --argjson known "$known" 'select(.run as $run | $known | index([$run]) | not)' "$target")"; then
+      records_warn "$target cannot be read; it was left as it was"
+      status=1
+    fi
+  fi
+  if [[ "$status" -eq 0 ]]; then
+    {
+      if [[ -n "$runs" ]]; then
+        while IFS= read -r run; do
+          cat "$dir/$run.jsonl"
+        done <<<"$runs"
+      fi
+      [[ -z "$kept" ]] || printf '%s\n' "$kept"
+    } | jq -c -s 'to_entries | sort_by(.value.epoch, .value.run, .key) | .[].value' >"$tmp" || status=1
   fi
   if [[ "$status" -eq 0 ]]; then
     mv "$tmp" "$target" || status=1
