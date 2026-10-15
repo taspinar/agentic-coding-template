@@ -265,6 +265,7 @@ exits with status 3.
 | `apply-triage.sh` | `triage-implementer` (write) | Start the fixes | Fixes for `FIX_NOW` findings | Yes, by `finish-feature.sh` | Yes, unless it already passed for this content |
 | `finish-feature.sh` | None | Edit and confirm the commit message | The commit | Yes | Yes, unless it already passed for this content |
 | `publish-feature.sh` | None | Merge after the checks passed, which you follow on the pull request | The pushed branch and the pull request | Not applicable | Yes, in CI |
+| `analyze-runs.sh` | `analyst` (read-only) | Decide what to do with each proposal | An analysis report in `.agents/analysis/`, never committed | No | No |
 
 ### Checks that stop a step
 

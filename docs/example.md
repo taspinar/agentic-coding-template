@@ -29,6 +29,7 @@ implementer: codex gpt-6-astra
 reviewer: claude fable
 triage: claude fable
 triage-implementer: codex gpt-6-astra
+analyst: claude fable
 ```
 
 Write the idea down, anywhere, in a few sentences:

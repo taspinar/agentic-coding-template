@@ -47,3 +47,5 @@ credentials*.json
 # The implementer's optional notes on a run, kept in its experience record
 # (scripts/lib/experience.sh). Never published.
 .agents/experience/
+# The analyses of analyze-runs.sh: their input, result, and report. Local.
+.agents/analysis/

@@ -77,6 +77,7 @@ the website describes the current template.
 | `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions: resumes the implementer until the completion gate passes, then at most five review rounds, the last of the complete feature; never merges and never removes a worktree |
 | `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request, which closes the Issue only for a complete feature and is a draft otherwise; with `--wait` stays until CI finishes; with `--summary` posts the totals of the run records on the Issue; never merges |
 | `scripts/show-experience.sh` | Shows the experience records of a feature, with an invalid record marked as such |
+| `scripts/analyze-runs.sh` | Analyses several feature runs with a read-only agent and proposes improvements, each with its place; changes nothing |
 | `scripts/report-runs.sh` | Reports on the run records of features and planning cycles, in Markdown or JSON, without the network |
 | `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
@@ -115,9 +116,11 @@ the website describes the current template.
 | `.agents/prompts/reviewer.md` | `review-feature.sh` |
 | `.agents/prompts/triage-reviewer.md` | `triage-review.sh` |
 | `.agents/prompts/triage-implementer.md` | `apply-triage.sh` |
+| `.agents/prompts/analyst.md` | `analyze-runs.sh` |
 | `.agents/schemas/review.schema.json` | Results of planning reviews |
 | `.agents/schemas/feature-review.schema.json` | Results of feature reviews: the same, with the reviewer's classification of the impact on the architecture |
 | `.agents/schemas/triage.schema.json` | Triage decisions |
+| `.agents/schemas/analysis.schema.json` | The result of an analysis of runs |
 | `.agents/schemas/revision.schema.json` | Planning revision decisions |
 
 ## Working directories
