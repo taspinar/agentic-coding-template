@@ -1317,7 +1317,7 @@ run that names the run before it.
 | Path | What |
 |---|---|
 | `.agents/run/records/<run-id>.jsonl` | One file per run, written while it runs, never rewritten. All worktrees write here, so a record survives the removal of a worktree, and two runs never share a file |
-| `.agents/records/feature-<issue>.jsonl` | The runs of a feature together, written by `publish-feature.sh` and again by `cleanup-worktree.sh` before it removes the worktree; at the end of a run an existing copy is brought up to date, so that it holds the end and the status of the run |
+| `.agents/records/feature-<issue>.jsonl` | The runs of a feature together, written by `publish-feature.sh` and again by `cleanup-worktree.sh` before it removes the worktree; at the end of a run an existing copy is brought up to date, so that it holds the end and the status of the run. A run whose file is gone stays in the copy |
 | `.agents/records/planning-<name>.jsonl` | The runs of a planning together, written by `finish-planning.sh` and by `cleanup-worktree.sh` |
 
 The records live on one machine: a new clone and `git clean -fdx` do not keep
@@ -1360,6 +1360,56 @@ be higher when work runs side by side.
 
 No prompt, no answer, no secret, and no transcript is recorded. A record that
 cannot be written is reported, and the work goes on with its own outcome.
+
+### Reporting on the records
+
+```bash
+./scripts/report-runs.sh 12                         # one feature; in its worktree, without the number
+./scripts/report-runs.sh 12 14 15                   # side by side, with what differs
+./scripts/report-runs.sh planning:final-curriculum  # a planning cycle
+./scripts/report-runs.sh --all --since 2026-10-01   # every subject, runs from a date on
+./scripts/report-runs.sh --all --split 2026-11-01   # the features before and after a change
+./scripts/report-runs.sh 12 --json                  # the same as JSON
+```
+
+A report shows per subject the outcome of its runs, the elapsed time, the
+agent time, the review rounds, the triage, and the repair sessions, the tokens
+per role, model, and run, the verification, the steps of `run-feature.sh`, the
+recorded interventions, and the versions the runs used. It reads the run files
+and the copies of the primary checkout; a run is read from its own file while
+that exists and from the copy of its subject otherwise, so nothing is counted
+twice and a feature whose worktree is gone gives the same totals. It needs no
+network.
+
+Some figures need care:
+
+- **Elapsed time** is the time during which at least one run of the subject
+  went on: runs side by side count once. A subject with a run without an end
+  has an elapsed time of "at least", and `--split` leaves it out of the means
+  of elapsed time and says how many. **Agent time** is the sum of the agent
+  calls, and is higher when calls ran side by side.
+- **A call or a step that did not finish**, as in an interrupted run, counts
+  as unfinished: its time and its tokens are unknown.
+- **Tokens** that a call did not report are not zero. A sum to which some
+  calls reported nothing says "at least" and how many calls lack figures; a
+  sum without any figure is "unknown". `--split` leaves such features out of
+  the means of tokens and says how many.
+- **A subject without any record** is named and left out, not counted as zero.
+- **A comparison** names what differs between the subjects: the template
+  commit, the prompts, `agents.conf`, and the models. It and `--split` say
+  that totals and means show no cause: features differ in size and
+  difficulty.
+- **Interventions** are what a script saw you do. A run that follows a
+  stopped run is counted apart, since who started it is not recorded.
+
+**The summary on GitHub.** `./scripts/publish-feature.sh 12 --summary` also
+posts the totals of the feature on its Issue: the elapsed time, the number of
+runs, the review rounds, the repair sessions, and the tokens per role and
+model. It is off by default, since a repository is often public. It is built
+from an explicit list of numeric fields, so no log, path, time of day, status
+reason, or other text of the records reaches it; a role or a model name that
+does not look like one is shown as `other`. It is one comment, replaced when
+the feature is published again, and a failure to post it only warns.
 
 ## Linking a feature plan
 

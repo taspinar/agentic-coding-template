@@ -52,6 +52,23 @@ case "${1:-} ${2:-}" in
       *) echo "main" ;;
     esac
     ;;
+  "api repos/{owner}/{repo}/issues/12/comments")
+    # The id of an earlier run summary, as --jq selects it.
+    printf '%s\n' "${MOCK_SUMMARY_COMMENT:-}"
+    ;;
+  "api --method")
+    [[ "${MOCK_COMMENT_EXIT:-0}" -eq 0 ]] || exit "$MOCK_COMMENT_EXIT"
+    for arg in "$@"; do
+      if [[ "$arg" == body=@* ]]; then cp "${arg#body=@}" "$MOCK_GH_LOG.comment"; fi
+    done
+    ;;
+  "issue comment")
+    [[ "${MOCK_COMMENT_EXIT:-0}" -eq 0 ]] || exit "$MOCK_COMMENT_EXIT"
+    args=("$@")
+    for ((i = 0; i < ${#args[@]}; i++)); do
+      if [[ "${args[$i]}" == "--body-file" ]]; then cp "${args[$((i + 1))]}" "$MOCK_GH_LOG.comment"; fi
+    done
+    ;;
   "pr ready")
     [[ "$*" != *"--undo"* || "${MOCK_UNDO_EXIT:-0}" -eq 0 ]] || exit "$MOCK_UNDO_EXIT"
     ;;
@@ -104,7 +121,8 @@ setup_repo() {
   git init -q --bare -b main "$remote"
   git clone -q "$remote" "$repo" 2>/dev/null
   mkdir -p "$repo/scripts/lib"
-  cp "$source_root/scripts/publish-feature.sh" "$repo/scripts/"
+  cp "$source_root/scripts/publish-feature.sh" "$source_root/scripts/report-runs.sh" "$repo/scripts/"
+  cp "$source_root/scripts/lib/report.jq" "$repo/scripts/lib/"
   cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$source_root/scripts/lib/records.sh" "$repo/scripts/lib/"
   printf '.agents/manual-steps/\n.agents/completion/\n.agents/handoffs/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
@@ -418,5 +436,47 @@ grep -Fqx -- "- required from the project owner, for exactly this commit" "$repo
   fail "the pull request does not show that the owner must approve"
 grep -Fqx "The merge approval above was decided for commit \`$(git -C "$repo" rev-parse HEAD)\`." "$repo.gh.body" ||
   fail "the pull request does not name the commit the decision was made for"
+
+# The run summary on the Issue is off by default. With --summary it is one
+# comment with numbers only, replaced on a later publication; a failure to
+# post it warns and the publication succeeds.
+summary_repo() {
+  local repo
+
+  repo="$(setup_repo "$1")"
+  printf '.agents/run/\n.agents/records/\n' >>"$repo/.gitignore"
+  git -C "$repo" commit -qam "Ignore the run records" -m "Completion: complete"
+  mkdir -p "$repo/.agents/run/records"
+  jq -cn '{schema: "run-record/v1", run: "s1", time: "2026-10-01T13:45:07Z", epoch: 1790000000, type: "run-start",
+    kind: "feature", subject: "12", command: "run-feature.sh", seq: 1, versions: {}}' >"$repo/.agents/run/records/s1.jsonl"
+  jq -cn '{schema: "run-record/v1", run: "s1", time: "2026-10-01T13:46:07Z", epoch: 1790000060, type: "agent-call",
+    role: "reviewer", agent: "codex", model: "model-r", status: 0, seconds: 30,
+    usage: {source: "codex-events", total_input: 1200, output_tokens: 34}, note: "/home/someone/secret"}' >>"$repo/.agents/run/records/s1.jsonl"
+  jq -cn '{schema: "run-record/v1", run: "s1", time: "2026-10-01T13:47:07Z", epoch: 1790000120, type: "run-end", status: 0}' \
+    >>"$repo/.agents/run/records/s1.jsonl"
+  printf '%s\n' "$repo"
+}
+
+repo="$(summary_repo summary-off)"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing with run records failed"; }
+if grep -Eq "issue comment|issues/12/comments|--method" "$repo.gh"; then fail "a run summary was posted without --summary"; fi
+
+repo="$(summary_repo summary-new)"
+run_publish "$repo" 12 --summary || { cat "$repo.out" >&2; fail "publishing with --summary failed"; }
+grep -Fq "issue comment 12 --body-file" "$repo.gh" || fail "the run summary was not posted as a comment"
+grep -Fq "| reviewer | model-r | 1 | 1200 | 34 |" "$repo.gh.comment" || fail "the run summary lacks the tokens"
+if grep -Eq "/home|secret|13:4" "$repo.gh.comment"; then fail "the run summary holds text of the records"; fi
+grep -Fq "Posted the run summary on Issue #12." "$repo.out" || fail "posting the run summary was not reported"
+
+repo="$(summary_repo summary-again)"
+(export MOCK_SUMMARY_COMMENT=4242; run_publish "$repo" 12 --summary) || { cat "$repo.out" >&2; fail "publishing again with --summary failed"; }
+grep -Fq "api --method PATCH repos/{owner}/{repo}/issues/comments/4242" "$repo.gh" || fail "the earlier run summary was not replaced"
+if grep -Fq "issue comment" "$repo.gh"; then fail "a second run summary was posted"; fi
+
+repo="$(summary_repo summary-fails)"
+(export MOCK_COMMENT_EXIT=1; run_publish "$repo" 12 --summary) || { cat "$repo.out" >&2; fail "a failed run summary failed the publication"; }
+grep -Fq "the run summary could not be posted on Issue #12; the pull request is published" "$repo.out" ||
+  fail "a failed run summary was not reported"
+grep -Fq "pr create" "$repo.gh" || fail "the pull request was not opened when the summary failed"
 
 echo "publish-feature tests passed"
