@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
@@ -161,6 +164,7 @@ if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
 fi
 
 review_input="${AGENT_POSITIONAL[0]}"
+records_wrap feature "$(records_branch_issue)" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 
 root="$(git rev-parse --show-toplevel)"
 prompt_file="$root/.agents/prompts/triage-reviewer.md"
@@ -370,7 +374,7 @@ else
   approval=""
   read -r approval || true
   case "$approval" in
-    y | Y | yes | YES) ;;
+    y | Y | yes | YES) records_intervention "approved the triage of a review" ;;
     *)
       echo "Triage declined; no artifact or GitHub issues were created."
       exit 0

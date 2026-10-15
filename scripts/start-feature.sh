@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/completion.sh"
@@ -46,6 +49,12 @@ agent_parse_args ${arguments[@]+"${arguments[@]}"}
 [[ "$resume" -eq 0 || "${#AGENT_POSITIONAL[@]}" -eq 1 ]] || usage
 
 issue="${AGENT_POSITIONAL[0]}"
+records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
+# A session that the human resumes by hand is an intervention; run-feature.sh
+# resumes within its own run, where this command is not the run's own.
+if [[ "$resume" -eq 1 && "${RECORDS_COMMAND:-}" == "start-feature.sh" ]]; then
+  records_intervention "resumed the implementation by hand"
+fi
 slug="${AGENT_POSITIONAL[1]:-}"
 base="${AGENT_POSITIONAL[2]:-main}"
 

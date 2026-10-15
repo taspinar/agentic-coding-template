@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
@@ -43,6 +46,7 @@ done
 
 root="$(git rev-parse --show-toplevel)"
 branch="$(git branch --show-current)"
+[[ "$branch" != planning/* ]] || records_wrap planning "${branch#planning/}" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 [[ "$branch" == planning/* ]] ||
   fail "revise-planning.sh must run in a planning worktree (branch planning/<name>). Current branch: $branch"
 
@@ -169,7 +173,7 @@ schema. You have read-only access; do not modify any file."
   approval=""
   read -r approval || true
   case "$approval" in
-    y | Y | yes | YES) ;;
+    y | Y | yes | YES) records_intervention "approved the revision decisions" ;;
     *)
       echo "Declined; no decisions were recorded and no document was changed."
       exit 0

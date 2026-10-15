@@ -87,6 +87,10 @@ scope_snapshot() {
       if "$allowed" "$path"; then
         continue
       fi
+      # The run records grow while the session runs; they are not content.
+      case "$path" in
+        .agents/run/records | .agents/run/records/* | .agents/records | .agents/records/*) continue ;;
+      esac
       # Every file operand starts with ./, so that no name is taken for an
       # option (a leading -) or for Git quoting (a leading "). The snapshot
       # keeps the name as it is.

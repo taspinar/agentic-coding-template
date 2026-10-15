@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
@@ -61,6 +64,7 @@ if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; the
 fi
 
 issue="${AGENT_POSITIONAL[0]}"
+records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 base="${AGENT_POSITIONAL[1]:-main}"
 
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
@@ -177,7 +181,7 @@ cp "$tmp_work/fingerprint.index" "$tmp_work/index.before"
 [[ -z "$verified_tree" || "$tree_before" == "$verified_tree" ]] ||
   fail "the content changed while verification ran, so the pass does not cover what would be reviewed. A check may modify a file; the review was not started."
 
-review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage")
+review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage" ":(exclude).agents/run/records" ":(exclude).agents/records")
 context_file="$tmp_work/context.md"
 report_file="$tmp_work/result.json"
 

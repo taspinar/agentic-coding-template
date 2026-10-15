@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/planning.sh"
+source "$script_dir/lib/records.sh"
 
 usage() {
   echo "Usage:"
@@ -72,6 +76,7 @@ branch="$(git branch --show-current)"
 [[ "$branch" == planning/* ]] ||
   fail "finish-planning.sh must run in a planning worktree (branch planning/<name>). Current branch: $branch"
 name="${branch#planning/}"
+records_wrap planning "$name" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 
 # An amendment: a change to an approved planning that touches only the
 # architecture and the ADRs, approved by the human without a review round.
@@ -169,7 +174,7 @@ amend() {
   printf "Approve this amendment? [y/N] "
   read -r answer || true
   case "$answer" in
-    y | Y | yes | YES) ;;
+    y | Y | yes | YES) records_intervention "approved a planning amendment" ;;
     *)
       echo "Declined; the planning approval was not changed."
       exit 0
@@ -305,7 +310,7 @@ if [[ -n "$earlier_escalations" ]]; then
   resolved=""
   read -r resolved || true
   case "$resolved" in
-    y | Y | yes | YES) ;;
+    y | Y | yes | YES) records_intervention "confirmed that the escalated findings are resolved" ;;
     *) fail "the escalated findings of earlier rounds are not resolved." ;;
   esac
   echo
@@ -322,7 +327,7 @@ printf "Approve this planning? [y/N] "
 approval=""
 read -r approval || true
 case "$approval" in
-  y | Y | yes | YES) ;;
+  y | Y | yes | YES) records_intervention "approved the planning" ;;
   *)
     echo "Declined; the planning approval was not recorded."
     exit 0
@@ -401,6 +406,10 @@ fi
 echo
 echo "Recorded the approval in $PLANNING_APPROVAL_FILE."
 echo
+# The runs of this planning together in .agents/records/ of the primary
+# checkout; cleanup-worktree.sh copies them again before the worktree goes.
+records_consolidate planning "$name" ||
+  echo "Warning: the run records of the planning could not be copied to .agents/records/; cleanup-worktree.sh tries again." >&2
 echo "Next steps:"
 echo "  ./scripts/verify.sh"
 to_add=()

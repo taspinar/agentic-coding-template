@@ -51,8 +51,9 @@ setup_repo() {
   local remote="$tmp/$label-remote.git"
   local repo="$tmp/$label"
 
-  mkdir -p "$seed/scripts"
+  mkdir -p "$seed/scripts/lib"
   cp "$source_root/scripts/cleanup-worktree.sh" "$seed/scripts/"
+  cp "$source_root/scripts/lib/records.sh" "$seed/scripts/lib/"
   cp "$source_root/.gitignore" "$seed/.gitignore"
   printf '# Project\n' >"$seed/README.md"
   git -C "$seed" init -q -b main
@@ -266,6 +267,33 @@ run_cleanup "$repo" "$tmp/fix-70" || {
 
 # An unknown target fails.
 if run_cleanup "$repo" 99; then fail "an unknown target succeeded"; fi
+
+# The run records of a feature are copied to .agents/records/ before its
+# worktree goes; a copy that cannot be written keeps the worktree.
+repo="$(setup_repo records)"
+add_worktree "$repo" feature/41-records records-41
+merge "$repo" feature/41-records records-41
+(
+  cd "$tmp/records-41"
+  unset RECORDS_RUN_ID RECORDS_FILE
+  source "$source_root/scripts/lib/records.sh"
+  records_begin feature 41 run-feature.sh
+  records_step "review, round 1 of at most 5" 0 30
+  records_end 0
+)
+mkdir -p "$repo/.agents/records"
+chmod 500 "$repo/.agents/records"
+if run_cleanup "$repo" 41; then fail "a worktree was removed although its run records could not be copied"; fi
+chmod 700 "$repo/.agents/records"
+[[ -d "$tmp/records-41" ]] || fail "the worktree is gone although its run records could not be copied"
+grep -Fq "its run records could not be copied" "$repo.out" || fail "the failed copy of the run records was not given as the reason"
+run_cleanup "$repo" 41 || {
+  cat "$repo.out" >&2
+  fail "cleaning a worktree with run records failed"
+}
+[[ ! -d "$tmp/records-41" ]] || fail "the worktree with run records was not removed"
+jq -e -s 'any(.type == "step" and .name == "review, round 1 of at most 5")' "$repo/.agents/records/feature-41.jsonl" >/dev/null ||
+  fail "the run records of the feature were not copied before the worktree went"
 
 # The branch on GitHub can be ahead of the local one: "Update branch" on the
 # pull request merged main into it, and the pull request was merged with that

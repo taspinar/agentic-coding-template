@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
@@ -30,6 +33,7 @@ branch="$(git branch --show-current)"
 [[ "$branch" == planning/* ]] ||
   fail "review-planning.sh must run in a planning worktree (branch planning/<name>). Current branch: $branch"
 name="${branch#planning/}"
+records_wrap planning "$name" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 
 prompt_file="$root/.agents/prompts/planning-reviewer.md"
 schema_file="$root/.agents/schemas/review.schema.json"
