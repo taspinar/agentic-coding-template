@@ -1101,9 +1101,11 @@ no human approved the decisions. Deferred findings still become follow-up
 Issues, and accepted findings keep their rationale, so you can read
 afterwards what was decided without you.
 
-The files in `.agents/run/` are working files, ignored by Git. A Codex
-session also writes its complete output to a file next to its final message,
-with `.log` added to the name; it is shown when the session fails.
+The files in `.agents/run/` are working files, ignored by Git. An unattended
+Codex session also writes, next to its final message, its events, one JSON
+object per line, with `.events` added to the name, and what it writes on
+standard error, with `.log` added; the end of both is shown when the session
+fails, and the run records read the token usage from the events.
 
 ### Running a feature with one command
 
@@ -1295,6 +1297,69 @@ approval never carries over to content that changed afterwards. This is an
 agreement that the scripts and agents keep, not a lock: the agent works with
 your GitHub account and could do what you can do. A lock needs a separate
 identity for the agent, with code owners and required reviews on GitHub.
+
+## Run records
+
+The workflow records how long every step of a feature or a planning took and
+how many tokens its agents used. The scripts and the agent adapter record it;
+agents estimate nothing. It is a local record for you: nothing is sent to
+GitHub.
+
+**A run** is one command that you start: `./scripts/run-feature.sh 12`,
+`./scripts/review-feature.sh 12`, `./scripts/revise-planning.sh ...`, or
+`./scripts/verify.sh` in a feature or a planning worktree. The
+commands that a run starts itself belong to it, so nothing is counted twice. A
+command that you start again, such as `start-feature.sh 12 --resume`, is a new
+run that names the run before it.
+
+**Where the records are**, in the primary checkout, ignored by Git:
+
+| Path | What |
+|---|---|
+| `.agents/run/records/<run-id>.jsonl` | One file per run, written while it runs, never rewritten. All worktrees write here, so a record survives the removal of a worktree, and two runs never share a file |
+| `.agents/records/feature-<issue>.jsonl` | The runs of a feature together, written by `publish-feature.sh` and again by `cleanup-worktree.sh` before it removes the worktree; at the end of a run an existing copy is brought up to date, so that it holds the end and the status of the run |
+| `.agents/records/planning-<name>.jsonl` | The runs of a planning together, written by `finish-planning.sh` and by `cleanup-worktree.sh` |
+
+The records live on one machine: a new clone and `git clean -fdx` do not keep
+them. Copy the two directories when you want to keep them. `cleanup-worktree.sh`
+keeps a worktree whose records it could not copy. In a project whose
+`.gitignore` does not ignore `.agents/run/` and `.agents/records/`, nothing is
+recorded, since a record would otherwise be committed; `sync-template.sh`
+brings the rules.
+
+**What a line holds.** Every line is one JSON object with `schema`
+(`run-record/v1`), `run`, `time` (UTC), `epoch`, and `type`:
+
+| `type` | Fields |
+|---|---|
+| `run-start` | `kind` (`feature` or `planning`), `subject` (the Issue or the name of the planning), `command`, `seq` (the number of the run within its subject, which orders runs that start in the same second; claimed with a link in `.agents/run/records/.sequence/`, `null` when it could not be claimed), `previous` (the run before it of the same subject), `repository` (owner/name), `versions` (the template commit, a hash of the prompts and of `agents.conf`) |
+| `run-end` | `status`: the exit status; 130 when the run was interrupted. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
+| `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`) and ends (the same, with `status`, `seconds`, `usage`) |
+| `verification-start`, `verification` | a verification begins (`id`, `groups`: `all`, or the groups of `--only`) and ends (with `status`, `seconds`, and `reused`: a recorded pass stood in for the run) |
+| `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
+| `wait-start`, `wait` | the pause before a step is tried again: the `planned` seconds, and the `seconds` it really took |
+| `intervention` | `what` you did that a script saw: an approval, a resume by hand, `--implemented`, `--partial` |
+| `resumed` | the run follows a run of the subject that stopped with `previous_status` other than 0 (`after` is that run); for a feature, `handoff_changed` says whether the handoff note changed after the stop (never its content). Who started the run or changed the note is not known, so this is not an intervention |
+| `note` | a line of the log of `run-feature.sh` (`.agents/run/<issue>-log`), which is written from the same event |
+
+**Token usage** keeps the field names of the provider, with `source` saying
+where it came from: `claude-result` (the result of an unattended or a
+read-only Claude session), `codex-events` (the events of a Codex session),
+`interactive` (a session in your terminal, which reports nothing), or
+`unavailable`. A figure the provider did not report is `null`, never zero.
+A Codex call adds up its turns; a field that one turn did not report is
+`null` for the call, and what the other turns reported is under `partial`, so
+an incomplete sum never passes for a total.
+`total_input` adds up what the provider counts as input: Claude reports the
+input, the cache creation, and the cache reads apart, and they are added;
+Codex reports input tokens that already include the cached ones.
+
+**Time.** `seconds` of a call or a step is elapsed time. The elapsed time of a
+run is the difference between its start and its end; the sum of its calls can
+be higher when work runs side by side.
+
+No prompt, no answer, no secret, and no transcript is recorded. A record that
+cannot be written is reported, and the work goes on with its own outcome.
 
 ## Linking a feature plan
 

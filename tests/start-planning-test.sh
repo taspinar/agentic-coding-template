@@ -281,6 +281,11 @@ codex_worktree="$tmp/codex-repo-planning-project-bootstrap"
   fail "Codex did not run exactly two phases"
 [[ "$(awk -F= '/^PHASE=/ { print $2 }' "$codex_log" | paste -sd, -)" == "grill,planner" ]] ||
   fail "Codex phases ran out of order"
+# The run records name the role of each session, though both roles are
+# resolved before the first one starts.
+[[ "$(cat "$codex_repo"/.agents/run/records/*.jsonl 2>/dev/null |
+  jq -r -s '[.[] | select(.type == "agent-call") | .role] | join(",")')" == "project-grill,project-planner" ]] ||
+  fail "the run records do not name the role of each planning session"
 grep -Fq -- "--model astra" "$codex_log" ||
   fail "Codex model was not forwarded"
 grep -Fq -- "--sandbox workspace-write" "$codex_log" ||

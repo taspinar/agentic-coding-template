@@ -40,3 +40,7 @@ credentials*.json
 # The implementer's record of how far the Issue is done. The scripts go on to
 # the commit and the pull request only when it says complete.
 .agents/completion/
+# How long the steps of a feature or a planning took and how many tokens its
+# agents used: one file per run in .agents/run/records/, and the runs of a
+# feature or a planning together here. Never published.
+.agents/records/

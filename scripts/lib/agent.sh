@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 
 # Shared agent configuration and launcher for the workflow scripts.
-# Source this file; do not execute it. It uses only Bash builtins besides the
-# selected agent CLI, and jq when an agent is asked for structured output.
+# Source this file; do not execute it. It uses Bash builtins, the selected
+# agent CLI, jq when an agent is asked for structured output, and the run
+# records of lib/records.sh, which record every call.
 #
 # Provider and model per role come from .agents/agents.conf. The --agent and
 # --model options of a workflow script override that file. A requested model is
 # always passed to the provider and is never replaced by another one.
+
+# With Bash builtins only: doctor.sh loads this file with a minimal PATH.
+agent_library_dir="${BASH_SOURCE[0]%/*}"
+[[ "$agent_library_dir" != "${BASH_SOURCE[0]}" ]] || agent_library_dir="."
+source "$agent_library_dir/records.sh"
 
 AGENT_ROLES="project-grill project-planner planning-reviewer implementer reviewer triage triage-implementer"
 
@@ -182,6 +188,8 @@ agent_resolve() {
   agent_validate "$provider" "$model"
   AGENT_PROVIDER="$provider"
   AGENT_MODEL="$model"
+  # The role the run records name for the agent calls that follow.
+  AGENT_ROLE="$role"
 }
 
 # agent_session_notice <provider>
@@ -243,6 +251,27 @@ agent_session_notice() {
 # started with broader permissions instead. Returns the agent's status; a
 # Claude session that reports an error returns 1 even when the CLI exits 0.
 agent_run() {
+  local started
+  local call=""
+  local status=0
+
+  started="$(date +%s)"
+  # The start of the call, so that an interrupted one stays visible, and at
+  # its end the duration and the usage its provider reported; nothing of the
+  # prompt or of the answer.
+  if declare -F records_agent_start >/dev/null; then
+    call="$(records_id)"
+    records_agent_start "$call" "${AGENT_ROLE:-unknown}" "$1" "$2" "$3"
+  fi
+  agent_run_session "$@" || status=$?
+  if declare -F records_agent_call >/dev/null; then
+    records_agent_call "${AGENT_ROLE:-unknown}" "$1" "$2" "$3" "$(($(date +%s) - started))" "$status" "${6:-}" "$call"
+  fi
+  return "$status"
+}
+
+# agent_run_session: agent_run without the record of the call.
+agent_run_session() {
   local profile="$1"
   local provider="$2"
   local model="$3"
@@ -330,17 +359,19 @@ agent_run() {
           --disable browser_use \
           --disable computer_use \
           --color never \
+          --json \
           --cd "$workdir" \
           --output-last-message "$output_file" \
           --model "$model" \
           "$prompt"
-      ) </dev/null >"$output_file.log" 2>&1 || status=$?
+      ) </dev/null >"$output_file.events" 2>"$output_file.log" || status=$?
 
       # Nothing validates the result afterwards, so a session without a
       # final message counts as failed. Its own output says why.
       if [[ "$status" -ne 0 || ! -s "$output_file" ]]; then
-        echo "The unattended codex session failed or left no final message. The end of its log ($output_file.log):" >&2
+        echo "The unattended codex session failed or left no final message. The end of its log ($output_file.log) and of its events ($output_file.events):" >&2
         tail -n 20 "$output_file.log" >&2
+        tail -n 5 "$output_file.events" >&2 2>/dev/null || true
         [[ "$status" -ne 0 ]] || status=1
         return "$status"
       fi
@@ -390,11 +421,12 @@ agent_run() {
         -c 'web_search="disabled"' \
         --ephemeral \
         --color never \
+        --json \
         --cd "$workdir" \
         --output-last-message "$output_file" \
         --model "$model" \
         ${codex_schema[@]+"${codex_schema[@]}"} \
-        "$prompt" <"$context_file" >/dev/null
+        "$prompt" <"$context_file" >"$output_file.events"
       ;;
     claude:read-only)
       if [[ -z "$schema_file" ]]; then

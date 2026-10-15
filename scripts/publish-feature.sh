@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 usage() {
   echo "Usage: $0 <issue-number> [--wait]"
   echo
@@ -38,6 +41,8 @@ wait_for_checks=0
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/github.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/completion.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/records.sh"
+records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 command -v jq >/dev/null 2>&1 || fail "jq is required."
 
 root="$(git rev-parse --show-toplevel)"
@@ -180,6 +185,12 @@ if [[ "$closes" -eq 0 ]]; then
   echo "It does not close Issue #$issue: $not_closing."
 fi
 echo
+
+# The runs of the feature together in the primary checkout
+# (.agents/records/), also those of this publication, which is still running.
+if ! records_consolidate feature "$issue"; then
+  echo "Warning: the run records of Issue #$issue could not be copied to .agents/records/; cleanup-worktree.sh tries again." >&2
+fi
 
 print_manual_steps() {
   [[ -n "$manual_steps" ]] || return 0

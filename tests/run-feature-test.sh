@@ -414,6 +414,29 @@ grep -q '^issue comment 2 ' "$repo.control/gh.log" || fail "the triage was not p
 grep -q '^issue create ' "$repo.control/gh.log" || fail "the deferred finding got no follow-up Issue"
 git -C "$repo-2-thing" log -1 --format=%B | grep -q "^Review: round 3, PASS" || fail "the commit does not name the review of the complete feature"
 
+# The run is recorded in the primary checkout: one run, its steps, the
+# verifications, and an agent call per session with its role, and the runs of
+# the feature together in .agents/records/ after the publication.
+records="$(cat "$repo"/.agents/run/records/*.jsonl)"
+[[ "$(jq -r -s '[.[] | select(.type == "run-start")] | length' <<<"$records")" -eq 1 ]] ||
+  fail "the run of the feature is not one run: the commands it started made runs of their own"
+[[ "$(jq -r -s '.[] | select(.type == "run-start") | "\(.kind) \(.subject) \(.command)"' <<<"$records")" == "feature 2 run-feature.sh" ]] ||
+  fail "the run does not name the feature"
+[[ "$(jq -r -s '[.[] | select(.type == "agent-call") | .role] | group_by(.) | map("\(.[0])=\(length)") | join(" ")' <<<"$records")" == "implementer=1 reviewer=3 triage=1 triage-implementer=1" ]] ||
+  fail "the agent calls are not recorded per role: $(jq -r -s '[.[] | select(.type == "agent-call") | .role] | join(",")' <<<"$records")"
+jq -e -s 'any(.type == "verification" and .status == 0)' <<<"$records" >/dev/null || fail "the verifications are not recorded"
+jq -e -s 'any(.type == "step" and .name == "review, round 1 of at most 5")' <<<"$records" >/dev/null || fail "the steps are not recorded"
+jq -e -s 'any(.type == "run-end" and .status == 0)' <<<"$records" >/dev/null || fail "the end of the run is not recorded"
+[[ -s "$repo/.agents/records/feature-2.jsonl" ]] || fail "the runs of the feature were not copied to .agents/records/ by the publication"
+# The copy holds the run to its end: the publication and the status.
+jq -e -s 'any(.type == "step" and .name == "pull request" and .status == 0)' "$repo/.agents/records/feature-2.jsonl" >/dev/null ||
+  fail "the copy lacks the publication"
+[[ "$(jq -r -s '.[-1] | "\(.type) \(.status)"' "$repo/.agents/records/feature-2.jsonl")" == "run-end 0" ]] ||
+  fail "the copy does not end with the end of the run"
+jq -e -s '[.[] | select(.type == "agent-start") | .id] == [.[] | select(.type == "agent-call") | .id]' <<<"$records" >/dev/null ||
+  fail "an agent call does not close its start"
+[[ ! -d "$repo-2-thing/.agents/run/records" ]] || fail "the run wrote records into the feature worktree"
+
 # A finding of the closing review is fixed like any other, and the run ends
 # on a review of the complete feature again.
 repo="$(setup_repo closing-review-finds)"
@@ -505,11 +528,41 @@ expect_stopped "$repo" 3 "the implementer needs a decision of yours"
 grep -Fq "the Issue contradicts ADR 002" "$repo.out" || fail "the question of the implementer was not shown"
 expect_sessions "$repo" 1 0 0 0
 log_of "$repo" | grep -Fq "| blocked |" || fail "the blocked session is not in the log of the feature"
+# The run records what a script can see, without claiming that a person did
+# it: the next run follows a run that stopped with status 3, and the handoff
+# note changed after that stop. Neither is an intervention.
+interventions() {
+  cat "$1"/.agents/run/records/*.jsonl | jq -r -s '[.[] | select(.type == "intervention") | .what] | join("|")'
+}
+resumptions() {
+  cat "$1"/.agents/run/records/*.jsonl | jq -r -s '[.[] | select(.type == "resumed") | "\(.previous_status) \(.handoff_changed)"] | join("|")'
+}
+[[ "$(resumptions "$repo")" == "" ]] || fail "a first run records a resumption"
+sleep 1
 printf '**Open questions:** none.\n\nAnswer: the Issue overrides it.\n' >"$repo-2-thing/.agents/handoffs/2.md"
 run_feature "$repo" 2
 expect_published "$repo"
 expect_sessions "$repo" 2 1 0 0
+[[ "$(resumptions "$repo")" == "3 true" ]] ||
+  fail "the run after the stop and the changed handoff note are not recorded: $(resumptions "$repo")"
+[[ "$(interventions "$repo")" == "" ]] ||
+  fail "a run after a stop is recorded as a human intervention: $(interventions "$repo")"
+if cat "$repo"/.agents/run/records/*.jsonl | grep -q "the Issue overrides it"; then fail "the answer itself reached the record"; fi
 grep -Fq "You are resuming interrupted work" "$repo.control/implementer.args" || fail "the second session did not resume the work"
+
+# A run that starts again after the stop without a change to the handoff
+# note, as a scheduler or a retry would, records that the note did not change.
+repo="$(setup_repo blocked-restart)"
+printf '%s\n' "question='which ADR applies?'; $ask; reply=\"BLOCKED: two ADRs disagree\"" \
+  >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 3 "the implementer needs a decision of yours"
+sleep 1
+run_feature "$repo" 2
+[[ "$(resumptions "$repo" | cut -d'|' -f1)" == "3 false" ]] ||
+  fail "a run after the stop without a changed note is not recorded as such: $(resumptions "$repo")"
+[[ "$(interventions "$repo")" == "" ]] ||
+  fail "a run after the stop without an answer is recorded as an intervention: $(interventions "$repo")"
 
 # BLOCKED without a question in the handoff note leaves nothing to answer:
 # the script goes by what is recorded, not by the line, and the run goes on.
@@ -825,6 +878,8 @@ printf -- '- Adds the feature file by hand.\n' >"$repo-2-thing/.agents/summaries
 run_feature "$repo" 2 --implemented
 expect_published "$repo"
 expect_sessions "$repo" 0 1 0 0
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "intervention" and (.what | test("--implemented")))' >/dev/null ||
+  fail "--implemented is not recorded as an intervention"
 
 # Without it, a worktree that no run completed is resumed by the implementer.
 repo="$(setup_repo resumed)"

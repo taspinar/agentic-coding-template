@@ -105,7 +105,7 @@ setup_repo() {
   git clone -q "$remote" "$repo" 2>/dev/null
   mkdir -p "$repo/scripts/lib"
   cp "$source_root/scripts/publish-feature.sh" "$repo/scripts/"
-  cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$repo/scripts/lib/"
+  cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$source_root/scripts/lib/records.sh" "$repo/scripts/lib/"
   printf '.agents/manual-steps/\n.agents/completion/\n.agents/handoffs/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
   git -C "$repo" config user.email "publish-test@example.com"

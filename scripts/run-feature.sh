@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/records.sh"
 
 MAX_ROUNDS=5
 # A session of the implementer that ends without an error has not completed
@@ -71,6 +75,8 @@ done
 [[ "${#arguments[@]}" -ge 1 && "${#arguments[@]}" -le 3 ]] || usage
 issue="${arguments[0]}"
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
+records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
+[[ "$implemented" -eq 0 ]] || records_intervention "said with --implemented that the implementation is complete"
 
 review_data_require_jq
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
@@ -113,6 +119,8 @@ note() {
   local line
 
   line="$(date -u +'%Y-%m-%dT%H:%M:%SZ') | $1 | $2 | $3 | $4"
+  # The same event in the run record; the log is its readable form.
+  records_note "$1" "$2" "$3" "$4"
   echo "run-feature.sh: $2 in '$1': $3. $4"
   if [[ -n "${worktree:-}" && -d "$worktree/.agents" ]]; then
     mkdir -p "$worktree/.agents/run"
@@ -178,7 +186,11 @@ retrying() {
     log="$worktree/.agents/run/$issue-step.log"
     mkdir -p "$(dirname "$log")"
     step_status=0
+    step_started="$(date +%s)"
+    step_id="$(records_id)"
+    records_step_start "$step_id" "$title"
     (cd "$worktree" && "$@" </dev/null) 2>&1 | tee "$log" || step_status=$?
+    records_step "$title" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
     case "$step_status" in
       0 | 3 | 4) return 0 ;;
       5)
@@ -201,7 +213,11 @@ retrying() {
     else
       note "$title" "temporary" "the step exited with status $step_status" "Retry $attempt of $RETRIES in $wait seconds"
     fi
+    wait_id="$(records_id)"
+    wait_started="$(date +%s)"
+    records_wait_start "$wait_id" "$title" "$wait"
     sleep "$wait"
+    records_wait "$title" "$(($(date +%s) - wait_started))" "$wait_id"
     wait=$((wait * 2))
   done
 }
@@ -316,7 +332,11 @@ step_once() {
   echo "=== run-feature.sh: $title ==="
   echo
   step_status=0
+  step_started="$(date +%s)"
+  step_id="$(records_id)"
+  records_step_start "$step_id" "$title"
   (cd "$worktree" && "$@" </dev/null) || step_status=$?
+  records_step "$title" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
   [[ "$step_status" -eq 0 ]] || note "$title" "failed" "the step exited with status $step_status" "Stopping"
 }
 
@@ -331,7 +351,11 @@ if [[ -z "$worktree" ]]; then
   echo "=== run-feature.sh: implementation ==="
   echo
   step_status=0
+  step_started="$(date +%s)"
+  step_id="$(records_id)"
+  records_step_start "$step_id" "implementation"
   (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) || step_status=$?
+  records_step "implementation" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
   worktree="$(find_worktree)"
   first_session=1
   if [[ "$step_status" -eq 3 ]]; then

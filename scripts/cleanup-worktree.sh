@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/records.sh"
+
 usage() {
   echo "Usage:"
   echo "  $0 <issue-number>        Remove the merged worktree of feature/<issue>-*"
@@ -157,6 +159,21 @@ cleanup() {
       echo "Kept $branch: it has commits after its merged pull request."
       return 1
     fi
+  fi
+
+  # The run records of the feature or the planning together in the primary
+  # checkout (.agents/records/), before the worktree goes. They are in the
+  # primary checkout already; the copy holds them per feature. A copy that
+  # cannot be written keeps the worktree.
+  case "$branch" in
+    feature/*) records_kind=feature records_subject="$(printf '%s' "$branch" | sed -n 's#^feature/\([0-9][0-9]*\)-.*#\1#p')" ;;
+    planning/*) records_kind=planning records_subject="${branch#planning/}" ;;
+    *) records_kind="" records_subject="" ;;
+  esac
+  if [[ -n "$records_subject" ]] && command -v jq >/dev/null 2>&1 &&
+    ! (cd "$primary" && records_consolidate "$records_kind" "$records_subject"); then
+    echo "Kept $branch: its run records could not be copied to .agents/records/ in $primary."
+    return 1
   fi
 
   if ! git worktree remove "$path"; then

@@ -2,12 +2,16 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/planning.sh"
 source "$script_dir/lib/guardrails.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/records.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended] [--partial]"
@@ -53,6 +57,7 @@ set -- ${arguments[@]+"${arguments[@]}"}
 [[ $# -eq 2 || ( $# -eq 4 && "$3" == "--no-review" ) ]] || usage
 issue="$1"
 summary="$2"
+records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 no_review_reason="${4:-}"
 
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
@@ -112,6 +117,7 @@ case "$gate_status" in
     ;;
 esac
 completion_lines="$(completion_commit_lines "$root" "$issue")"
+[[ "$partial" -eq 0 ]] || records_intervention "committed partial work with --partial"
 
 # A feature keeps the architecture and the ADRs up to date, but it does not
 # change what the product is or which features it gets, nor the approval

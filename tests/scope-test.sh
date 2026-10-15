@@ -146,6 +146,20 @@ rm -rf "$repo/.venv"
 without="$(calls)"
 [[ "$without" -eq "$with_2000" ]] ||
   fail "the snapshot started $without commands without the ignored directory and $with_2000 with it"
+# The run records grow while a session runs and are not content: a new or
+# longer record changes nothing in the snapshot.
+scope_snapshot "$repo" allowed "$tmp/records-before.tsv"
+mkdir -p "$repo/.agents/run/records/.sequence/feature-1" "$repo/.agents/records"
+printf '{"type":"run-start"}\n' >"$repo/.agents/run/records/run.jsonl"
+ln -s run "$repo/.agents/run/records/.sequence/feature-1/1"
+printf '{"type":"run-start"}\n' >"$repo/.agents/records/feature-1.jsonl"
+scope_snapshot "$repo" allowed "$tmp/records-after.tsv"
+scope_unchanged "$tmp/records-before.tsv" "$tmp/records-after.tsv" 2>"$tmp/diff" || {
+  cat "$tmp/diff" >&2
+  fail "the run records counted as a change"
+}
+rm -rf "$repo/.agents/run" "$repo/.agents/records"
+
 # And the time: three snapshots with 6000 ignored files take at most a few
 # seconds longer than three without them.
 mkdir -p "$repo/.venv/lib"

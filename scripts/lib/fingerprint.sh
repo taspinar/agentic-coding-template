@@ -9,7 +9,13 @@
 # it. Review and triage artifacts are never part of a fingerprint. The real
 # Git index is not touched; objects may be written to the object database.
 
-FINGERPRINT_EXCLUDES=(".agents/reviews" ".agents/triage")
+# The review and triage artifacts, which the content fingerprints leave out and
+# fingerprint_artifacts covers.
+FINGERPRINT_ARTIFACTS=(".agents/reviews" ".agents/triage")
+# Left out of the content fingerprints: the artifacts, and the run records
+# (lib/records.sh), which are written while a step runs and are never content,
+# also in a project whose .gitignore does not name them.
+FINGERPRINT_EXCLUDES=("${FINGERPRINT_ARTIFACTS[@]}" ".agents/run/records" ".agents/records")
 
 # feature_base <root> <base>
 # Prints two lines: the ref of the base branch a feature is compared with,
@@ -50,8 +56,10 @@ fingerprint_worktree() {
   local exclude_specs=()
   local path
 
+  # An excluded path that Git ignores is left out anyway; naming it would
+  # make 'git add' refuse the ignored directory it is in.
   for path in "${FINGERPRINT_EXCLUDES[@]}"; do
-    exclude_specs+=(":(exclude)$path")
+    git -C "$root" check-ignore -q "$path" 2>/dev/null || exclude_specs+=(":(exclude)$path")
   done
 
   # Start from the real index so tracked files that match an ignore rule stay
@@ -63,7 +71,7 @@ fingerprint_worktree() {
   fi
 
   GIT_INDEX_FILE="$index" git -C "$root" rm -r -q --cached --ignore-unmatch -- "${FINGERPRINT_EXCLUDES[@]}" >/dev/null &&
-    GIT_INDEX_FILE="$index" git -C "$root" add -A -- . "${exclude_specs[@]}" >/dev/null &&
+    GIT_INDEX_FILE="$index" git -C "$root" add -A -- . ${exclude_specs[@]+"${exclude_specs[@]}"} >/dev/null &&
     GIT_INDEX_FILE="$index" git -C "$root" write-tree
 }
 
@@ -87,7 +95,7 @@ fingerprint_files() {
   rm -f "$index"
   if [[ "${#specs[@]}" -gt 0 ]]; then
     for path in "${FINGERPRINT_EXCLUDES[@]}"; do
-      specs+=(":(exclude)$path")
+      git -C "$root" check-ignore -q "$path" 2>/dev/null || specs+=(":(exclude)$path")
     done
     GIT_INDEX_FILE="$index" git -C "$root" add -f -- "${specs[@]}" >/dev/null || return 1
   fi
@@ -101,7 +109,7 @@ fingerprint_artifacts() {
   (
     cd "$1" || exit 1
     # A missing artifact directory is an empty set, not an error.
-    { find "${FINGERPRINT_EXCLUDES[@]}" \( -type f -o -type l \) 2>/dev/null || true; } | LC_ALL=C sort |
+    { find "${FINGERPRINT_ARTIFACTS[@]}" \( -type f -o -type l \) 2>/dev/null || true; } | LC_ALL=C sort |
       while IFS= read -r path; do
         if [[ -L "$path" ]]; then
           printf '%s symlink %s\n' "$path" "$(readlink "$path")"

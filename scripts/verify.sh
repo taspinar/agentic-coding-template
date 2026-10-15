@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for the record of a verification (lib/records.sh).
+records_arguments=("$@")
+
 # Stable verification entry point for humans, agents, and CI.
 # The required checks of the project are declared in scripts/verify.conf.
 # The self-tests of the workflow scripts are declared in
@@ -78,6 +81,42 @@ if [[ "$partial" -eq 1 && "$reuse" -eq 1 ]]; then
 fi
 if [[ "$list_groups" -eq 1 && ( "$partial" -eq 1 || "$reuse" -eq 1 || "$run_all" -eq 1 ) ]]; then
   usage
+fi
+
+# The verification is recorded (lib/records.sh): its duration, its status,
+# whether a recorded pass was reused, and the groups of a partial run. Inside
+# a run of the workflow it belongs to that run; run on its own in a feature or
+# a planning worktree it is a run of that feature or planning. It runs as a
+# child, so that every exit below is seen. Recording is best-effort: when it
+# cannot be prepared, the verification runs without it.
+if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_groups" -eq 0 ]] &&
+  [[ -f "$root/scripts/lib/records.sh" ]] && command -v jq >/dev/null 2>&1; then
+  source "$root/scripts/lib/records.sh"
+  if [[ -z "${RECORDS_RUN_ID:-}" ]]; then
+    records_branch="$(git -C "$root" branch --show-current 2>/dev/null || true)"
+    case "$records_branch" in
+      feature/*) records_wrap feature "$(records_branch_issue)" "$0" ${records_arguments[@]+"${records_arguments[@]}"} ;;
+      planning/*) records_wrap planning "${records_branch#planning/}" "$0" ${records_arguments[@]+"${records_arguments[@]}"} ;;
+    esac
+  fi
+  records_mark=""
+  if [[ -n "${RECORDS_RUN_ID:-}" ]] && ! records_mark="$(mktemp "${TMPDIR:-/tmp}/verify-reused.XXXXXX" 2>/dev/null)"; then
+    records_mark=""
+    echo "Warning: the record of this verification could not be prepared (no temporary file); the verification runs without it." >&2
+  fi
+  if [[ -n "$records_mark" ]]; then
+    rm -f "$records_mark" 2>/dev/null || true
+    records_started="$(date +%s)"
+    records_call="$(records_id)"
+    records_verification_start "$records_call" "${only:-all}"
+    records_status=0
+    RECORDS_VERIFICATION="$records_mark" "$0" ${records_arguments[@]+"${records_arguments[@]}"} || records_status=$?
+    records_reused=false
+    [[ ! -e "$records_mark" ]] || records_reused=true
+    rm -f "$records_mark" 2>/dev/null || true
+    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" "${only:-all}" "$records_call"
+    exit "$records_status"
+  fi
 fi
 
 # A passed run is recorded only where the record is a file that Git ignores.
@@ -235,6 +274,7 @@ if [[ "$recordable" -eq 1 ]]; then
       echo
       echo "Verification already passed for this content at $(verification_field "$root" verified-at); not run again."
       echo "Run ./scripts/verify.sh without --reuse to run every check."
+      [[ -z "${RECORDS_VERIFICATION:-}" ]] || { : >"$RECORDS_VERIFICATION"; } 2>/dev/null || true
       exit 0
     fi
   fi
@@ -266,7 +306,12 @@ for index in "${!names[@]}"; do
   fi
 
   set +e
-  (cd "$root" && bash -eo pipefail -c "$command")
+  # A check is not part of the run that verifies: a workflow script that it
+  # starts, as the self-tests do, must not write into that run's records.
+  (
+    unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+    cd "$root" && bash -eo pipefail -c "$command"
+  )
   status=$?
   set -e
 

@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# The arguments as given, for a run that records itself (lib/records.sh).
+records_arguments=("$@")
+
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/agent.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/scope.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/fingerprint.sh"
@@ -79,6 +82,7 @@ if [[ "${#names[@]}" -gt 1 ]]; then
 fi
 
 name="${names[0]:-project-bootstrap}"
+records_wrap planning "$name" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 
 change_cycle=0
 if [[ -n "$change_source" ]]; then
@@ -119,9 +123,11 @@ planner_prompt="$repo_root/.agents/prompts/project-planner.md"
 agent_resolve "$repo_root" project-grill "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
 grill_agent="$AGENT_PROVIDER"
 grill_model="$AGENT_MODEL"
+grill_role="$AGENT_ROLE"
 agent_resolve "$repo_root" project-planner "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
 planner_agent="$AGENT_PROVIDER"
 planner_model="$AGENT_MODEL"
+planner_role="$AGENT_ROLE"
 
 [[ -f "$grill_prompt" ]] || fail "missing Project Grill prompt: $grill_prompt"
 [[ -f "$planner_prompt" ]] || fail "missing project-planner prompt: $planner_prompt"
@@ -345,6 +351,9 @@ run_agent() {
   echo "$5"
   echo
 
+  # Both roles are resolved before either session; the run records name the
+  # role of this session.
+  AGENT_ROLE="$6"
   set +e
   agent_run write "$agent" "$model" "$worktree" "$prompt"
   status=$?
@@ -527,7 +536,7 @@ phase 2 starts by itself: planning the change in a new session."
 After the session, this script shows the requirements and asks for your approval.
 When you approve, phase 2 starts by itself: project planning in a new session."
   fi
-  run_agent "Project Grill" "$grill_prompt" "$grill_agent" "$grill_model" "$grill_notice"
+  run_agent "Project Grill" "$grill_prompt" "$grill_agent" "$grill_model" "$grill_notice" "$grill_role"
   require_unchanged_head "Project Grill"
   require_scope_unchanged "grill" "$grill_baseline" "Project Grill"
 
@@ -557,7 +566,7 @@ if [[ "$requirements_changed" -eq 1 ]]; then
   answer=""
   read -r -p "Approve these project requirements and continue to architecture planning? [y/N] " answer || true
   case "$answer" in
-    y | Y | yes | YES | Yes) ;;
+    y | Y | yes | YES | Yes) records_intervention "approved the project requirements" ;;
     *)
       echo
       echo "Requirements were not approved; project planning did not start."
@@ -579,7 +588,7 @@ else
 approved requirements. After the session, this script checks the result."
 fi
 
-run_agent "project planning" "$planner_prompt" "$planner_agent" "$planner_model" "$planner_notice"
+run_agent "project planning" "$planner_prompt" "$planner_agent" "$planner_model" "$planner_notice" "$planner_role"
 require_unchanged_head "project planner"
 
 if [[ "$(requirements_signature)" != "$approved_requirements_signature" ]]; then

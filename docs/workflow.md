@@ -330,6 +330,10 @@ Each kind of state has one place:
   human; copied into the commit message and the pull request. Working files.
 - `.agents/summaries/`: per Issue, the implementer's summary of the changes,
   which becomes the list of changes in the commit message. Working files.
+- `.agents/run/records/` and `.agents/records/`: the run records, how long
+  every step of a feature or a planning took and how many tokens its agents
+  used; one file per run, and the runs of a feature or a planning together.
+  Working files, never published.
 - `.agents/completion/`: per Issue, the implementer's completion record:
   complete, partial, or blocked, with evidence per acceptance criterion. The
   scripts commit and close the Issue only on `complete`. Working files.
