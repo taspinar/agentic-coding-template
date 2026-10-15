@@ -324,6 +324,14 @@ grep -Fq -- "- gate: remaining: Plan steps 3 to 9" "$repo.control/note-seen" || 
 # What the run records there does not itself count as remaining work.
 [[ -n "$(git -C "$repo-2-thing" log -1 --format=%B | grep -Fx 'Completion: complete')" ]] ||
   fail "the note of the run kept the gate from passing"
+# The run records one check of the gate per check, with the implementation
+# sessions before it: partial after session 1, complete after session 2,
+# and the check before the review after the same session 2 is check 3.
+gates="$(cat "$repo"/.agents/run/records/*.jsonl | jq -r -s '[.[] | select(.type == "completion-gate") | "\(.check):\(.sessions):\(.status)"] | join(" ")')"
+[[ "$gates" == "1:1:partial 2:2:complete"* ]] || fail "the gate checks of the run are not recorded per check and session: $gates"
+if grep -Eq '(^| )[0-9]+:1:partial .*[0-9]+:1:partial' <<<"$gates"; then fail "one session gave two partial outcomes: $gates"; fi
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "experience" and (.record.derived.completion_gates | map(.status) | index("partial")) != null)' >/dev/null ||
+  fail "the experience record of the run lacks the gate checks"
 
 # Without any completion record, the same: the end of a session says nothing.
 repo="$(setup_repo no-record)"
@@ -659,6 +667,12 @@ expect_sessions "$repo" 3 1 0 0
 log_of "$repo" | grep -Fq "Repair attempt 1 of 3" || fail "the repair is not in the log of the feature"
 log_of "$repo" | grep -Fq "| not complete | partial: " || fail "the repair session that left work is not in the log of the feature"
 grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "the feature completed after the repair does not close the Issue"
+# The repair session counts in the gate history: the check after it names
+# it, with one session more than the check before it.
+gates="$(cat "$repo"/.agents/run/records/*.jsonl | jq -c -s '[.[] | select(.type == "completion-gate") | {sessions, session, status}]')"
+jq -e 'map(select(.status == "partial")) | length == 1' <<<"$gates" >/dev/null || fail "the check after the repair is not the partial one: $gates"
+jq -e '(map(.status) | index("partial")) as $i | $i > 0 and .[$i].sessions == .[$i - 1].sessions + 1 and .[$i].session != .[$i - 1].session' <<<"$gates" >/dev/null ||
+  fail "the repair session does not count in the gate history: $gates"
 
 # The same for a repair session that removes the record, or that leaves
 # remaining work in the handoff note.

@@ -44,3 +44,6 @@ credentials*.json
 # agents used: one file per run in .agents/run/records/, and the runs of a
 # feature or a planning together here. Never published.
 .agents/records/
+# The implementer's optional notes on a run, kept in its experience record
+# (scripts/lib/experience.sh). Never published.
+.agents/experience/

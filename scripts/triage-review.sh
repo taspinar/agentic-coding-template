@@ -500,6 +500,7 @@ if [[ -n "$artifact_errors" ]]; then
 fi
 
 cp "$pending" "$artifact.json"
+records_artifact triage "$artifact_relative.json" 2>/dev/null || true
 triage_render_markdown "$artifact.json" "$(basename "$artifact").json" >"$artifact.md"
 
 echo

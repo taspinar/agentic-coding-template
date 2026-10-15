@@ -66,7 +66,7 @@ in_repo "$repo" 'records_begin feature 12 run-feature.sh; records_step "review, 
 [[ "$(ls "$repo/.agents/run/records" | grep -c .)" -eq 1 ]] || fail "a run did not write exactly one file"
 lines "$repo" | jq -e -s 'all(.schema == "run-record/v1" and (.run | length > 0) and (.time | test("Z$")) and (.epoch | type) == "number")' >/dev/null ||
   fail "an event lacks its common fields"
-[[ "$(lines "$repo" | jq -r -s 'map(.type) | join(",")')" == "run-start,step,wait,verification,intervention,note,run-end" ]] ||
+[[ "$(lines "$repo" | jq -r -s 'map(.type) | join(",")')" == "run-start,step,wait,verification,intervention,note,experience,run-end" ]] ||
   fail "the events of a run are not in order: $(lines "$repo" | jq -r -s 'map(.type) | join(",")')"
 start="$(lines "$repo" | jq -c 'select(.type == "run-start")')"
 [[ "$(jq -r '.kind, .subject, .command' <<<"$start" | tr '\n' ' ')" == "feature 12 run-feature.sh " ]] || fail "the start does not name the subject: $start"
@@ -149,7 +149,7 @@ for n in 1 2 3 4 5 6 7 8; do
 done
 wait
 [[ "$(ls "$repo/.agents/run/records" | grep -c .)" -eq 8 ]] || fail "parallel runs did not get a file each"
-[[ "$(lines "$repo" | grep -c .)" -eq $((8 * 27)) ]] || fail "parallel writers lost events: $(lines "$repo" | grep -c .) of $((8 * 27))"
+[[ "$(lines "$repo" | grep -c .)" -eq $((8 * 28)) ]] || fail "parallel writers lost events: $(lines "$repo" | grep -c .) of $((8 * 28))"
 lines "$repo" | jq -e . >/dev/null || fail "parallel writers produced a line that is not JSON"
 
 # Runs of one subject that start in the same second follow each other by
@@ -399,7 +399,7 @@ jq -e . "$copy" >/dev/null || fail "overlapping copies left a line that is not J
 # run, with its status.
 repo="$(setup_repo copy-at-end)"
 in_repo "$repo" 'records_begin feature 12 publish-feature.sh; records_consolidate feature 12; records_step "after the copy" 0 1; records_end 3'
-[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,run-end" ]] ||
+[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,experience,run-end" ]] ||
   fail "the copy was not brought up to date at the end of the run"
 [[ "$(jq -r -s '.[-1].status' "$repo/.agents/records/feature-12.jsonl")" == "3" ]] || fail "the copy lacks the status of the run"
 
@@ -461,7 +461,7 @@ printf '#!/usr/bin/env bash\necho "gh: offline" >&2\nexit 1\n' >"$tmp/offline-bi
 chmod +x "$tmp/offline-bin/gh"
 in_repo "$repo" 'export PATH="'"$tmp/offline-bin"':$PATH"; records_begin feature 12 run-feature.sh
   records_step "review, round 1 of at most 5" 0 3; records_end 0; records_consolidate feature 12'
-[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,run-end" ]] ||
+[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,experience,run-end" ]] ||
   fail "a run without GitHub is not complete"
 
 echo "records tests passed"

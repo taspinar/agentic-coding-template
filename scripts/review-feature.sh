@@ -427,6 +427,7 @@ jq --arg lines "$approval_lines" '
   ($lines | split("\n") | map(select(length > 0))) as $l
   | .merge_approval = {required: ($l[0] == "owner"), reasons: $l[1:]}' "$out.json" >"$out.json.tmp"
 mv "$out.json.tmp" "$out.json"
+records_artifact review "$review_relative.json" 2>/dev/null || true
 if [[ "$(jq -r '.merge_approval.required' "$out.json")" == "true" ]]; then
   echo "  Merge approval: required from the owner"
   jq -r '.merge_approval.reasons[] | "    - \(.)"' "$out.json"

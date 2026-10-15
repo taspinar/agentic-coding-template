@@ -84,6 +84,15 @@ records_append() {
 # Writes one event of the current run: the common fields, followed by the
 # fields that the expression builds from the --arg and --argjson options
 # given before it.
+# The jq definition that replaces what looks like a secret in text: a private
+# key with its whole body, an API key, or a token. Every event passes it, so no
+# reason, note, or record copies one.
+RECORDS_REDACT_JQ='def redact:
+  gsub("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)"; "[redacted]")
+  | gsub("(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,})"; "[redacted]");
+def redact_all: walk(if type == "string" then redact else . end);
+'
+
 records_emit() {
   local type="$1"
   local expression
@@ -95,7 +104,7 @@ records_emit() {
   set -- "${@:1:$#-1}"
   line="$(jq -cn --arg _schema "$RECORDS_SCHEMA" --arg _run "$RECORDS_RUN_ID" --arg _type "$type" \
     --arg _time "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --argjson _epoch "$(date +%s)" "$@" \
-    "{schema: \$_schema, run: \$_run, time: \$_time, epoch: \$_epoch, type: \$_type} + ($expression)" 2>/dev/null)" || {
+    "$RECORDS_REDACT_JQ ({schema: \$_schema, run: \$_run, time: \$_time, epoch: \$_epoch, type: \$_type} + ($expression)) | redact_all" 2>/dev/null)" || {
     records_warn "the event '$type' could not be built"
     return 0
   }
@@ -216,8 +225,23 @@ records_begin() {
   # tell runs apart that start in the same second.
   local latest
   local seq=""
-  RECORDS_RUN_ID="$(date -u +'%Y%m%dT%H%M%SZ')-$$-$RANDOM"
-  RECORDS_FILE="$dir/$RECORDS_RUN_ID.jsonl"
+  # The file of the run is created here, and only by this run: subshells of
+  # one process share its id and, in Bash 3.2, the state of $RANDOM, so an id
+  # that another run took is replaced by the next.
+  local attempt=0
+  while true; do
+    RECORDS_RUN_ID="$(date -u +'%Y%m%dT%H%M%SZ')-$$-$RANDOM"
+    RECORDS_FILE="$dir/$RECORDS_RUN_ID.jsonl"
+    if (set -o noclobber; : >"$RECORDS_FILE") 2>/dev/null; then
+      break
+    fi
+    attempt=$((attempt + 1))
+    if [[ "$attempt" -ge 50 ]]; then
+      records_warn "no file of its own could be created for the run in $dir"
+      unset RECORDS_RUN_ID RECORDS_FILE
+      return 0
+    fi
+  done
   if latest="$(records_sequence "$kind" "$subject" "$RECORDS_RUN_ID" 2>/dev/null)"; then
     seq="${latest%%$'\t'*}"
     previous="${latest#*$'\t'}"
@@ -304,6 +328,12 @@ records_resumption() {
 records_end() {
   local primary
 
+  # The experience record of a feature run (lib/experience.sh), before its
+  # end. A verification on its own has nothing to observe beyond its result.
+  if [[ "${RECORDS_KIND:-}" == "feature" && "${RECORDS_COMMAND##*/}" != "verify.sh" ]] &&
+    declare -F experience_record >/dev/null; then
+    experience_record "${1:-0}" || records_warn "the experience record of the run could not be made"
+  fi
   records_emit run-end --argjson status "${1:-0}" '{status: $status}'
   [[ -n "${RECORDS_KIND:-}" && -n "${RECORDS_SUBJECT:-}" ]] || return 0
   primary="$(records_primary)" || return 0
@@ -560,6 +590,44 @@ records_wait() {
 
 # records_note <step> <outcome> <reason> <action>: a line of the log of
 # run-feature.sh.
+# records_gate <worktree> <status> <reasons>: one check of the completion
+# gate, with its outcome, its reasons, one per line, and the fingerprint of
+# the content it judged (lib/fingerprint.sh), so that two checks on one commit
+# stay apart. It names the implementing sessions of the run before it, as the
+# run recorded them: every session of the implementer or the triage
+# implementer, a repair or a retry too, and the last of them, the session it
+# judges. A check without a session since the one before judges the same
+# session again.
+records_gate() {
+  local content=""
+  local scratch
+  local sessions='{"count": 0, "last": null}'
+
+  [[ -n "${RECORDS_FILE:-}" ]] || return 0
+  if declare -F fingerprint_worktree >/dev/null && scratch="$(mktemp -d "${TMPDIR:-/tmp}/records-gate.XXXXXX" 2>/dev/null)"; then
+    content="$(fingerprint_worktree "$1" "$scratch" 2>/dev/null)" || content=""
+    rm -rf "$scratch"
+  fi
+  if [[ -f "$RECORDS_FILE" ]]; then
+    sessions="$(jq -cs '[.[] | select(.type == "agent-start" and (.role == "implementer" or .role == "triage-implementer"))]
+      | {count: length, last: (last | if . == null then null else .id end)}' "$RECORDS_FILE" 2>/dev/null)" ||
+      sessions='{"count": null, "last": null}'
+  fi
+  RECORDS_GATE_CHECKS=$((${RECORDS_GATE_CHECKS:-0} + 1))
+  records_emit completion-gate --argjson check "$RECORDS_GATE_CHECKS" --argjson sessions "$sessions" \
+    --arg status "${2:-}" --arg reasons "${3:-}" --arg content "$content" \
+    '{check: $check, sessions: $sessions.count, session: $sessions.last, status: $status,
+      reasons: ($reasons | split("\n") | map(select(length > 0))),
+      content: (if $content == "" then null else $content end)}'
+}
+
+# records_artifact <kind> <path>: a review or a triage that this run wrote,
+# by its path in the worktree, so that its experience record names what the
+# run produced and nothing of another run.
+records_artifact() {
+  records_emit artifact --arg kind "$1" --arg path "$2" '{kind: $kind, path: $path}'
+}
+
 records_note() {
   records_emit note --arg step "$1" --arg outcome "$2" --arg reason "$3" --arg action "$4" \
     '{step: $step, outcome: $outcome, reason: $reason, action: $action}'
@@ -582,3 +650,9 @@ records_verification() {
 records_branch_issue() {
   git branch --show-current 2>/dev/null | sed -n 's#^feature/\([0-9][0-9]*\)-.*#\1#p'
 }
+
+# The experience records belong to the runs; a copy of this file without them
+# records the runs only.
+if [[ -f "${BASH_SOURCE[0]%/*}/experience.sh" ]]; then
+  source "${BASH_SOURCE[0]%/*}/experience.sh"
+fi

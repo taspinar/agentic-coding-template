@@ -76,6 +76,7 @@ the website describes the current template.
 | `scripts/finish-feature.sh` | Checks the feature, including the completion gate and a review of the complete feature, and creates the commit; `--partial` commits unfinished work as your choice |
 | `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions: resumes the implementer until the completion gate passes, then at most five review rounds, the last of the complete feature; never merges and never removes a worktree |
 | `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request, which closes the Issue only for a complete feature and is a draft otherwise; with `--wait` stays until CI finishes; with `--summary` posts the totals of the run records on the Issue; never merges |
+| `scripts/show-experience.sh` | Shows the experience records of a feature, with an invalid record marked as such |
 | `scripts/report-runs.sh` | Reports on the run records of features and planning cycles, in Markdown or JSON, without the network |
 | `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
@@ -95,6 +96,7 @@ the website describes the current template.
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
 | `scripts/lib/records.sh` | The run records: duration and token usage per run, step, and agent call, and the copy per feature or planning |
+| `scripts/lib/experience.sh` | The experience record of a feature run: what a script derives from the run, and the agent's optional notes once they are valid |
 | `scripts/lib/report.jq` | The report of `report-runs.sh`: totals, comparisons, and the summary for GitHub, from numeric fields only |
 | `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions: a snapshot of the worktree before and after, which leaves out the directories Git ignores as a whole |
