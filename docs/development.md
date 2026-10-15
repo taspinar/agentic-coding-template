@@ -173,6 +173,7 @@ per line:
 | `reviewer` | `review-feature.sh` |
 | `triage` | `triage-review.sh` |
 | `triage-implementer` | `apply-triage.sh` |
+| `analyst` | `analyze-runs.sh` (read-only) |
 
 Supported providers are `codex` and `claude`. Set each model to one your
 account supports, and use a different provider for a reviewing role than for
@@ -1478,6 +1479,65 @@ with its file and line, and a record that names
 another run or Issue than the one it belongs to: it is never a source for an
 analysis, and it hides no valid record. Nothing moves from a record to `.agents/lessons/` by itself; that is
 a proposal of an analysis and your decision.
+
+### Analysing several runs
+
+```bash
+./scripts/analyze-runs.sh 12 14 15          # these features
+./scripts/analyze-runs.sh --since 2026-10-01  # the features with runs from a date on
+./scripts/analyze-runs.sh --last 10         # the ten features whose first run started last
+./scripts/analyze-runs.sh 12 14 --input-only  # the input only, without an agent
+```
+
+You start an analysis by hand. It compares the run statistics
+(`report-runs.sh`) and the valid experience records (`show-experience.sh`) of
+the selected features, looks for recurring errors and blocks, the causes of
+extra review and repair rounds, the steps that cost the most time or tokens,
+ways of working that succeeded, and assumptions or observations that
+contradict each other, and proposes improvements in order of priority.
+
+**The analyst is read-only**: a role of its own in `.agents/agents.conf`
+(`analyst`), run as a read-only session. An analysis that changed the working
+tree fails, and nothing of it is kept. Nothing reaches the knowledge, the
+prompts, or the checks of the project by itself: each proposal names its
+place, and you take it through the review and approval that apply there.
+
+| Place | What |
+|---|---|
+| `adr`, `agent-instruction`, `skill`, `documentation` | a change you make in the project, with its review |
+| `script-check` | an enforceable check in a script of the project, also named in `enforceable_check` |
+| `issue` | a separate Issue of the project |
+| `template` | the workflow scripts, prompts, or schemas: a project takes them over with `sync-template.sh` and cannot repair them locally, so it is an Issue in the template repository |
+
+**What the script checks in the result**, before it keeps it (one corrected
+attempt is allowed):
+
+- every conclusion cites evidence, and only ids that are in the input: runs,
+  observations (`<run>/<observation>`), and `statistics/<kind>/<subject>`;
+- a `finding` rests on at least two runs; one observation is a `hypothesis`
+  or a `single-observation`, never a general rule;
+- every conclusion says which differences in task size, model, and workflow
+  version it considered;
+- a proposal that concerns the workflow scripts is placed in `template`;
+- no conclusion at all is valid only as `insufficient_evidence`, which is a
+  valid outcome.
+
+**Reproducible and not counted twice.** Every analysis is kept in
+`.agents/analysis/<time>-<input>/` of the primary checkout, ignored by Git:
+`input.json` with the selection and its runs (a period selects runs, so the
+observations of a run outside it are not in the input), the template commit,
+the commit of the repository, and a content hash of the workflow as it is in
+the working tree (the scripts, the prompts, the schemas, and `agents.conf`),
+with whether it has uncommitted changes; `sources/` with the prompt, the
+schema, and `agents.conf` as they were used, and every file the analyst says
+it read besides the input (`consulted`); `analysis.json` with the result and
+the evidence it used; and `report.md`. An analyst that changed the working
+tree, also a file that was changed already or a review or triage artifact,
+fails. The next analysis gets that
+evidence as `already_analysed`, and the report marks a conclusion that rests
+on it as used by an earlier analysis: the same observations are no new,
+independent evidence. The input holds the compact records; the analyst reads
+more only where a conclusion needs it.
 
 ## Linking a feature plan
 

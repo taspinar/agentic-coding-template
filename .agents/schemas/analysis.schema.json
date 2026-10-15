@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["insufficient_evidence", "summary", "conclusions", "contradictions", "missing_data", "proposals", "consulted"],
+  "properties": {
+    "insufficient_evidence": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "conclusions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "statement", "evidence", "differences_considered", "uncertainty"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["finding", "hypothesis", "single-observation"] },
+          "statement": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "differences_considered": { "type": "string" },
+          "uncertainty": { "type": "string" }
+        }
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement", "evidence"],
+        "properties": {
+          "statement": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "missing_data": { "type": "array", "items": { "type": "string" } },
+    "consulted": { "type": "array", "items": { "type": "string" } },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["priority", "title", "place", "concerns_workflow_scripts", "enforceable_check", "rationale", "conclusions"],
+        "properties": {
+          "priority": { "type": "integer" },
+          "title": { "type": "string" },
+          "place": {
+            "type": "string",
+            "enum": ["adr", "agent-instruction", "skill", "documentation", "script-check", "issue", "template"]
+          },
+          "concerns_workflow_scripts": { "type": "boolean" },
+          "enforceable_check": { "type": ["string", "null"] },
+          "rationale": { "type": "string" },
+          "conclusions": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

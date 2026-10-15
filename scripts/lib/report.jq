@@ -11,7 +11,7 @@
 # of its subject only when it does not, so no event is counted twice.
 
 def roles: ["project-grill", "project-planner", "planning-reviewer", "implementer",
-            "reviewer", "triage", "triage-implementer"];
+            "reviewer", "triage", "triage-implementer", "analyst"];
 
 def number_or_null: if type == "number" then . else null end;
 

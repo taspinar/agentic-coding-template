@@ -14,7 +14,7 @@ agent_library_dir="${BASH_SOURCE[0]%/*}"
 [[ "$agent_library_dir" != "${BASH_SOURCE[0]}" ]] || agent_library_dir="."
 source "$agent_library_dir/records.sh"
 
-AGENT_ROLES="project-grill project-planner planning-reviewer implementer reviewer triage triage-implementer"
+AGENT_ROLES="project-grill project-planner planning-reviewer implementer reviewer triage triage-implementer analyst"
 
 agent_fail() {
   echo "Error: $*" >&2
