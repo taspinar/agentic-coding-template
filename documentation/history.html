@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>History · Agentic Coding Template</title>
-<meta name="description" content="How the template grew from a manual workflow to unattended feature execution, in five milestones.">
+<meta name="description" content="How the template grew from a manual workflow to unattended feature execution and to learning from its runs, in six milestones.">
 <link rel="stylesheet" href="assets/site.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
@@ -35,12 +35,13 @@
   <p class="lede">We started with a manual workflow and gradually automated the steps that proved useful and repeatable.</p>
   <p>The ideas behind the workflow are not new. The template combines established software engineering practices with AI coding tools and fits them into a development process on GitHub.</p>
 
-  <ol class="pipeline" aria-label="Five milestones">
+  <ol class="pipeline" aria-label="Six milestones">
     <li><span>Initial workflow</span></li>
     <li><span>Structured planning</span></li>
     <li><span>Independent verification</span></li>
     <li><span>Improved reliability</span></li>
     <li><span>Unattended execution</span></li>
+    <li><span>Learning from runs</span></li>
   </ol>
 
   <ol class="timeline">
@@ -73,6 +74,11 @@
       <h2>Unattended execution</h2>
       <p>Once every step was a script, the steps could run in a row. One command now takes a feature from its issue to an open pull request without stopping for routine input. It ends at the pull request: it does not merge.</p>
       <p>Unattended work needed clearer rules. A script, not an agent, decides whether a step succeeded, and it retries a temporary failure. "Blocked" means only that a person has to decide. Reviews must stay up to date when the code or the base branch changes. And whether a change needs the owner's approval is no longer left to the agent that made the change.</p>
+    </li>
+    <li>
+      <h2>Learning from runs</h2>
+      <p>An unattended run that ends at a pull request also hides what it took. A session that ended was not always a finished feature, so the scripts now commit and close an issue only when the implementer's own record says the work is complete, with evidence for every criterion.</p>
+      <p>Then the runs themselves became something to learn from. Every run records how long its steps took and how many tokens its agents used, kept on the developer's machine. A report shows what a feature cost and how many rounds it needed, and says when a figure is unknown rather than counting it as zero. Each run also keeps what happened in it, with a reference to the evidence: the review findings, the stops, the repairs. An analysis by a read-only agent compares several features and proposes improvements, each with the place it belongs; the developer decides what to do with them.</p>
     </li>
   </ol>
 
