@@ -52,6 +52,7 @@ reviewer: claude &lt;model&gt;</code></pre>
       <tr><td><code>reviewer</code></td><td>Reviews a feature, read-only</td></tr>
       <tr><td><code>triage</code></td><td>Proposes what to do with each review finding</td></tr>
       <tr><td><code>triage-implementer</code></td><td>Fixes the findings that were selected</td></tr>
+      <tr><td><code>analyst</code></td><td>Compares the runs of several features and proposes improvements, read-only (<a href="workflow.html#learning">learning from your runs</a>)</td></tr>
     </tbody>
   </table>
   </div>
@@ -66,7 +67,7 @@ reviewer: claude &lt;model&gt;</code></pre>
     <tbody>
       <tr><td><strong>write</strong></td><td>A step you follow in the terminal, such as implementing a feature</td><td>Change files in its worktree and use the network. For anything beyond that it asks you: Claude before it runs a shell command, Codex before a command leaves its sandbox</td></tr>
       <tr><td><strong>unattended</strong></td><td>A step that runs without you, such as in <code>run-feature.sh</code></td><td>The same reach as write, and it asks nothing. What it would have asked you is decided without you, in a different way per agent: Codex stays inside its sandbox and is refused what leaves it; Claude runs in its automatic permission mode, whose own check allows or denies each action, and anything that would still need a question is denied. It gets none of your personal integrations, such as MCP servers or apps</td></tr>
-      <tr><td><strong>read-only</strong></td><td>Reviews and triage proposals</td><td>Read files. It cannot change them, and it gets none of your personal integrations</td></tr>
+      <tr><td><strong>read-only</strong></td><td>Reviews, triage proposals, and the analysis of runs</td><td>Read files. It cannot change them, and it gets none of your personal integrations</td></tr>
     </tbody>
   </table>
   </div>
@@ -104,10 +105,32 @@ reviewer: claude &lt;model&gt;</code></pre>
     <li><strong>Your project's checks</strong>, listed in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/scripts/verify.conf"><code>scripts/verify.conf</code></a>, one command per line: tests, linters, builds. They always run. The file ships with the checks of the template itself; you replace them with your own.</li>
     <li><strong>Tests of the workflow scripts</strong>, listed in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/scripts/verify-workflow.conf"><code>scripts/verify-workflow.conf</code></a>. They protect the workflow, not your application, and run locally only when a workflow file changed. <code>./scripts/verify.sh --all</code> always runs them, and CI uses that.</li>
   </ul>
+  <p>Checks can have a group, such as <code>code</code> or <code>build</code>. <code>./scripts/verify.sh --only code</code> runs one group, for example while you work on a part, or in a CI job of its own. A partial run is never a verification: nothing is recorded as passed, and the review and the commit still run every check.</p>
+  <p>The template's own project checks include <code>docs-references</code>, which runs <code>./scripts/check-docs.sh</code>: in the tracked Markdown files, every relative link and every path in backticks that names a file of the repository must exist, so that the documentation does not point at a file that was renamed or removed. External links, anchors, paths with a placeholder, and files that Git ignores are not checked; the details are under "References in the documentation" in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md"><code>docs/development.md</code></a>. A project keeps the check in its <code>scripts/verify.conf</code> or removes it.</p>
   <p>A successful run is recorded for the exact content of the working tree that was checked, together with which checks ran. With <code>--reuse</code>, a later step skips the run only when that content is unchanged and the recorded run covered every check that is required now: a run that skipped the workflow tests does not count where they are required. Any change to the content means the checks run again.</p>
   <p>A review belongs to the content that was reviewed: a change to that content requires another review. New commits on the base branch alone do not make a review outdated.</p>
   <p>Separately, if the point where the feature branched off its base branch has changed, for example after you merged the base branch into the feature, any later review has to cover the complete feature and cannot be limited to the recent changes.</p>
   <p>The guidance on what makes a check worth having is in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/evaluation.md"><code>docs/evaluation.md</code></a>: checks that protect behavior matter more than the number of tests.</p>
+
+  <h2 id="records">What is recorded on your machine</h2>
+  <p>The workflow keeps a record of every run, so that you can see what a feature cost and learn from it (<a href="workflow.html#learning">learning from your runs</a>). The records stay on your machine:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>What</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>One file per run: how long each step took, the tokens each agent call used, the verifications, and what you did that a script saw</td><td><code>.agents/run/records/</code> in your main checkout, also for a feature in a worktree</td></tr>
+      <tr><td>The runs of a feature or a planning together, copied when the pull request is opened and before its worktree is removed</td><td><code>.agents/records/</code> in your main checkout</td></tr>
+      <tr><td>The notes of the implementer on a run, optional</td><td><code>.agents/experience/</code> in the feature worktree, kept in the record of the run once they are valid</td></tr>
+      <tr><td>The input, the result, and the report of an analysis</td><td><code>.agents/analysis/</code> in your main checkout</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li>Git ignores all of these: they are never committed, and a new clone or <code>git clean -fdx</code> does not keep them. Copy the directories when you want to keep them.</li>
+    <li>No prompt, no answer of an agent, and no transcript is recorded. Text that looks like a key or a token is replaced by <code>[redacted]</code> before it is written.</li>
+    <li>Nothing goes to GitHub, with one exception that you turn on yourself: <code>publish-feature.sh --summary</code> posts the totals of a feature on its Issue, as numbers only (time, runs, review rounds, tokens per role and model). It is off by default, because a repository is often public.</li>
+    <li>A record that cannot be written is reported, and the work goes on with its own outcome: a record never stops a feature.</li>
+  </ul>
 
   <h2 id="sync">Keeping a project up to date</h2>
   <p>A repository created from the template does not receive the template's later improvements. <code>./scripts/sync-template.sh</code> brings them over:</p>

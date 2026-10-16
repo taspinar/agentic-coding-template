@@ -94,8 +94,8 @@
     <tbody>
       <tr><td>Reusable skills registry</td><td>Selecting, versioning, and managing specialist agent skills per project and role</td><td><span class="tag proposed">Under consideration</span></td></tr>
       <tr><td>Dynamic model selection</td><td>Choosing an AI model by what a task needs and what it costs</td><td><span class="tag proposed">Under consideration</span> a model is already configured per role and can be set per run</td></tr>
-      <tr><td>Workflow improvement proposals</td><td>Suggested updates to tests, prompts, or skills, drawn from failures that recur</td><td><span class="tag proposed">Under consideration</span></td></tr>
-      <tr><td>Run analytics</td><td>Duration, retries, model usage, and cost of runs</td><td><span class="tag proposed">Under consideration</span> each run already keeps a log</td></tr>
+      <tr><td>Workflow improvement proposals</td><td>Suggested updates to tests, prompts, or skills, drawn from failures that recur</td><td><span class="tag partial">Partially available</span> <code>analyze-runs.sh</code> proposes improvements when you start it (<a href="workflow.html#learning">learning from your runs</a>); an analysis on a schedule is not built yet (<a href="https://github.com/taspinar/agentic-coding-template/issues/131">Issue 131</a>)</td></tr>
+      <tr><td>Run analytics</td><td>Duration, retries, model usage, and cost of runs</td><td><span class="tag partial">Partially available</span> every run records its duration, its retries, and the tokens per role and model, and <code>report-runs.sh</code> reports on them; a cost in money is not calculated</td></tr>
     </tbody>
   </table>
   </div>

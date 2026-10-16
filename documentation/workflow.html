@@ -377,6 +377,27 @@
     <dd>Your project's tests and linters are one list; the tests of the workflow scripts are another. See <a href="configuration.html#verification">project checks and workflow checks</a>.</dd>
   </dl>
 
+  <h2 id="learning">Learning from your runs</h2>
+  <p>Every run leaves a record of what it took, so that you can see where the time and the tokens go, and which problems keep coming back. The scripts and the agent adapter keep it; no agent estimates anything, and nothing leaves your machine unless you ask for it (<a href="configuration.html#records">what is recorded on your machine</a>).</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>What</th><th>How you see it</th><th>What it tells you</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Run records</strong>: per run the duration of every step, the tokens of every agent call per role and model, the verifications, and your approvals</td><td><code>./scripts/report-runs.sh &lt;issue&gt;</code>, several features side by side, a period, or <code>--split &lt;date&gt;</code> for before and after a change; <code>--json</code> for your own tools</td><td>What a feature cost, how many review and repair rounds it needed, and which steps take the longest</td></tr>
+      <tr><td><strong>Experience records</strong>: per run what happened, derived by a script from the reviews, the triage, the verifications, and why a run stopped; the implementer may add notes of its own</td><td><code>./scripts/show-experience.sh &lt;issue&gt;</code></td><td>The findings and stops of a feature, each with a reference to its evidence</td></tr>
+      <tr><td><strong>An analysis</strong> of several features by a read-only agent, the <code>analyst</code></td><td><code>./scripts/analyze-runs.sh &lt;issue&gt;...</code>, <code>--since &lt;date&gt;</code>, or <code>--last &lt;n&gt;</code></td><td>Recurring problems and what worked, with proposals in order of priority</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Some care is built in, so that the numbers do not mislead:</p>
+  <ul>
+    <li>Tokens an agent did not report are unknown, not zero: a total says "at least" when some are missing. A feature without any record is named, not counted as zero.</li>
+    <li>The elapsed time is the time something ran; the agent time is the sum of the agent calls, which is higher when work ran side by side.</li>
+    <li>A comparison names what differs between the features: the template version, the prompts, the configuration, and the models. It also says that a difference between totals or averages does not show its cause.</li>
+    <li>An analysis cites the runs and observations every conclusion rests on. One observation never becomes a rule, a finding needs at least two runs, and "not enough evidence" is a valid outcome. An observation that an earlier analysis already used is not counted again as new.</li>
+  </ul>
+  <p>An analysis changes nothing in your repository. Each proposal says where it belongs: a decision record, an agent instruction, a skill, the documentation, a check in a script, an issue, or the workflow template. A project cannot repair the workflow scripts itself, because it takes them over from the template; a proposal about them is an issue for the template. You decide what to do with a proposal, and it goes through the review that applies there. Records and analyses never stop a feature: a record that cannot be written is reported, and the work goes on.</p>
+
   <h2 id="steps">Every step in detail</h2>
   <h3>Stage 1 · Plan the project</h3>
   <div class="details" data-stage="Stage 1">
