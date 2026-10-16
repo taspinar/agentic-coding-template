@@ -768,6 +768,35 @@ run_feature "$repo" 2 thing
 expect_published "$repo"
 expect_sessions "$repo" 2 3 1 1
 
+# A repair of the verification after the fixes that fails once, after it
+# changed the content, is tried again as a repair: start-feature.sh does not
+# take the --continue of an interrupted fix session.
+repo="$(setup_repo fixes-break-repair-fails)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; printf "x\n" >broken.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+printf '%s\n' 'case "$count" in
+  1) eval "$default" ;;
+  2) printf "half repaired\n" >>feature.txt; exit 9 ;;
+  *) rm -f broken.txt; reply="Repaired." ;;
+esac' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 3 3 1 1
+if grep -Fq -- "--continue" "$repo.out"; then fail "a retried repair was given --continue"; fi
+log_of "$repo" | grep -Eq "repair of the verification, attempt 1 of 3 \| temporary" ||
+  fail "the failed repair after the fixes is not in the log of the feature"
+
+# A repair after the fixes that keeps failing stops the run, which names the
+# script that failed, not apply-triage.sh.
+repo="$(setup_repo fixes-break-repair-exhausted)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; printf "x\n" >broken.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; else printf "tried\n" >>feature.txt; exit 9; fi' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "the fixes for round 1 failed (start-feature.sh exited with status 9, also after the retries)"
+if grep -Fq -- "--continue" "$repo.out"; then fail "an exhausted repair was given --continue"; fi
+
 # A fixing agent that changed a file and then failed is continued with the
 # same triage and scope: apply-triage.sh would refuse a new session, because
 # the content changed since the review. No other agent takes over.

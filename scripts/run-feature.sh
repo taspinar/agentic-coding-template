@@ -179,6 +179,8 @@ retrying() {
   local log
 
   shift
+  # The script of the step, for a message that names what failed.
+  step_command="${1##*/}"
   while true; do
     echo
     echo "=== run-feature.sh: $title ==="
@@ -291,8 +293,14 @@ repair_verification() {
     printf '%s\n' "${twice:-(no check named; read the log)}" | sed 's/^/- FAIL /'
     [[ -z "$once" ]] || echo "Failed in one run only, so probably unstable and not yours to repair: $once"
   } >>"$worktree/.agents/handoffs/$issue.md"
+  # The repair is a session of the implementer, not the continuation of a
+  # fix session: the review of a fix step that is going on does not apply to
+  # it, and start-feature.sh takes no --continue.
+  local fix_review="${STEP_REVIEW:-}"
+  STEP_REVIEW=""
   retrying "repair of the verification, attempt $repairs of $MAX_REPAIRS" \
     ./scripts/start-feature.sh "$issue" --resume --unattended
+  STEP_REVIEW="$fix_review"
   case "$step_status" in
     0) ;;
     3) blocked_or_ignored "repair of the verification" ;;
@@ -638,7 +646,7 @@ if uncommitted; then
         "cd \"$worktree\"" \
         "git status    # look at what the session changed; restore the review and the triage, or review again"
     elif [[ "$step_status" -ne 0 ]]; then
-      stop 1 "the fixes for round $round failed (apply-triage.sh exited with status $step_status, also after the retries)." \
+      stop 1 "the fixes for round $round failed ($step_command exited with status $step_status, also after the retries)." \
         "resolve what the output above reports"
     fi
     if (cd "$worktree" && ./scripts/check-review.sh "$review" >/dev/null 2>&1); then
