@@ -362,7 +362,19 @@ if [[ -z "$worktree" ]]; then
   step_started="$(date +%s)"
   step_id="$(records_id)"
   records_step_start "$step_id" "implementation"
-  (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) || step_status=$?
+  # Status 75: reading the Issue failed for a moment, before a worktree
+  # existed. That is tried again, like any temporary failure.
+  first_attempt=0
+  first_wait="$RETRY_WAIT"
+  while true; do
+    step_status=0
+    (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) || step_status=$?
+    [[ "$step_status" -eq 75 && "$first_attempt" -lt "$RETRIES" ]] || break
+    first_attempt=$((first_attempt + 1))
+    note "implementation" "temporary" "start-feature.sh could not read the Issue (status 75)" "Retry $first_attempt of $RETRIES in $first_wait seconds"
+    sleep "$first_wait"
+    first_wait=$((first_wait * 2))
+  done
   records_step "implementation" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
   worktree="$(find_worktree)"
   first_session=1
