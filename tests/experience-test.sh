@@ -140,7 +140,7 @@ repo="$(setup_repo quiet)"
 in_run "$repo" 0 ':'
 jq -e '.none_relevant == true and (.observations | length) == 0' <<<"$(records "$repo")" >/dev/null ||
   fail "a run without observations does not say so"
-show "$repo" 12 | grep -Fq "No relevant observation was derived." || fail "the absence of observations is not shown"
+grep -Fq "No relevant observation was derived." <<<"$(show "$repo" 12)" || fail "the absence of observations is not shown"
 
 # The notes of the agent: facts, hypotheses, and proposals apart, kept when
 # valid; a correction is one; "none" is a valid answer.
@@ -229,7 +229,7 @@ jq -cn --arg run "$run" '{schema: "run-record/v1", run: $run, time: "2026-10-01T
   record: {schema: "experience/v1", run: $run, issue: 12, observations: [{kind: "fact", what: "Unproven"}]}}' >>"$file"
 json="$(show "$repo" 12 --json)"
 [[ "$(jq -c '[(.valid | length), (.invalid | length)]' <<<"$json")" == "[0,1]" ]] || fail "a damaged record was not reported as invalid: $json"
-show "$repo" 12 | grep -Fq "These are not a source for an analysis." || fail "the invalid record is not marked as such"
+grep -Fq "These are not a source for an analysis." <<<"$(show "$repo" 12)" || fail "the invalid record is not marked as such"
 
 # A run started from the primary checkout reads the artifacts of the feature
 # worktree, and the record names its commit and its content.
@@ -364,10 +364,10 @@ repo="$(setup_repo secrets)"
 in_run "$repo" 3 'records_note "implementation" "blocked" "the token ghp_abcdefghijklmnopqrstuvwxyz0123 expired" "stopped"
   records_gate "$PWD" partial "remaining: rotate sk-live1234567890abcdef"
   records_consolidate feature 12'
-if cat "$repo"/.agents/run/records/*.jsonl "$repo"/.agents/records/feature-12.jsonl | grep -Eq "ghp_abcdefghij|sk-live1234567890"; then
+if grep -Eq "ghp_abcdefghij|sk-live1234567890" "$repo"/.agents/run/records/*.jsonl "$repo"/.agents/records/feature-12.jsonl; then
   fail "a secret reached the run file or the copy"
 fi
-cat "$repo"/.agents/run/records/*.jsonl | grep -Fq "the token [redacted] expired" || fail "the note lost more than the secret"
+grep -Fq "the token [redacted] expired" "$repo"/.agents/run/records/*.jsonl || fail "the note lost more than the secret"
 
 # A failed verification of all checks is not repaired by a later pass of
 # some of them; a later pass of all checks repairs it.

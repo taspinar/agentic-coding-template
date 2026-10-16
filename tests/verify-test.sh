@@ -83,7 +83,7 @@ MOCK_RUFF_EXIT=1 expect_failure "$project" "failure before a later command must 
 # A required check whose tool is missing fails and names the check and tool.
 project="$(setup_project missing-tool "lint: ruff check ." "types: mypy .")"
 expect_failure "$project" "missing required tool must fail"
-grep -F "types" "$project/out.log" | grep -Fq "mypy" ||
+grep -Fq "mypy" <<<"$(grep -F "types" "$project/out.log")" ||
   fail "missing tool message did not name the check and tool"
 
 # A required check script that is not executable fails.

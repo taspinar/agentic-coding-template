@@ -57,7 +57,7 @@ expect() {
   if [[ "$expected" == "reported" ]]; then
     scope_unchanged "$before" "$after" 2>"$tmp/diff" && fail "not reported: $description"
     if [[ -n "${5:-}" ]]; then
-      grep -Ev '^(\+\+\+|---) ' "$tmp/diff" | grep -E '^[+-]' | grep -Fq -- "$5" || {
+      grep -Fq -- "$5" <<<"$(grep -Ev '^(\+\+\+|---) ' "$tmp/diff" | grep -E '^[+-]')" || {
         cat "$tmp/diff" >&2
         fail "the difference does not name $5: $description"
       }
