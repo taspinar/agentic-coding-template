@@ -113,6 +113,15 @@ case "${1:-} ${2:-}" in
   "auth status") ;;
   "issue view")
     [[ ! -e "$RUN_CONTROL/gh-fails" ]] || exit 1
+    # gh-title-flaky holds how many reads of the title fail on the connection.
+    if [[ "$*" == *"--json title"* && -s "$RUN_CONTROL/gh-title-flaky" ]]; then
+      left="$(cat "$RUN_CONTROL/gh-title-flaky")"
+      if [[ "$left" -gt 0 ]]; then
+        echo $((left - 1)) >"$RUN_CONTROL/gh-title-flaky"
+        echo "net/http: TLS handshake timeout" >&2
+        exit 1
+      fi
+    fi
     case "$*" in
       *"--json number"*) echo "$3" ;;
       *"--json title"*) echo "F02 — Feature file" ;;
@@ -177,7 +186,7 @@ run_feature() {
   (
     cd "$repo"
     PATH="$tmp/bin:/usr/bin:/bin" RUN_CONTROL="$repo.control" RUN_ISSUE="${1:-}" GIT_EDITOR=false \
-      RUN_FEATURE_RETRY_WAIT=0 \
+      RUN_FEATURE_RETRY_WAIT=0 START_FEATURE_GH_WAIT=0 \
       ./scripts/run-feature.sh "$@" </dev/null
   ) >"$repo.out" 2>&1 || status=$?
 }
@@ -583,6 +592,17 @@ for note in "" "**Open questions:** none blocking."; do
   expect_sessions "$repo" 1 1 0 0
   log_of "$repo" | grep -Fq "holds no open question" || fail "the ignored BLOCKED line is not in the log of the feature"
 done
+
+# Reading the Issue fails on the connection before a worktree exists, more
+# often than start-feature.sh tries: the run tries the start again, and goes
+# on.
+repo="$(setup_repo issue-flaky)"
+printf '4\n' >"$repo.control/gh-title-flaky"
+run_feature "$repo" 2
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "issue-flaky: the run failed with status $status"; }
+git -C "$repo" ls-remote --exit-code --heads origin feature/2-feature-file >/dev/null 2>&1 ||
+  fail "issue-flaky: the feature was not published"
+grep -Fq "start-feature.sh could not read the Issue (status 75)" "$repo.out" || fail "the retried start is not reported"
 
 # A session that fails once, for example on a usage limit, is tried again by
 # the run itself: the implementer is resumed, a reviewer is started again.

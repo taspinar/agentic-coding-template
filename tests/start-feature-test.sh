@@ -28,6 +28,24 @@ cat >"$tmp/bin/gh" <<'GH'
 set -euo pipefail
 if [[ "${1:-} ${2:-}" == "issue view" ]]; then
   [[ -z "${MOCK_GH_FAIL:-}" ]] || exit 1
+  if [[ -n "${MOCK_GH_NOT_FOUND:-}" ]]; then
+    echo "GraphQL: Could not resolve to an issue or pull request with the number of 5. (repository.issue)" >&2
+    exit 1
+  fi
+  if [[ -n "${MOCK_GH_REFUSED:-}" ]]; then
+    echo x >>"$MOCK_AGENT_LOG.gh-refused"
+    echo "GraphQL: Resource not accessible by integration (repository.issue)" >&2
+    exit 1
+  fi
+  # MOCK_GH_FLAKY=<n>: the first n calls fail on the connection.
+  if [[ -n "${MOCK_GH_FLAKY:-}" ]]; then
+    calls="$(cat "$MOCK_AGENT_LOG.gh-calls" 2>/dev/null || echo 0)"
+    echo $((calls + 1)) >"$MOCK_AGENT_LOG.gh-calls"
+    if [[ "$calls" -lt "$MOCK_GH_FLAKY" ]]; then
+      echo "Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout" >&2
+      exit 1
+    fi
+  fi
   printf '%s\n' "${MOCK_ISSUE_TITLE:-F01 — Published site skeleton with the full verification pipeline}"
   exit 0
 fi
@@ -63,7 +81,7 @@ run_start() {
   shift
   (
     cd "$repo"
-    PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo.log" ./scripts/start-feature.sh "$@" </dev/null
+    PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo.log" START_FEATURE_GH_WAIT=0 ./scripts/start-feature.sh "$@" </dev/null
   ) >"$repo.out" 2>&1
 }
 
@@ -257,6 +275,14 @@ grep -Fq "nothing to resume" "$repo.out" || fail "the missing worktree was not r
 if compgen -G "$tmp/nothing-to-resume-11-*" >/dev/null; then fail "resuming created a worktree"; fi
 if run_start "$repo" 11 thing --resume; then fail "--resume with a slug was accepted"; fi
 
+# A connection that fails once while the Issue is read is tried again, and
+# the feature starts.
+repo="$(setup_repo flaky-gh)"
+MOCK_GH_FLAKY=1 run_start "$repo" 5 || { cat "$repo.out" >&2; fail "a start with a connection that failed once failed"; }
+[[ "$(cat "$repo.log.gh-calls")" -eq 2 ]] || fail "the Issue was not read again after the failed connection"
+grep -Fq "trying again" "$repo.out" || fail "the retry was not said"
+compgen -G "$tmp/flaky-gh-5-*" >/dev/null || fail "no worktree after a connection that failed once"
+
 # Modified tracked files, an unreadable Issue title, and an unsafe slug fail
 # before a worktree is created.
 repo="$(setup_repo refused)"
@@ -264,6 +290,28 @@ printf 'changed\n' >>"$repo/README.md"
 if run_start "$repo" 5 thing; then fail "a checkout with modified tracked files was accepted"; fi
 git -C "$repo" checkout -q -- README.md
 if MOCK_GH_FAIL=1 run_start "$repo" 5; then fail "an unreadable Issue title was accepted"; fi
+# An Issue that does not exist stops at once, with its reason; a connection
+# that keeps failing is tried three times and ends with status 75, which
+# run-feature.sh tries again.
+status=0
+MOCK_GH_NOT_FOUND=1 run_start "$repo" 5 || status=$?
+[[ "$status" -eq 1 ]] || fail "an Issue that does not exist ended with $status"
+grep -Fq "Could not resolve to an issue" "$repo.out" || fail "the reason of a missing Issue was not shown"
+if grep -Fq "trying again" "$repo.out"; then fail "a missing Issue was tried again"; fi
+# A refusal that is no known failure of the connection stops at once too.
+status=0
+rm -f "$repo.log.gh-refused"
+MOCK_GH_REFUSED=1 run_start "$repo" 5 || status=$?
+[[ "$status" -eq 1 ]] || fail "a refused read of the Issue ended with $status"
+[[ "$(wc -l <"$repo.log.gh-refused" | tr -d ' ')" -eq 1 ]] || fail "a refused read of the Issue was tried again"
+grep -Fq "Resource not accessible by integration" "$repo.out" || fail "the reason of the refusal was not shown"
+status=0
+rm -f "$repo.log.gh-calls"
+MOCK_GH_FLAKY=9 run_start "$repo" 5 || status=$?
+[[ "$status" -eq 75 ]] || fail "a connection that keeps failing ended with $status, not 75"
+[[ "$(cat "$repo.log.gh-calls")" -eq 3 ]] || fail "a connection that keeps failing was not tried three times"
+grep -Fq "TLS handshake timeout" "$repo.out" || fail "the reason of the failing connection was not shown"
+rm -f "$repo.log.gh-calls"
 if run_start "$repo" 5 "../escape"; then fail "an unsafe slug was accepted"; fi
 if run_start "$repo" five; then fail "a non-numeric issue was accepted"; fi
 if compgen -G "$tmp/refused-5-*" >/dev/null; then fail "a refused start created a worktree"; fi

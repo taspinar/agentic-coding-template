@@ -241,8 +241,32 @@ if [[ -z "$slug" ]]; then
   # Derive the slug from the Issue title: without a leading feature ID, in
   # lowercase, as at most four words joined by hyphens.
   command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is needed to derive the slug; pass a slug instead."
-  issue_title="$(gh issue view "$issue" --json title --jq '.title' </dev/null)" ||
-    agent_fail "could not read the title of Issue #$issue; pass a slug instead."
+  # Only a connection or a service that fails for a moment is tried again:
+  # a timeout, a reset or refused connection, a host that cannot be resolved,
+  # or a server error. Anything else, such as an Issue that does not exist or
+  # a refusal, stops at once with its reason. A failure that stays temporary
+  # ends with status 75, which run-feature.sh tries again too.
+  gh_wait="${START_FEATURE_GH_WAIT:-5}"
+  gh_attempt=1
+  gh_errors="$(mktemp "${TMPDIR:-/tmp}/start-feature-gh.XXXXXX")" || agent_fail "could not create a temporary file."
+  trap 'rm -f "$gh_errors"' EXIT
+  while ! issue_title="$(gh issue view "$issue" --json title --jq '.title' </dev/null 2>"$gh_errors")"; do
+    gh_error="$(tail -n 3 "$gh_errors" 2>/dev/null || true)"
+    if ! printf '%s\n' "$gh_error" |
+      grep -Eiq 'timeout|timed out|connection (reset|refused)|could not resolve host|no such host|network is unreachable|temporary failure|EOF|HTTP 5[0-9][0-9]|50[234] |service unavailable|bad gateway'; then
+      agent_fail "could not read the title of Issue #$issue: ${gh_error:-gh failed without a message}. Pass a slug instead."
+    fi
+    if [[ "$gh_attempt" -ge 3 ]]; then
+      echo "Error: could not read the title of Issue #$issue after $gh_attempt attempts: $gh_error. Try again later, or pass a slug." >&2
+      exit 75
+    fi
+    echo "Reading Issue #$issue failed ($gh_error); trying again in $gh_wait seconds." >&2
+    sleep "$gh_wait"
+    gh_wait=$((gh_wait * 2))
+    gh_attempt=$((gh_attempt + 1))
+  done
+  rm -f "$gh_errors"
+  trap - EXIT
   slug="$(printf '%s' "$issue_title" |
     sed -E 's/^[[:space:]]*F[0-9]+[^[:alnum:]]*//' |
     tr '[:upper:]' '[:lower:]' |

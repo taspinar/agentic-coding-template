@@ -570,7 +570,13 @@ The full interface is:
 
 The slug names the branch and the worktree. Without one, the script derives it
 from the Issue title: the title without its feature ID, in lowercase, as at
-most four words joined by hyphens. The script fetches the selected remote base,
+most four words joined by hyphens. Reading the title is tried three times when
+the connection or the service fails for a moment (a timeout, a reset or
+refused connection, a host that cannot be resolved, a server error); any other
+failure, such as an Issue that does not exist or a refusal, stops at once with
+its reason. A connection that keeps failing ends with
+status 75, which `run-feature.sh` tries again like any temporary failure. The
+script fetches the selected remote base,
 creates `feature/<issue>-<slug>` in a sibling worktree, and starts the agent
 of role `implementer` inside that worktree. Untracked files in the checkout do
 not matter; modified tracked files do, because they would not be part of the
