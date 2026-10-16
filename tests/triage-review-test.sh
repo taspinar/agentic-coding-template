@@ -400,7 +400,7 @@ if grep -Fq "unattended" "$artifact.md"; then fail "the report of an attended tr
 jq '.unattended = false' "$artifact.json" >"$tmp/not-unattended.json"
 (
   source "$source_root/scripts/lib/review-data.sh"
-  triage_artifact_errors "$tmp/not-unattended.json" "$repo/$review" | grep -Fq "unattended must be true or absent"
+  grep -Fq "unattended must be true or absent" <<<"$(triage_artifact_errors "$tmp/not-unattended.json" "$repo/$review")"
 ) || fail "a triage with 'unattended: false' was accepted"
 
 echo "triage-review tests passed"

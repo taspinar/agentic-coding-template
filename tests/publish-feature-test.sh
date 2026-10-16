@@ -347,7 +347,7 @@ grep -Fqx "Closes #12" "$repo.gh.body" || fail "a complete feature does not clos
 # Without manual steps the description says so.
 repo="$(setup_repo no-steps)"
 run_publish "$repo" 12 || fail "publishing a feature without manual steps failed"
-grep -A2 -Fx "## Manual steps" "$repo.gh.body" | grep -Fqx "None." ||
+grep -Fqx "None." <<<"$(grep -A2 -Fx "## Manual steps" "$repo.gh.body")" ||
   fail "the description does not say that there are no manual steps"
 
 # With --wait a failing check fails the run and tells the user not to merge.

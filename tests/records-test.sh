@@ -93,7 +93,7 @@ in_repo "$repo" 'records_begin feature 12 run-feature.sh; records_begin feature 
 [[ "$(ls "$repo/.agents/run/records" | grep -c .)" -eq 3 ]] || fail "a command inside a run started a run of its own"
 # Outside a run nothing is written.
 in_repo "$repo" 'records_step outside 0 1; records_intervention outside'
-if lines "$repo" | grep -q '"outside"'; then fail "an event outside a run was written"; fi
+if grep -q '"outside"' <<<"$(lines "$repo")"; then fail "an event outside a run was written"; fi
 
 # A planning cycle is recorded like a feature, by its name.
 in_repo "$repo" 'records_begin planning final-curriculum review-planning.sh; records_end 0'
@@ -226,7 +226,7 @@ lines "$repo" | jq -e -s 'any(.type == "intervention" and .what == "saw: fail tw
 rm -rf "$repo/.agents/run/records"
 (cd "$repo" && unset RECORDS_RUN_ID && exec ./scripts/sample.sh sleep) &
 runner=$!
-for _ in $(seq 1 50); do lines "$repo" | grep -q '"intervention"' && break; sleep 0.1; done
+for _ in $(seq 1 50); do grep -q '"intervention"' <<<"$(lines "$repo")" && break; sleep 0.1; done
 # A background job ignores SIGINT, so the test interrupts with SIGTERM, which
 # the run treats the same.
 pkill -TERM -f "scripts/sample.sh sleep" 2>/dev/null || true
@@ -235,7 +235,7 @@ wait "$runner" 2>/dev/null || true
 rm -rf "$repo/.agents/run/records"
 (cd "$repo" && unset RECORDS_RUN_ID && exec ./scripts/sample.sh sleep) &
 runner=$!
-for _ in $(seq 1 50); do lines "$repo" | grep -q '"intervention"' && break; sleep 0.1; done
+for _ in $(seq 1 50); do grep -q '"intervention"' <<<"$(lines "$repo")" && break; sleep 0.1; done
 kill -KILL "$runner" 2>/dev/null || true
 pkill -KILL -f "scripts/sample.sh sleep" 2>/dev/null || true
 wait "$runner" 2>/dev/null || true
@@ -359,7 +359,7 @@ in_repo "$repo" 'records_begin feature 12 start-feature.sh
 call="$(lines "$repo" | jq -c 'select(.type == "agent-call" and .agent == "claude")')"
 [[ "$(jq -r '.role, .profile, .agent, .model, .status, (.seconds | type), .usage.source' <<<"$call" | tr '\n' ' ')" == "implementer unattended claude model-i 0 number unavailable " ]] ||
   fail "the agent call is not recorded as expected: $call"
-if lines "$repo" | grep -Eq "PROMPT-SECRET-TEXT|ANSWER-TEXT"; then fail "a prompt or an answer reached the record"; fi
+if grep -Eq "PROMPT-SECRET-TEXT|ANSWER-TEXT" <<<"$(lines "$repo")"; then fail "a prompt or an answer reached the record"; fi
 
 # Usage that some turns of a call did not report: the field is null, never an
 # incomplete sum, and what the other turns reported is kept under "partial".
@@ -439,7 +439,7 @@ printf 'marker: true\nnested: ./scripts/sample-nested.sh\n' >"$repo/scripts/veri
 printf '#!/usr/bin/env bash\nsource "$(dirname "$0")/lib/records.sh"\nrecords_intervention "from inside a check"\n' >"$repo/scripts/sample-nested.sh"
 chmod +x "$repo/scripts/sample-nested.sh"
 in_repo "$repo" 'records_begin feature 15 review-feature.sh; ./scripts/verify.sh >/dev/null; records_end 0'
-if lines "$repo" | grep -q "from inside a check"; then fail "a check wrote into the run of the verification"; fi
+if grep -q "from inside a check" <<<"$(lines "$repo")"; then fail "a check wrote into the run of the verification"; fi
 printf 'marker: true\n' >"$repo/scripts/verify.conf"
 # When its recording cannot be prepared, the verification runs all the same.
 mkdir -p "$tmp/no-mktemp"

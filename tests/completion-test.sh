@@ -44,7 +44,7 @@ expect_errors() {
     return 0
   fi
   for expected in "$@"; do
-    printf '%s\n' "$errors" | grep -Fqx "$expected" || fail "$description: missing error '$expected' in: $errors"
+    grep -Fqx "$expected" <<<"$(printf '%s\n' "$errors")" || fail "$description: missing error '$expected' in: $errors"
   done
 }
 
@@ -119,7 +119,7 @@ expect_gate() {
     fail "$description: the gate says '$(printf '%s\n' "$gate" | sed -n 1p)' instead of '$expected'"
   shift 2
   for fragment in "$@"; do
-    printf '%s\n' "$gate" | sed 1d | grep -Fq "$fragment" || fail "$description: the reasons lack '$fragment': $gate"
+    grep -Fq "$fragment" <<<"$(printf '%s\n' "$gate" | sed 1d)" || fail "$description: the reasons lack '$fragment': $gate"
   done
 }
 
@@ -160,7 +160,7 @@ printf '%s\n' "$partial" >"$record"
 # so text taken over into a pull request that may not close the Issue is
 # rewritten, and a commit that carries one is found.
 closes() {
-  printf '%s\n' "$1" | grep -Eiq "$(completion_closing_pattern 12)"
+  grep -Eiq "$(completion_closing_pattern 12)" <<<"$(printf '%s\n' "$1")"
 }
 for closing in "Closes #12" "closes #12." "CLOSED #12" "Fix #12" "fixes: #12" "This fixed #12, see below" \
   "resolve #12" "Resolves owner/repo#12" "resolved https://github.com/owner/repo/issues/12" "(closes #12)"; do

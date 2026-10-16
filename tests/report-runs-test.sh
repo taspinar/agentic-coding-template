@@ -76,7 +76,7 @@ json="$(report "$repo" 12 --json)"
 [[ "$(jq -c '.subjects[0].runs | [.completed, .failed, .blocked, .incomplete]' <<<"$json")" == "[1,1,1,1]" ]] ||
   fail "the outcome of the runs is wrong: $(jq -c '.subjects[0].runs' <<<"$json")"
 [[ "$(jq '.subjects[0].elapsed.runs_without_end' <<<"$json")" -eq 1 ]] || fail "a run without an end is not named"
-report "$repo" 12 | grep -Fq "higher than the elapsed time when work ran side by side" ||
+grep -Fq "higher than the elapsed time when work ran side by side" <<<"$(report "$repo" 12)" ||
   fail "the Markdown does not tell agent time from elapsed time"
 
 # A run is counted once: from its own file while it exists, from the copy of
