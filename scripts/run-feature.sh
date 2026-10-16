@@ -177,6 +177,7 @@ retrying() {
   local attempt=0
   local wait="$RETRY_WAIT"
   local log
+  local limit
 
   shift
   # The script of the step, for a message that names what failed.
@@ -202,18 +203,21 @@ retrying() {
         return 0
         ;;
     esac
+    # A usage limit that an agent reported is the reason, not a defect.
+    limit="$(grep -m 1 -o "This is a usage limit of [a-z]*" "$log" 2>/dev/null || true)"
+    limit="${limit:+; ${limit#This is }, reported by the agent}"
     if [[ "$attempt" -ge "$RETRIES" ]]; then
-      note "$title" "failed" "the step exited with status $step_status, also after $attempt retries" "Stopping"
+      note "$title" "failed" "the step exited with status $step_status, also after $attempt retries$limit" "Stopping"
       return 0
     fi
     attempt=$((attempt + 1))
     if [[ -n "${STEP_REVIEW:-}" ]] && ! (cd "$worktree" && ./scripts/check-review.sh "$STEP_REVIEW" >/dev/null 2>&1); then
-      note "$title" "temporary" "the step exited with status $step_status after it had changed the content" "Continuing the interrupted session with the same scope, retry $attempt of $RETRIES in $wait seconds"
+      note "$title" "temporary" "the step exited with status $step_status after it had changed the content$limit" "Continuing the interrupted session with the same scope, retry $attempt of $RETRIES in $wait seconds"
       STEP_REVIEW=""
       title="$title, continued"
       set -- "$@" --continue
     else
-      note "$title" "temporary" "the step exited with status $step_status" "Retry $attempt of $RETRIES in $wait seconds"
+      note "$title" "temporary" "the step exited with status $step_status$limit" "Retry $attempt of $RETRIES in $wait seconds"
     fi
     wait_id="$(records_id)"
     wait_started="$(date +%s)"
@@ -366,15 +370,19 @@ if [[ -z "$worktree" ]]; then
   # existed. That is tried again, like any temporary failure.
   first_attempt=0
   first_wait="$RETRY_WAIT"
+  first_log="$(mktemp "${TMPDIR:-/tmp}/run-feature-first.XXXXXX")"
   while true; do
     step_status=0
-    (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) || step_status=$?
+    (cd "$repo_root" && ./scripts/start-feature.sh "${arguments[@]}" --unattended </dev/null) 2>&1 | tee "$first_log" || step_status=$?
     [[ "$step_status" -eq 75 && "$first_attempt" -lt "$RETRIES" ]] || break
     first_attempt=$((first_attempt + 1))
     note "implementation" "temporary" "start-feature.sh could not read the Issue (status 75)" "Retry $first_attempt of $RETRIES in $first_wait seconds"
     sleep "$first_wait"
     first_wait=$((first_wait * 2))
   done
+  limit="$(grep -m 1 -o "This is a usage limit of [a-z]*" "$first_log" 2>/dev/null || true)"
+  limit="${limit:+; ${limit#This is }, reported by the agent}"
+  rm -f "$first_log"
   records_step "implementation" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
   worktree="$(find_worktree)"
   first_session=1
@@ -387,11 +395,11 @@ if [[ -z "$worktree" ]]; then
     note "implementation" "completed" "the implementer ended with BLOCKED, but the handoff note holds no open question" "Going on"
   elif [[ "$step_status" -ne 0 ]]; then
     [[ -n "$worktree" ]] ||
-      stop 1 "the implementation failed before a worktree existed (start-feature.sh exited with status $step_status)." \
+      stop 1 "the implementation failed before a worktree existed (start-feature.sh exited with status $step_status$limit)." \
         "resolve what the output above reports"
     # The session failed, for example on a usage limit: the resumed session
     # below is tried again, with a growing wait.
-    note "implementation" "temporary" "start-feature.sh exited with status $step_status" "Resuming the implementer"
+    note "implementation" "temporary" "start-feature.sh exited with status $step_status$limit" "Resuming the implementer"
     first_session=0
   fi
 else
