@@ -1013,6 +1013,23 @@ therefore turns such a keyword in the text it takes over into `Refs`, and it
 refuses to publish, before pushing, while a commit of the branch carries one:
 reword that commit, or complete the feature.
 
+**Bringing a finished feature up to date with its base.** When the base
+branch moved on after `finish-feature.sh`, for example because a conflict has
+to be resolved, merge the base into the feature branch and publish again:
+
+```bash
+git merge origin/main
+./scripts/publish-feature.sh 12
+```
+
+The script takes the statement, the description, and the title from the
+commit that `finish-feature.sh` made: merge commits of the base after it are
+passed over, since they change nothing of the feature itself. Any other
+commit after the finish has no statement, and the pull request becomes a
+draft until the feature is finished again. Run `./scripts/verify.sh --all`
+after the merge; a review that was done before it covered the feature, not
+the merge.
+
 The script ends once the pull request is open and prints its address. Follow
 the checks there and merge after they passed. Local verification during a
 feature never runs on a clean checkout, and may run on another operating

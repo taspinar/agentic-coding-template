@@ -479,4 +479,66 @@ grep -Fq "the run summary could not be posted on Issue #12; the pull request is 
   fail "a failed run summary was not reported"
 grep -Fq "pr create" "$repo.gh" || fail "the pull request was not opened when the summary failed"
 
+# A finished feature that merged its base afterwards, to bring it up to date,
+# is still described by its finish commit: it closes the Issue, with the title
+# of the feature. Any other commit after the finish has no statement.
+repo="$(setup_repo base-merged)"
+git -C "$repo" checkout -q main
+printf 'meanwhile\n' >"$repo/other.txt"
+git -C "$repo" add other.txt
+git -C "$repo" commit -qm "Meanwhile on main"
+git -C "$repo" push -q origin main
+git -C "$repo" checkout -q feature/12-marker
+git -C "$repo" merge -q --no-ff --no-edit origin/main
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing after a merge of the base failed"; }
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "a feature that merged its base after the finish does not close the Issue"
+grep -Fq "pr create --head feature/12-marker --title Add the marker" "$repo.gh" || fail "the title is not that of the finish commit"
+if grep -Fq -- "--draft" "$repo.gh"; then fail "a feature that merged its base was opened as a draft"; fi
+# Two merges of the base in a row are passed over too.
+repo="$(setup_repo base-merged-twice)"
+for n in 1 2; do
+  git -C "$repo" checkout -q main
+  printf 'meanwhile %s\n' "$n" >"$repo/other-$n.txt"
+  git -C "$repo" add "other-$n.txt"
+  git -C "$repo" commit -qm "Meanwhile $n"
+  git -C "$repo" push -q origin main
+  git -C "$repo" checkout -q feature/12-marker
+  git -C "$repo" merge -q --no-ff --no-edit origin/main
+done
+run_publish "$repo" 12 || fail "publishing after two merges of the base failed"
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "two merges of the base hid the finish commit"
+# A merge of a local base that is ahead of its remote counts as a merge of
+# the base too.
+repo="$(setup_repo local-base-merged)"
+git -C "$repo" checkout -q main
+printf 'local only\n' >"$repo/local.txt"
+git -C "$repo" add local.txt
+git -C "$repo" commit -qm "Only on the local main"
+git -C "$repo" checkout -q feature/12-marker
+git -C "$repo" merge -q --no-ff --no-edit main
+run_publish "$repo" 12 || fail "publishing after a merge of the local base failed"
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "a merge of the local base hid the finish commit"
+# A merge that brings in another branch with the base needs a new finish.
+repo="$(setup_repo octopus)"
+git -C "$repo" checkout -q main
+printf 'meanwhile\n' >"$repo/other.txt"
+git -C "$repo" add other.txt
+git -C "$repo" commit -qm "Meanwhile on main"
+git -C "$repo" push -q origin main
+git -C "$repo" checkout -q -b other feature/12-marker~1
+printf 'unfinished\n' >"$repo/unfinished.txt"
+git -C "$repo" add unfinished.txt
+git -C "$repo" commit -qm "Unfinished work"
+git -C "$repo" checkout -q feature/12-marker
+git -C "$repo" merge -q --no-ff --no-edit origin/main other
+run_publish "$repo" 12 || fail "publishing after an octopus merge failed"
+if grep -Fqx "Closes #12" "$repo.gh.body"; then fail "a merge that brought in another branch closes the Issue"; fi
+# A commit of the feature after the finish needs a new finish.
+repo="$(setup_repo changed-after-finish)"
+printf 'more\n' >>"$repo/feature.txt"
+git -C "$repo" commit -qam "Change the marker by hand"
+run_publish "$repo" 12 || fail "publishing a commit after the finish failed"
+if grep -Fqx "Closes #12" "$repo.gh.body"; then fail "a commit after the finish closes the Issue"; fi
+grep -Fq -- "--draft" "$repo.gh" || fail "a commit after the finish was not opened as a draft"
+
 echo "publish-feature tests passed"
