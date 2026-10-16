@@ -9,9 +9,10 @@ usage() {
   echo "Usage: $0 <issue-number> [--wait] [--summary]"
   echo
   echo "Run in the feature worktree after finish-feature.sh. Pushes the branch and"
-  echo "opens the pull request. The description is the latest commit message and"
-  echo "the manual steps; an open pull request gets it again, replacing its"
-  echo "description. It never merges."
+  echo "opens the pull request. The description is the message of the commit that"
+  echo "finish-feature.sh made, also after the base branch was merged into the"
+  echo "feature to bring it up to date, and the manual steps; an open pull request"
+  echo "gets it again, replacing its description. It never merges."
   echo
   echo "The pull request closes the Issue only when the feature is complete: the"
   echo "commit carries 'Completion: complete' of finish-feature.sh and the"
@@ -75,11 +76,50 @@ if [[ -f "$manual_file" ]] && grep -q '[^[:space:]]' "$manual_file"; then
   manual_steps="$(grep '[^[:space:]]' "$manual_file")"
 fi
 
+# The base branch of the feature, as start-feature.sh recorded it.
+feature_base="$(git -C "$root" config --get "branch.$branch.workflow-base" || true)"
+feature_base="${feature_base:-main}"
+base_ref=""
+for candidate in "origin/$feature_base" "$feature_base"; do
+  if git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+    base_ref="$candidate"
+    break
+  fi
+done
+
+# The commit that finish-feature.sh made. Bringing a finished feature up to
+# date with its base merges the base into the branch; such merge commits
+# change nothing of the feature itself and come after the finish commit, so
+# the statement, the description, and the title are taken from the commit
+# before them. Any other commit after the finish needs a new finish.
+# in_base <commit>: whether the commit is in the base, local or on the remote,
+# whichever is ahead.
+in_base() {
+  local candidate
+
+  for candidate in "origin/$feature_base" "$feature_base"; do
+    git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null || continue
+    git -C "$root" merge-base --is-ancestor "$1" "$candidate" 2>/dev/null && return 0
+  done
+  return 1
+}
+# A merge of the base has exactly two parents: the feature, and a commit of
+# the base. A merge with more parents brings in something else too.
+finish_commit="$(git -C "$root" rev-parse HEAD)"
+while second_parent="$(git -C "$root" rev-parse --verify --quiet "$finish_commit^2" 2>/dev/null)" &&
+  ! git -C "$root" rev-parse --verify --quiet "$finish_commit^3" >/dev/null 2>&1 &&
+  in_base "$second_parent"; do
+  finish_commit="$(git -C "$root" rev-parse "$finish_commit^1")"
+done
+if [[ "$finish_commit" != "$(git -C "$root" rev-parse HEAD)" ]]; then
+  echo "The branch merged its base after the feature was finished; the pull request is described by the finish commit $(git -C "$root" rev-parse --short "$finish_commit")."
+fi
+
 # Whether this pull request may close the Issue. finish-feature.sh recorded
 # the outcome of the completion gate in the commit; the gate is asked again
 # here, because the pull request is what closes the Issue on a merge. A
 # commit without the statement, for example one made by hand, closes nothing.
-committed_completion="$(git -C "$root" log -1 --format=%b | sed -n 's/^Completion: //p' | sed -n 1p)"
+committed_completion="$(git -C "$root" log -1 --format=%b "$finish_commit" | sed -n 's/^Completion: //p' | sed -n 1p)"
 gate="$(completion_gate "$root" "$issue")"
 gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
 closes=0
@@ -98,15 +138,8 @@ fi
 # Issue is therefore not published while a commit of the branch carries a
 # closing keyword for it: nothing here can take that back after a merge.
 if [[ "$closes" -eq 0 ]]; then
-  feature_base="$(git -C "$root" config --get "branch.$branch.workflow-base" || true)"
-  feature_base="${feature_base:-main}"
   commit_range="HEAD -1"
-  for candidate in "origin/$feature_base" "$feature_base"; do
-    if git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
-      commit_range="$candidate..HEAD"
-      break
-    fi
-  done
+  [[ -z "$base_ref" ]] || commit_range="$base_ref..HEAD"
   # shellcheck disable=SC2086
   closing_commits="$(git -C "$root" log --format='%h%x09%s%x09%B%x00' $commit_range |
     tr '\n' ' ' | tr '\0' '\n' | sed 's/^ *//' |
@@ -127,7 +160,7 @@ echo
 url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')" ||
   fail "could not ask GitHub for the pull request of $branch."
 
-# The description is generated from the latest commit and the current manual
+# The description is generated from the finish commit and the current manual
 # steps, also for a pull request that is already open: a fix round can change
 # both.
 body="$(mktemp "${TMPDIR:-/tmp}/publish-feature-body.XXXXXX")"
@@ -142,7 +175,7 @@ closing_allowed() {
   fi
 }
 {
-  git -C "$root" log -1 --format=%b | closing_allowed
+  git -C "$root" log -1 --format=%b "$finish_commit" | closing_allowed
   echo
   echo "## Manual steps"
   echo
@@ -150,8 +183,8 @@ closing_allowed() {
   echo
   # The decision of the merge approval gate was made for this commit; a
   # later commit on the branch needs a new decision by finish-feature.sh.
-  if git -C "$root" log -1 --format=%b | grep -Fqx "Merge approval:"; then
-    echo "The merge approval above was decided for commit \`$(git -C "$root" rev-parse HEAD)\`."
+  if git -C "$root" log -1 --format=%b "$finish_commit" | grep -Fqx "Merge approval:"; then
+    echo "The merge approval above was decided for commit \`$finish_commit\`."
     echo
   fi
   if [[ "$closes" -eq 1 ]]; then
@@ -167,7 +200,7 @@ if [[ -n "$url" ]]; then
   echo "Pull request already open: $url"
   gh pr edit "$url" --body-file "$body" >/dev/null ||
     fail "could not update the description of $url. The branch is pushed."
-  echo "Updated its description from the latest commit."
+  echo "Updated its description from the finish commit."
   is_draft="$(gh pr view "$url" --json isDraft --jq '.isDraft' 2>/dev/null)" || is_draft=""
   if [[ "$closes" -eq 1 && "$is_draft" == "true" ]]; then
     # Opened as a draft for partial work that is complete now.
@@ -187,7 +220,7 @@ if [[ -n "$url" ]]; then
 else
   create_options=()
   [[ "$closes" -eq 1 ]] || create_options=(--draft)
-  url="$(gh pr create --head "$branch" --title "$(git -C "$root" log -1 --format=%s)" --body-file "$body" ${create_options[@]+"${create_options[@]}"})" ||
+  url="$(gh pr create --head "$branch" --title "$(git -C "$root" log -1 --format=%s "$finish_commit")" --body-file "$body" ${create_options[@]+"${create_options[@]}"})" ||
     fail "could not open the pull request. The branch is pushed; open it by hand, with 'Closes #$issue' in its description only when the feature is complete."
   url="$(printf '%s\n' "$url" | tail -n 1)"
   if [[ "$closes" -eq 1 ]]; then
