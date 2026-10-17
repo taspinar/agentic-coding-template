@@ -369,6 +369,12 @@
     <dd>The implementer keeps a handoff note with what is done and what remains, so the work continues without the earlier conversation: <code>start-feature.sh &lt;issue&gt; --resume</code>, or <code>run-feature.sh &lt;issue&gt;</code> again. An unattended run retries a temporary failure itself. When an agent needs a decision from you, it stops and leaves its question in the note.</dd>
     <dt>Results are no longer current</dt>
     <dd>A verification result belongs to the exact content that was checked: change the code and the checks run again. A review belongs to the content that was reviewed: when that changes, the scripts ask for a new review. If the base branch was merged into the feature in the meantime, a later review has to cover the complete feature, not only the recent changes. The approval of the plan lapses in the same way when the requirements or the roadmap change. See <a href="configuration.html#verification">project checks and workflow checks</a> for the details.</dd>
+    <dt>An agent hits a usage limit</dt>
+    <dd>When the provider of an agent refuses a session because a usage or rate limit is reached, the script shows the provider's own message and says that it is a usage limit, not a defect: run the step again after the time the provider names. An unattended run retries the step and writes the limit into its log, so you can see afterward why it stopped.</dd>
+    <dt>The network fails while a feature starts</dt>
+    <dd>Reading the issue is tried again when the connection or GitHub fails for a moment; an issue that does not exist, or a refusal, stops at once with its reason. An unattended run tries the start again, like any other temporary failure.</dd>
+    <dt>The base branch moved after a feature was finished</dt>
+    <dd>Merge the base branch into the feature branch and publish again: <code>git merge origin/main</code>, then <code>./scripts/publish-feature.sh &lt;issue&gt;</code>. The pull request is still described by the commit of the finished feature and still closes the issue. Any other commit after the finish needs a new finish first.</dd>
     <dt>A review has findings</dt>
     <dd>Each finding gets one of three recorded decisions: fix it now (<code>FIX_NOW</code>), defer it to a follow-up issue (<code>DEFER</code>), or accept it with a reason (<code>ACCEPT</code>). See <a class="popup-link" href="#step-triage">decide what to do with review findings</a>.</dd>
     <dt>You need a review although a check fails</dt>
