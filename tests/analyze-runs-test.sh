@@ -60,12 +60,14 @@ analyze() {
   shift
   (
     cd "$repo"
-    PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo.agent" ./scripts/analyze-runs.sh "$@"
+    PATH="${EXTRA_PATH:-}$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo.agent" ./scripts/analyze-runs.sh "$@"
   ) >"$repo.out" 2>&1
 }
 
+# latest <repo>: the directory of the last analysis, as the script named it;
+# names that start in the same second do not sort in the order of the runs.
 latest() {
-  ls -d "$1"/.agents/analysis/*/ | sort | tail -n 1
+  printf '%s/%s\n' "$1" "$(sed -n 's#^Analysis input: \(.*\)input.json$#\1#p' "$1.out" | tail -n 1)"
 }
 
 # The input names the selected runs, the versions of the sources, and the ids
@@ -130,10 +132,11 @@ grep -Fq "used by an earlier analysis:" "$dir/report.md" || fail "the report doe
 invalid() {
   local before
 
-  before="$(ls -d "$repo"/.agents/analysis/*/ | wc -l)"
+  before="$(find "$repo/.agents/analysis" -name analysis.json | wc -l)"
   if MOCK_OUTPUT="$2" analyze "$repo" 21 22; then fail "$1 was accepted"; fi
   grep -Fq "$3" "$repo.out" || { cat "$repo.out" >&2; fail "$1 was not reported as such"; }
-  [[ ! -e "$(latest "$repo")analysis.json" ]] || fail "$1 was kept"
+  [[ "$(find "$repo/.agents/analysis" -name analysis.json | wc -l)" -eq "$before" ]] || fail "$1 was kept"
+  [[ ! -e "$(latest "$repo")analysis.json" ]] || fail "$1 was kept in its directory"
 }
 invalid "a finding on one run" "$(result "${runs[0]}" "${runs[0]}")" "is a finding with fewer than two runs behind it"
 invalid "unknown evidence" "$(result "${runs[0]}" "made-up-run")" "cites made-up-run/review-1-M1, which is not in the input"
@@ -143,6 +146,30 @@ invalid "a conclusion without the differences" "$(result "${runs[0]}" "${runs[1]
   "does not say which differences it considered"
 invalid "no conclusion without saying so" '{"insufficient_evidence": false, "summary": "", "conclusions": [], "contradictions": [], "missing_data": [], "proposals": [], "consulted": []}' \
   "the result does not say that the evidence is insufficient"
+
+# Two analyses of the same input in the same second keep a directory each: a
+# date that always gives the same second names their directories.
+mkdir -p "$tmp/same-second"
+cat >"$tmp/same-second/date" <<'DATE'
+#!/usr/bin/env bash
+if [[ "$*" == "-u +%Y%m%dT%H%M%SZ" ]]; then echo 20260101T000000Z; else exec /bin/date "$@"; fi
+DATE
+chmod +x "$tmp/same-second/date"
+EXTRA_PATH="$tmp/same-second:" analyze "$repo" 21 22 --input-only && first="$(latest "$repo")"
+EXTRA_PATH="$tmp/same-second:" analyze "$repo" 21 22 --input-only && second="$(latest "$repo")"
+[[ "$first" != "$second" && -f "${first}input.json" && -f "${second}input.json" ]] ||
+  fail "two analyses of the same input share a directory: $first $second"
+
+# A directory that cannot be made is a failure, not a loop.
+chmod 0555 "$repo/.agents/analysis"
+status=0
+(analyze "$repo" 21 22 --input-only) & pid=$!
+for _ in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$pid" 2>/dev/null; then kill "$pid"; chmod 0755 "$repo/.agents/analysis"; fail "an analysis kept trying to make its directory"; fi
+wait "$pid" || status=$?
+chmod 0755 "$repo/.agents/analysis"
+[[ "$status" -ne 0 ]] || fail "an analysis without a directory succeeded"
+grep -Fq "could not create" "$repo.out" || fail "the failure to make the directory was not reported"
 
 # An invalid first result is corrected once.
 rm -f "$repo.agent.called"

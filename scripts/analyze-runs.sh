@@ -143,8 +143,18 @@ jq -n --slurpfile statistics "$work/statistics.json" --slurpfile experiences "$w
       + ([$experiences[].records[] | (.observations[].id), (.agent.observations? // [] | .[].id)]) | unique)' >"$work/input.json"
 
 input_id="$(git hash-object "$work/input.json" | cut -c1-12)"
+# Every analysis gets a directory of its own, also when two with the same
+# input start in the same second: mkdir is atomic, and a taken name gets a
+# number.
+mkdir -p "$primary/.agents/analysis"
 dir="$primary/.agents/analysis/$(date -u +'%Y%m%dT%H%M%SZ')-$input_id"
-mkdir -p "$dir"
+number=1
+until mkdir "$dir" 2>/dev/null; do
+  # Only a name that is taken is tried again; another failure is reported.
+  [[ -e "$dir" ]] || fail "could not create $dir."
+  number=$((number + 1))
+  dir="$primary/.agents/analysis/$(date -u +'%Y%m%dT%H%M%SZ')-$input_id-$number"
+done
 cp "$work/input.json" "$dir/input.json"
 # What the analyst gets besides the input, as it is now: its instructions, the
 # schema of its result, and the configuration.
