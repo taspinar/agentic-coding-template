@@ -730,6 +730,19 @@ run_feature "$repo" 2 thing
 expect_stopped "$repo" 3 "the implementer reports that it cannot complete the Issue without you"
 expect_sessions "$repo" 2 0 0 0
 
+# A session that stops on a usage limit, which its provider names only on its
+# error output, says so in the log of the feature.
+repo="$(setup_repo usage-limit)"
+printf '%s\n' 'echo "Error: 429 Too Many Requests: rate limit exceeded" >&2; exit 1' \
+  >"$repo.control/implementer-1.sh"
+cp "$repo.control/implementer-1.sh" "$repo.control/implementer-2.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+grep -Fq "start-feature.sh exited with status 1; a usage limit of codex, reported by the agent" <<<"$(log_of "$repo")" ||
+  fail "the usage limit of the first session is not in the log of the feature: $(log_of "$repo" | grep temporary)"
+grep -Fq "the step exited with status 1; a usage limit of codex, reported by the agent" <<<"$(log_of "$repo")" ||
+  fail "the usage limit of a resumed session is not in the log of the feature: $(log_of "$repo" | grep temporary)"
+
 # A repair session that fails once, for example on a usage limit, is tried
 # again like any other session.
 repo="$(setup_repo repair-fails-once)"

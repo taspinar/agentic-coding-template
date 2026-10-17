@@ -280,6 +280,91 @@ agent_run() {
 }
 
 # agent_run_session: agent_run without the record of the call.
+# agent_codex_errors <events-file>: the error messages of a Codex session,
+# from its JSON events, one per line; a message that is itself the JSON of an
+# API error gives its inner message.
+agent_codex_errors() {
+  [[ -s "$1" ]] || return 0
+  jq -r 'select(.type == "error" or .type == "turn.failed") | (.message // .error.message // empty)
+    | . as $message | (try (fromjson | .error.message // .message // tostring) catch $message)' "$1" 2>/dev/null | awk '!seen[$0]++' || true
+}
+
+# agent_report_failure <provider> <prompt> <diagnostics>: says why a session
+# failed, as the provider said it in its error messages and its error output,
+# and names a usage or rate limit as one, so that you know to wait instead of
+# looking for a defect. What looks like a key or a token, a private key with
+# its whole body, is replaced first, over the whole text; then every line of
+# the prompt of four characters or more is replaced by [prompt] wherever it
+# appears, also behind a prefix, and a line that looks like the body of a key
+# is replaced; only then is the output cut to its last ten lines.
+agent_report_failure() {
+  local provider="$1"
+  local prompt="$2"
+  local diagnostics="$3"
+  local lines
+  local cleaned
+
+  [[ -n "$diagnostics" ]] || return 0
+  if [[ -n "${RECORDS_REDACT_JQ:-}" ]] && command -v jq >/dev/null 2>&1; then
+    diagnostics="$(printf '%s' "$diagnostics" | jq -Rrs "$RECORDS_REDACT_JQ redact" 2>/dev/null)" ||
+      diagnostics="(the error output could not be shown safely)"
+    # The prompt is matched as it was and as the redaction left it, so that
+    # a line of the prompt that held a secret is found too.
+    prompt="$prompt
+$(printf '%s' "$prompt" | jq -Rrs "$RECORDS_REDACT_JQ redact" 2>/dev/null || true)"
+  fi
+  cleaned="$(printf '%s\n' "$diagnostics" | PROMPT="$prompt" awk '
+      BEGIN { n = split(ENVIRON["PROMPT"], parts, "\n") }
+      # word <char>: whether a character belongs to a word.
+      function word(c) { return c ~ /[A-Za-z0-9_]/ }
+      {
+        line = $0
+        for (i = 1; i <= n; i++) {
+          part = parts[i]
+          if (length(part) == 0) continue
+          # One pass over the text: what is put in is not searched again. A
+          # part shorter than four characters is replaced only as a word of
+          # its own.
+          done = ""
+          rest = line
+          while ((at = index(rest, part)) > 0) {
+            prefix = done substr(rest, 1, at - 1)
+            before = substr(prefix, length(prefix), 1)
+            after = substr(rest, at + length(part), 1)
+            if (length(part) >= 4 || (!word(before) && !word(after))) {
+              done = done substr(rest, 1, at - 1) "[prompt]"
+            } else {
+              done = done substr(rest, 1, at - 1 + length(part))
+            }
+            rest = substr(rest, at + length(part))
+          }
+          line = done rest
+        }
+        if (line ~ /^[[:space:]]*(\[prompt\][[:space:]]*)*$/) next
+        # The body of a key whose first line was not in the output.
+        if (length(line) >= 40 && line ~ /^[[:space:]]*[A-Za-z0-9+\/=]+[[:space:]]*$/) line = "[redacted]"
+        print line
+      }')"
+  lines="$(printf '%s\n' "$cleaned" | tail -n 10)"
+  [[ -n "$lines" ]] || return 0
+  echo "The $provider session reported:" >&2
+  printf '%s\n' "$lines" | sed 's/^/  /' >&2
+  # A limit is named also when later lines push it out of the lines shown.
+  if grep -Eiq 'usage limit|rate limit|quota|too many requests|credit balance|limit reached' <<<"$cleaned"; then
+    echo "This is a usage limit of $provider, not a defect: run the step again after the time the provider names." >&2
+  fi
+}
+
+# agent_write_failed <provider> <status>: a write session runs in your
+# terminal, where the agent shows its own messages as it works; capturing them
+# would take the terminal from it. The script repeats nothing of them, so it
+# adds no prompt or secret of its own: it says only that the session failed,
+# and returns its status.
+agent_write_failed() {
+  echo "The $1 session ended with status $2; its own messages are above in this terminal." >&2
+  return "$2"
+}
+
 agent_run_session() {
   local profile="$1"
   local provider="$2"
@@ -343,7 +428,7 @@ agent_run_session() {
           --model "$model" \
           --cd "$workdir" \
           "$prompt"
-      )
+      ) || agent_write_failed codex $?
       ;;
     claude:write)
       (
@@ -352,7 +437,7 @@ agent_run_session() {
           --permission-mode acceptEdits \
           --model "$model" \
           "$prompt"
-      )
+      ) || agent_write_failed claude $?
       ;;
     codex:unattended)
       # As a write session, but without a terminal: 'codex exec' never asks,
@@ -378,9 +463,8 @@ agent_run_session() {
       # Nothing validates the result afterwards, so a session without a
       # final message counts as failed. Its own output says why.
       if [[ "$status" -ne 0 || ! -s "$output_file" ]]; then
-        echo "The unattended codex session failed or left no final message. The end of its log ($output_file.log) and of its events ($output_file.events):" >&2
-        tail -n 20 "$output_file.log" >&2
-        tail -n 5 "$output_file.events" >&2 2>/dev/null || true
+        echo "The unattended codex session failed or left no final message; its log is $output_file.log." >&2
+        agent_report_failure codex "$prompt" "$(cat "$output_file.log" 2>/dev/null; agent_codex_errors "$output_file.events")"
         [[ "$status" -ne 0 ]] || status=1
         return "$status"
       fi
@@ -402,22 +486,23 @@ agent_run_session() {
           --output-format json \
           --model "$model" \
           "$prompt"
-      ) </dev/null >"$envelope" || status=$?
+      ) </dev/null >"$envelope" 2>"$output_file.log" || status=$?
 
       if [[ "$status" -ne 0 ]] || jq -e '.is_error == true' "$envelope" >/dev/null 2>&1; then
-        jq -r '.result // empty' "$envelope" >&2 2>/dev/null || cat "$envelope" >&2
+        agent_report_failure claude "$prompt" "$(cat "$output_file.log" 2>/dev/null; jq -r 'select(.is_error == true) | .result // empty' "$envelope" 2>/dev/null)"
         [[ "$status" -ne 0 ]] || status=1
         return "$status"
       fi
       # Nothing validates this result afterwards, so anything but a result
       # envelope with a final message counts as a failed session.
       if ! jq -er '.result | strings' "$envelope" >"$output_file" 2>/dev/null; then
-        echo "The unattended claude session returned no final message. Its output ($envelope):" >&2
-        head -c 2000 "$envelope" >&2
+        echo "The unattended claude session returned no final message; its output is in $envelope." >&2
+        agent_report_failure claude "$prompt" "$(cat "$output_file.log" 2>/dev/null)"
         return 1
       fi
       ;;
     codex:read-only)
+      status=0
       if [[ -n "$schema_file" ]]; then
         codex_schema=(--output-schema "$schema_file")
       fi
@@ -435,15 +520,24 @@ agent_run_session() {
         --output-last-message "$output_file" \
         --model "$model" \
         ${codex_schema[@]+"${codex_schema[@]}"} \
-        "$prompt" <"$context_file" >"$output_file.events"
+        "$prompt" <"$context_file" >"$output_file.events" 2>"$output_file.log" || status=$?
+      # In --json mode Codex writes its errors as events, so they are not on
+      # the terminal: say them here, with its error output.
+      if [[ "$status" -ne 0 ]]; then
+        agent_report_failure codex "$prompt" "$(cat "$output_file.log" 2>/dev/null; agent_codex_errors "$output_file.events")"
+        return "$status"
+      fi
       ;;
     claude:read-only)
       if [[ -z "$schema_file" ]]; then
+        status=0
         (
           cd "$workdir"
           claude "${claude_read_only[@]}" --model "$model" "$prompt"
-        ) <"$context_file" >"$output_file"
-        return
+        ) <"$context_file" >"$output_file" 2>"$output_file.log" || status=$?
+        # The ordinary answer is not an error message: only the error output.
+        [[ "$status" -eq 0 ]] || agent_report_failure claude "$prompt" "$(cat "$output_file.log" 2>/dev/null)"
+        return "$status"
       fi
 
       command -v jq >/dev/null 2>&1 || agent_fail "jq is required for structured agent output."
@@ -459,10 +553,10 @@ agent_run_session() {
           --output-format json \
           --json-schema "$(<"$schema_file")" \
           "$prompt"
-      ) <"$context_file" >"$envelope" || status=$?
+      ) <"$context_file" >"$envelope" 2>"$output_file.log" || status=$?
 
       if [[ "$status" -ne 0 ]] || jq -e '.is_error == true' "$envelope" >/dev/null 2>&1; then
-        jq -r '.result // empty' "$envelope" >&2 2>/dev/null || cat "$envelope" >&2
+        agent_report_failure claude "$prompt" "$(cat "$output_file.log" 2>/dev/null; jq -r 'select(.is_error == true) | .result // empty' "$envelope" 2>/dev/null)"
         [[ "$status" -ne 0 ]] || status=1
         return "$status"
       fi

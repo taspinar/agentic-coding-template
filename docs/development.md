@@ -223,6 +223,19 @@ reviewing role is always read-only; a writing role gets `write`, or
 A profile that a provider cannot enforce is an error; an agent is never started
 with broader permissions instead.
 
+**When a session fails.** A read-only or unattended session that fails says
+why, as the provider said it: its error messages, which Codex writes as JSON
+events, and its error output. A usage or rate limit is named as one ("This is
+a usage limit of codex, not a defect"), and `run-feature.sh` writes it into
+the log of the feature. Before anything is shown, what looks like a key or a
+token is replaced by `[redacted]`, also a private key with its whole body; a
+line of the prompt that the provider repeats is replaced by `[prompt]` (a line
+of fewer than four characters only as a word of its own); and only the last
+ten lines are shown. The ordinary answer of a failed session is not shown. A
+`write` session runs in your terminal, where the agent shows its own messages
+as it works: the script repeats nothing of them and says only that the
+session ended with its status.
+
 ## Project bootstrap workflow
 
 Run project bootstrap from a clean checkout after recording the initial project

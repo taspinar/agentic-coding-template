@@ -221,6 +221,128 @@ status=0
 MOCK_AGENT_EXIT=4 agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null 2>"$tmp/codex.err" || status=$?
 [[ "$status" -eq 4 ]] || fail "the exit status of an unattended codex run was not propagated"
 grep -Fq "$tmp/final.txt.log" "$tmp/codex.err" || fail "a failed unattended codex run did not name its log"
+# Codex writes its errors as JSON events: a failed session says them, and a
+# usage limit is named as one, for a read-only and an unattended session.
+mkdir -p "$tmp/failing-bin"
+cat >"$tmp/failing-bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"type":"thread.started","thread_id":"t"}'
+jq -cn --arg m "${MOCK_CODEX_ERROR:-You have hit your usage limit. Try again at 1:56 PM.}" '{type: "error", message: $m}'
+echo '{"type":"turn.failed","error":{"message":"{\"type\":\"error\",\"status\":400,\"error\":{\"message\":\"The model is not supported.\"}}"}}'
+echo "Reading additional input from stdin..." >&2
+exit 1
+FAKE
+chmod +x "$tmp/failing-bin/codex"
+for profile in read-only unattended; do
+  status=0
+  (PATH="$tmp/failing-bin:$PATH" agent_run "$profile" codex model-a "$workdir" "the prompt" "$tmp/failed.txt") \
+    >/dev/null 2>"$tmp/failed.err" || status=$?
+  [[ "$status" -ne 0 ]] || fail "a failed $profile codex session returned success"
+  grep -Fq "You have hit your usage limit. Try again at 1:56 PM." "$tmp/failed.err" ||
+    fail "a failed $profile codex session did not say its error: $(cat "$tmp/failed.err")"
+  grep -Fq "The model is not supported." "$tmp/failed.err" || fail "the inner message of an API error was not shown ($profile)"
+  grep -Fq "This is a usage limit of codex, not a defect" "$tmp/failed.err" || fail "a usage limit was not named as one ($profile)"
+  if grep -Fq "the prompt" "$tmp/failed.err"; then fail "the prompt reached the error output ($profile)"; fi
+done
+# Another error is said without calling it a usage limit.
+(MOCK_CODEX_ERROR="The sandbox could not start." PATH="$tmp/failing-bin:$PATH" agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+grep -Fq "The sandbox could not start." "$tmp/failed.err" || fail "another error of a codex session was not shown"
+if grep -Fq "usage limit" "$tmp/failed.err"; then fail "another error was called a usage limit"; fi
+
+# A plain message stays as it is, without a parser error.
+(PATH="$tmp/failing-bin:$PATH" agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+if grep -Eq "Invalid numeric literal|while parsing" "$tmp/failed.err"; then fail "a plain message became a parser error: $(cat "$tmp/failed.err")"; fi
+# A limit that only the error output names is a usage limit too, for both
+# providers.
+mkdir -p "$tmp/stderr-bin"
+printf '#!/usr/bin/env bash\necho "Error: 429 Too Many Requests: rate limit exceeded" >&2\nexit 1\n' >"$tmp/stderr-bin/codex"
+cp "$tmp/stderr-bin/codex" "$tmp/stderr-bin/claude"
+chmod +x "$tmp/stderr-bin/codex" "$tmp/stderr-bin/claude"
+for provider in codex claude; do
+  for profile in read-only unattended; do
+    (PATH="$tmp/stderr-bin:$PATH" agent_run "$profile" "$provider" model-a "$workdir" "the prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+    grep -Fq "This is a usage limit of $provider, not a defect" "$tmp/failed.err" ||
+      fail "a limit on the error output of $provider ($profile) was not named: $(cat "$tmp/failed.err")"
+  done
+done
+# Neither the prompt nor a secret is shown, also when the provider repeats
+# them in its error output.
+printf '#!/usr/bin/env bash\necho "Implement the secret feature described in docs/plan.md" >&2\necho "auth failed for token sk-abcdefghijklmnopqrstuv" >&2\nexit 1\n' >"$tmp/stderr-bin/codex"
+(PATH="$tmp/stderr-bin:$PATH" agent_run read-only codex model-a "$workdir" "Implement the secret feature described in docs/plan.md" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+if grep -Fq "Implement the secret feature" "$tmp/failed.err"; then fail "the prompt reached the error output"; fi
+if grep -Fq "sk-abcdefghijklmnopqrstuv" "$tmp/failed.err"; then fail "a secret reached the error output"; fi
+grep -Fq "auth failed for token [redacted]" "$tmp/failed.err" || fail "the error without its secret was not shown: $(cat "$tmp/failed.err")"
+# Also a prompt that the provider repeats behind a prefix, over several
+# lines, and a private key with its whole body.
+cat >"$tmp/stderr-bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+printf 'Error processing prompt: Build the payment page for the shop\nUse the card numbers in fixtures/cards.json\n' >&2
+printf -- '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAsecretbody\nmoresecretbody\n-----END RSA PRIVATE KEY-----\n' >&2
+echo "rate limit exceeded" >&2
+exit 1
+FAKE
+chmod +x "$tmp/stderr-bin/codex"
+(PATH="$tmp/stderr-bin:$PATH" agent_run read-only codex model-a "$workdir" "$(printf 'Build the payment page for the shop\nUse the card numbers in fixtures/cards.json')" "$tmp/failed.txt") \
+  >/dev/null 2>"$tmp/failed.err" || true
+for leak in "payment page" "fixtures/cards.json" "secretbody" "PRIVATE KEY"; do
+  if grep -Fq "$leak" "$tmp/failed.err"; then fail "the error output shows '$leak': $(cat "$tmp/failed.err")"; fi
+done
+grep -Fq "Error processing prompt: [prompt]" "$tmp/failed.err" || fail "the prefix of a repeated prompt was not kept: $(cat "$tmp/failed.err")"
+grep -Fq "This is a usage limit of codex" "$tmp/failed.err" || fail "the limit beside the removed lines was not named"
+# A private key longer than any window, and a short prompt, are not shown.
+cat >"$tmp/stderr-bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+echo "-----BEGIN OPENSSH PRIVATE KEY-----" >&2
+for i in $(seq 1 30); do echo "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAA$i" >&2; done
+echo "-----END OPENSSH PRIVATE KEY-----" >&2
+echo "Error processing prompt: secret task" >&2
+exit 1
+FAKE
+(PATH="$tmp/stderr-bin:$PATH" agent_run read-only codex model-a "$workdir" "secret task" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+for leak in "b3BlbnNzaC1rZXktdjEAAAAA" "secret task" "PRIVATE KEY"; do
+  if grep -Fq "$leak" "$tmp/failed.err"; then fail "the error output shows '$leak': $(cat "$tmp/failed.err")"; fi
+done
+grep -Fq "Error processing prompt: [prompt]" "$tmp/failed.err" || fail "a short repeated prompt was not replaced: $(cat "$tmp/failed.err")"
+# A prompt line that is part of the marker does not make the report hang, and
+# a short prompt line is replaced as a word of its own, not inside others.
+for prompt in prompt romp PIN; do
+  printf '#!/usr/bin/env bash\necho "Error processing prompt: %s (PINNED)" >&2\nexit 1\n' "$prompt" >"$tmp/stderr-bin/codex"
+  (PATH="$tmp/stderr-bin:$PATH" agent_run read-only codex model-a "$workdir" "$prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" &
+  pid=$!
+  for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then kill "$pid"; fail "the report of a failure hung for the prompt '$prompt'"; fi
+  wait "$pid" || true
+done
+grep -Fq "Error processing prompt: [prompt] (PINNED)" "$tmp/failed.err" || fail "a short prompt line was not replaced as a word: $(cat "$tmp/failed.err")"
+# A write session shows the agent in the terminal; the script repeats nothing
+# of it and says only that it failed, with its status.
+printf '#!/usr/bin/env bash\necho "auth failed for token sk-abcdefghijklmnopqrstuv" >&2\nexit 6\n' >"$tmp/stderr-bin/codex"
+status=0
+(PATH="$tmp/stderr-bin:$PATH" agent_run write codex model-a "$workdir" "the prompt") >/dev/null 2>"$tmp/write.err" || status=$?
+[[ "$status" -eq 6 ]] || fail "a failed write session did not return its status"
+# The token is in the output once, written by the agent itself; the line of
+# the script holds neither the prompt nor the token.
+[[ "$(grep -c "sk-abcdefghijklmnopqrstuv" "$tmp/write.err")" -eq 1 ]] || fail "the script repeated the output of a write session"
+status_line="$(grep -F "The codex session ended with status 6" "$tmp/write.err")" || fail "a failed write session was not reported"
+if grep -Eq "sk-abcdefghijklmnopqrstuv|the prompt" <<<"$status_line"; then fail "the report of a write session holds the prompt or the token"; fi
+# A repeated prompt that holds a secret is replaced whole, and a limit that
+# later lines push out of the lines shown is still named.
+cat >"$tmp/stderr-bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+echo "Error processing prompt: Deploy confidential customer project with sk-abcdefghijklmnopqrstuv" >&2
+echo "rate limit exceeded" >&2
+for i in $(seq 1 12); do echo "cleanup step $i" >&2; done
+exit 1
+FAKE
+(PATH="$tmp/stderr-bin:$PATH" agent_run read-only codex model-a "$workdir" "Deploy confidential customer project with sk-abcdefghijklmnopqrstuv" "$tmp/failed.txt") \
+  >/dev/null 2>"$tmp/failed.err" || true
+if grep -Fq "confidential customer" "$tmp/failed.err"; then fail "a repeated prompt with a secret was shown: $(cat "$tmp/failed.err")"; fi
+grep -Fq "This is a usage limit of codex" "$tmp/failed.err" || fail "a limit before more than ten lines was not named"
+# The ordinary answer of a failed read-only session is not shown.
+printf '#!/usr/bin/env bash\necho "Here is my review of the confidential code"\nexit 1\n' >"$tmp/stderr-bin/claude"
+(PATH="$tmp/stderr-bin:$PATH" agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
+if grep -Fq "confidential code" "$tmp/failed.err"; then fail "the answer of a failed session was shown as its error"; fi
+
 # A codex session that ends without a final message is a failure too.
 mkdir -p "$tmp/silent-bin"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/silent-bin/codex"
@@ -283,6 +405,7 @@ if MOCK_ENVELOPE='{"is_error": true, "result": "Usage limit reached."}' run_unat
   fail "an unattended session that reported an error returned success"
 fi
 grep -Fq "Usage limit reached." "$tmp/unattended.err" || fail "the error of an unattended session was not shown"
+grep -Fq "This is a usage limit of claude, not a defect" "$tmp/unattended.err" || fail "a usage limit of claude was not named as one"
 # Output that is not a result envelope with a final message is a failure, not
 # a final message.
 for envelope in 'not json at all' '{"is_error": false}' '{"is_error": false, "result": null}'; do
@@ -290,6 +413,21 @@ for envelope in 'not json at all' '{"is_error": false}' '{"is_error": false, "re
     fail "an unattended session without a final message returned success: $envelope"
   fi
 done
+
+# A session that exits 0 without a final message says why from its error
+# output, not by printing its raw output.
+cat >"$tmp/envelope-bin/claude-quiet" <<'FAKE'
+#!/usr/bin/env bash
+echo '{"is_error": false, "result": null, "note": "sk-abcdefghijklmnopqrstuv"}'
+echo "rate limit exceeded" >&2
+exit 0
+FAKE
+chmod +x "$tmp/envelope-bin/claude-quiet"
+mkdir -p "$tmp/quiet-bin" && cp "$tmp/envelope-bin/claude-quiet" "$tmp/quiet-bin/claude"
+(PATH="$tmp/quiet-bin:$PATH" agent_run unattended claude model-b "$workdir" "the prompt" "$tmp/unattended.txt") >/dev/null 2>"$tmp/quiet.err" &&
+  fail "a session without a final message returned success"
+grep -Fq "This is a usage limit of claude" "$tmp/quiet.err" || fail "the error output of a session without a final message was not shown: $(cat "$tmp/quiet.err")"
+if grep -Fq "sk-abcdefghijklmnopqrstuv" "$tmp/quiet.err"; then fail "the raw output of a session without a final message was printed"; fi
 
 run_structured() {
   PATH="$tmp/envelope-bin:$PATH" agent_run read-only claude model-b "$workdir" "the prompt" \
