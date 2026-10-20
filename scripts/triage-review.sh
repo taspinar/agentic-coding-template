@@ -326,7 +326,8 @@ if [[ -n "$owner_decisions" ]]; then
     fi
   fi
   owner_account="$(gh api user --jq .login </dev/null 2>/dev/null || true)"
-  [[ -n "$owner_account" ]] || owner_account="$(id -un)"
+  [[ -n "$owner_account" ]] ||
+    fail "could not determine the authenticated GitHub account (gh api user). No artifact or GitHub Issues were created."
   jq '{decisions}' "$owner_decisions" >"$decisions_file"
   # The record of the override is complete before it is shown, and is stored
   # as it is shown.

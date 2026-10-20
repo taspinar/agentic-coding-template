@@ -34,7 +34,8 @@ case "${1:-} ${2:-}" in
   "api user")
     # A test can change files here, after the script took its copies.
     if [[ -n "${MOCK_GH_USER_ACTION:-}" ]]; then eval "$MOCK_GH_USER_ACTION"; fi
-    echo "${MOCK_GH_USER:-owner-login}"
+    if [[ -n "${MOCK_GH_USER_EXIT:-}" ]]; then exit "$MOCK_GH_USER_EXIT"; fi
+    echo "${MOCK_GH_USER-owner-login}"
     exit 0
     ;;
   "issue view")
@@ -500,6 +501,18 @@ printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
 run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" || fail "owner-directed triage without a proposal failed"
 jq -e '.owner_directed | has("original_proposal") | not' "$repo/.agents/triage/feature-5-test-review-01-triage.json" >/dev/null ||
   fail "an original proposal was recorded although none was given"
+
+# Without a determined GitHub account the override fails closed: no artifact,
+# no Issue, no comment, and no fallback to the local user name.
+for account_failure in "MOCK_GH_USER_EXIT=1" "MOCK_GH_USER="; do
+  repo="$(setup_repo "owner-no-account-${account_failure%%=*}-${account_failure#*=}")"
+  printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+  export "$account_failure"
+  expect_no_triage "$repo" "the GitHub account cannot be determined ($account_failure)" "$review" --decisions "$repo.decisions.json" --reason "$reason"
+  unset "${account_failure%%=*}"
+  grep -Fq "authenticated GitHub account" "$repo.out" || fail "the missing account was not reported"
+  [[ ! -e "$repo.gh.comments" ]] || fail "something was published without an account"
+done
 
 # Declining stores and publishes nothing; --unattended does not apply.
 repo="$(setup_repo owner-declined)"
