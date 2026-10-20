@@ -299,6 +299,7 @@ exits with status 3.
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `finish-planning.sh --amend "<reason>"` | To approve a change to the architecture and the ADRs only, on a `planning/<name>` branch, without a review round. Refuses any other planning change and a planning without a current approval |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |
+| `triage-review.sh <review-json> --decisions <file> --reason <text>` | When the agent's proposal is disproportionate and you decide yourself; recorded as owner-directed, see docs/development.md |
 | `start-feature.sh <issue> --resume` | To continue a feature whose session ended early: a new implementer session in the existing worktree, which reads the handoff note and the state of the worktree |
 | `sync-template.sh` | To take over changes of the workflow template: replaces unchanged files, merges changed ones, reports conflicts, and records the template version |
 | `update-issue-with-plan.sh <issue> <plan>` | To link an optional feature plan in `.agents/plans/` to its Issue |

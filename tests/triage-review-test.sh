@@ -31,6 +31,12 @@ case "${1:-} ${2:-}" in
   "auth status")
     exit 0
     ;;
+  "api user")
+    # A test can change files here, after the script took its copies.
+    if [[ -n "${MOCK_GH_USER_ACTION:-}" ]]; then eval "$MOCK_GH_USER_ACTION"; fi
+    echo "${MOCK_GH_USER:-owner-login}"
+    exit 0
+    ;;
   "issue view")
     printf '%s' "${MOCK_ISSUE_CONTEXT:-Title: F02 — Test feature
 
@@ -402,5 +408,148 @@ jq '.unattended = false' "$artifact.json" >"$tmp/not-unattended.json"
   source "$source_root/scripts/lib/review-data.sh"
   grep -Fq "unattended must be true or absent" <<<"$(triage_artifact_errors "$tmp/not-unattended.json" "$repo/$review")"
 ) || fail "a triage with 'unattended: false' was accepted"
+
+# Owner-directed triage: the agent proposes FIX_NOW for the suggestion, the
+# owner decides ACCEPT, and exactly the owner's decision is stored and published.
+agent_proposal="$(jq '.decisions[2] = {"finding_id": "S1", "decision": "FIX_NOW", "rationale": "Rename it now.", "followup": null}' <<<"$valid_decisions")"
+owner_decisions="$valid_decisions"
+reason="The rename is not worth another review cycle."
+
+# An override asks twice: for the decisions, and for the complete artifact.
+run_owner() {
+  local repo="$1"
+  local answer="$2"
+  shift 2
+  [[ "$answer" != y ]] || answer=$'y\ny'
+  run_triage "$repo" "$answer" "$review" "$@"
+}
+
+repo="$(setup_repo owner)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+printf '%s\n' "$agent_proposal" >"$repo.proposal.json"
+run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" --proposal "$repo.proposal.json" || {
+  cat "$repo.out" >&2
+  fail "owner-directed triage failed"
+}
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage"
+[[ ! -e "$repo.log" ]] || fail "an agent was started for an owner-directed triage"
+[[ "$(jq -r '.decisions[2].decision' "$artifact.json")" == "ACCEPT" ]] || fail "the owner's ACCEPT was not stored"
+[[ "$(jq -r '.decisions[2].rationale' "$artifact.json")" == "The name is adequate." ]] || fail "the owner's rationale was changed"
+[[ "$(jq -c '[.decisions[] | {finding_id, decision, rationale}]' "$artifact.json")" == \
+  "$(jq -c '[.decisions[] | {finding_id, decision, rationale}]' <<<"$owner_decisions")" ]] || fail "the stored decisions differ from the owner's"
+[[ "$(jq -r '.owner_directed.reason' "$artifact.json")" == "$reason" ]] || fail "the reason was not recorded"
+[[ "$(jq -r '.owner_directed.account' "$artifact.json")" == "owner-login" ]] || fail "the account was not recorded"
+jq -e '.owner_directed.directed_at | test("^[0-9]{4}-")' "$artifact.json" >/dev/null || fail "the time was not recorded"
+[[ "$(jq -r '.owner_directed.original_proposal.decisions[2].decision' "$artifact.json")" == "FIX_NOW" ]] ||
+  fail "the original proposal was not recorded"
+jq -e '.published_at' "$artifact.json" >/dev/null || fail "the owner-directed triage was not published"
+grep -Fq "Owner-directed triage" "$repo.gh.comments" || fail "the comment does not show the override"
+grep -Fq "$reason" "$repo.gh.comments" || fail "the comment lacks the reason"
+grep -Fq "S1: FIX_NOW — Rename it now." "$repo.gh.comments" || fail "the comment lacks the original proposal"
+shown="$(sed '/Proceed with this triage/,$d' "$repo.out")"
+[[ "$shown" == *"OWNER-DIRECTED TRIAGE"* && "$shown" == *"The name is adequate."* ]] || fail "the owner's decisions were not shown before the question"
+(
+  source "$source_root/scripts/lib/review-data.sh"
+  [[ -z "$(triage_artifact_errors "$artifact.json" "$repo/$review")" ]]
+) || fail "the owner-directed artifact is not valid"
+# apply-triage.sh and finish-feature.sh read the stored decisions as they are:
+# the artifact is covered by the artifact fingerprint.
+(
+  source "$source_root/scripts/lib/fingerprint.sh"
+  before="$(fingerprint_artifacts "$repo")"
+  jq '.decisions[2].decision = "FIX_NOW"' "$artifact.json" >"$tmp/changed.json"
+  cp "$tmp/changed.json" "$artifact.json"
+  [[ "$(fingerprint_artifacts "$repo")" != "$before" ]]
+) || fail "a change to the stored triage was not detected"
+
+# Exactly what was shown is stored: the inputs are copied before they are shown,
+# so changing the files while the question is open changes nothing.
+repo="$(setup_repo owner-exact)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+printf '%s\n' "$agent_proposal" >"$repo.proposal.json"
+MOCK_GH_USER_ACTION="jq '.decisions[2].decision = \"FIX_NOW\"' '$repo.decisions.json' >'$repo.d.tmp' && mv '$repo.d.tmp' '$repo.decisions.json'; printf '{\"decisions\": []}' >'$repo.proposal.json'" \
+  run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" --proposal "$repo.proposal.json" || {
+  cat "$repo.out" >&2
+  fail "owner-directed triage with changing inputs failed"
+}
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage.json"
+[[ "$(jq -r '.decisions[2].decision' "$artifact")" == "ACCEPT" ]] || fail "a changed decisions file changed the stored decision"
+[[ "$(jq -r '.owner_directed.original_proposal.decisions[2].decision' "$artifact")" == "FIX_NOW" ]] ||
+  fail "a changed proposal file changed the stored original proposal"
+# The complete artifact that was shown for the final confirmation is the
+# artifact that is stored, byte for byte, apart from published_at.
+shown_artifact="$(sed -n '/^The complete triage artifact, as it will be stored:/,/^Store and publish exactly/p' "$repo.out" | sed '1d;$d')"
+[[ "$shown_artifact" == "$(jq 'del(.published_at)' "$artifact")" ]] || fail "the stored artifact differs from the artifact that was shown"
+[[ "$(jq -r '.decisions[1].followup.issue_number' <<<"$shown_artifact")" == "123" ]] || fail "the shown artifact lacks the follow-up reference"
+
+# Declining the complete artifact stores and publishes nothing.
+repo="$(setup_repo owner-final-declined)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+(
+  cd "$repo"
+  printf 'y\nn\n' | PATH="$tmp/bin:/usr/bin:/bin" MOCK_GH_LOG="$repo.gh" \
+    ./scripts/triage-review.sh "$review" --decisions "$repo.decisions.json" --reason "$reason"
+) >"$repo.out" 2>&1 || fail "declining the final confirmation returned an error"
+if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh.comments" ]]; then
+  fail "a declined final confirmation stored or published something"
+fi
+
+# Without a proposal, the artifact has none.
+repo="$(setup_repo owner-no-proposal)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" || fail "owner-directed triage without a proposal failed"
+jq -e '.owner_directed | has("original_proposal") | not' "$repo/.agents/triage/feature-5-test-review-01-triage.json" >/dev/null ||
+  fail "an original proposal was recorded although none was given"
+
+# Declining stores and publishes nothing; --unattended does not apply.
+repo="$(setup_repo owner-declined)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+run_owner "$repo" n --decisions "$repo.decisions.json" --reason "$reason" || fail "declined override returned an error"
+if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh" || -e "$repo.gh.comments" ]]; then
+  fail "a declined override had side effects"
+fi
+repo="$(setup_repo owner-unattended)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+expect_no_triage "$repo" "an override cannot be unattended" "$review" --decisions "$repo.decisions.json" --reason "$reason" --unattended
+[[ ! -e "$repo.log" ]] || fail "an agent was started for an unattended override"
+
+# A missing reason, and invalid decisions, are refused before any side effect.
+repo="$(setup_repo owner-invalid)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+expect_no_triage "$repo" "the reason is missing" "$review" --decisions "$repo.decisions.json"
+expect_no_triage "$repo" "the reason is blank" "$review" --decisions "$repo.decisions.json" --reason "  "
+expect_no_triage "$repo" "the decisions file is missing" "$review" --decisions "$repo.nothing.json" --reason "$reason"
+owner_invalid=(
+  "$incomplete_decisions"
+  "$(jq '.decisions += [.decisions[2]]' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].finding_id = "S9"' <<<"$valid_decisions")"
+  "$(jq '.decisions[1].followup = null' <<<"$valid_decisions")"
+  "$(jq '.decisions[2].rationale = ""' <<<"$valid_decisions")"
+  "$downgraded_decisions"
+  "$(jq '.decisions[0].decision = "ACCEPT"' <<<"$valid_decisions")"
+)
+for index in "${!owner_invalid[@]}"; do
+  printf '%s\n' "${owner_invalid[$index]}" >"$repo.decisions.json"
+  expect_no_triage "$repo" "the owner's decisions are invalid ($index)" "$review" --decisions "$repo.decisions.json" --reason "$reason"
+done
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+printf '{"decisions": []}\n' >"$repo.proposal.json"
+expect_no_triage "$repo" "the original proposal is invalid" "$review" --decisions "$repo.decisions.json" --reason "$reason" --proposal "$repo.proposal.json"
+[[ ! -e "$repo.log" ]] || fail "an agent was started for an override"
+
+# The audit fields are validated, and an artifact without them stays valid.
+repo="$(setup_repo owner-audit)"
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" || fail "owner-directed triage failed"
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage.json"
+for edit in '.owner_directed.reason = ""' 'del(.owner_directed.account)' '.owner_directed.directed_at = "now"' \
+  '.owner_directed.extra = 1' '.owner_directed = "x"' '.unattended = true'; do
+  jq "$edit" "$artifact" >"$tmp/audit.json"
+  [[ -n "$(source "$source_root/scripts/lib/review-data.sh"; triage_artifact_errors "$tmp/audit.json" "$repo/$review")" ]] ||
+    fail "an invalid owner_directed was accepted: $edit"
+done
+jq 'del(.owner_directed) | .triage = {agent: "claude", model: "model-t"}' "$artifact" >"$tmp/old.json"
+[[ -z "$(source "$source_root/scripts/lib/review-data.sh"; triage_artifact_errors "$tmp/old.json" "$repo/$review")" ]] ||
+  fail "an artifact without the new fields is no longer valid"
 
 echo "triage-review tests passed"

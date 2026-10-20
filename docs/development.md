@@ -764,6 +764,7 @@ The full interface is:
 
 ```text
 ./scripts/triage-review.sh <review-json> [--agent <agent>] [--model <model>]
+./scripts/triage-review.sh <review-json> --decisions <file> --reason <text> [--proposal <file>]
 ```
 
 The triage agent (role `triage`) classifies every finding as:
@@ -800,6 +801,45 @@ Issues. The source review remains unchanged. The artifact is stored only after
 every follow-up Issue exists; if creating one fails, nothing is stored and a
 new triage reuses the Issues created so far, which it finds by their trace
 token. A re-run reuses a follow-up Issue that already exists for a finding.
+
+### Owner-directed triage
+
+Approving or declining is not always enough: the triage agent can propose
+`FIX_NOW` for a suggestion or a trivial documentation point that you decide to
+`ACCEPT`, and running the agent again gives the same proposal. Approving a fix
+you do not want costs another implementation, verification and review cycle,
+which finds new suggestions. In that case, and only when the agent's proposal
+is disproportionate, give the decisions yourself:
+
+```bash
+./scripts/triage-review.sh <review-json> \
+  --decisions <file> --reason "<why you override>" [--proposal <file>]
+```
+
+`<file>` has the shape of the triage schema (`{"decisions": [...]}`, one entry
+per finding with `finding_id`, `decision`, `rationale`, and `followup`, which
+is required for `DEFER` and `null` otherwise). `--proposal` optionally gives
+the decisions the agent proposed (for example its output from an earlier run),
+so they are recorded next to yours. The same rules apply as for an agent:
+every finding exactly once, no unknown IDs, a follow-up for every `DEFER`, and
+critical and major findings stay `FIX_NOW`; an override cannot accept or defer
+them. The reason is required, no agent is started, and `--unattended` is
+refused. The script shows your exact decisions, the reason and the account, and
+asks for your confirmation before it creates follow-up Issues. It then shows
+the complete artifact, with the follow-up references, and asks once more
+before it stores and publishes it. The files are copied before anything is
+shown, and the artifact is stored exactly as shown; only `published_at` is added
+when it is published. Declining the second question stores and publishes
+nothing; follow-up Issues already created are reused by the next triage.
+
+The artifact has an `owner_directed` object with the `reason`, the `account`
+that ran the script, the time (`directed_at`), and the `original_proposal`
+when one was given; the comment on the Issue shows them. Old artifacts without
+the field stay valid. It is not a way to skip the review: the round still
+needs an approved and published triage, `finish-feature.sh` and the other
+gates are unchanged, and the stored decisions are protected like every review
+and triage artifact, so `apply-triage.sh` and `finish-feature.sh` read them as
+they are and an agent that changes them is detected.
 
 Deferred follow-up Issue titles include deterministic provenance:
 
@@ -1100,7 +1140,7 @@ itself, so a script can run one step after the other.
 | Step | With `--unattended` |
 |---|---|
 | `start-feature.sh <issue> [--resume]` | The implementer runs with the `unattended` profile instead of in your terminal. Its final message is stored in `.agents/run/<issue>-implementer.md` in the feature worktree and shown. |
-| `triage-review.sh <review-json>` | The proposed triage is approved without a question. The proposal is validated as always: a critical or major finding cannot be deferred or accepted. |
+| `triage-review.sh <review-json>` | The proposed triage is approved without a question (not for `--decisions`, which is refused). The proposal is validated as always: a critical or major finding cannot be deferred or accepted. |
 | `apply-triage.sh <triage-json>` | The fixes start without confirmation, with the `unattended` profile. The final message is stored in `.agents/run/<issue>-fixes.md` and shown. |
 | `finish-feature.sh <issue> "<summary>"` | The commit message is used as it is, without an editor. Without a summary of the changes the commit is refused: nobody would write one. |
 

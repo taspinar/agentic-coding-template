@@ -225,6 +225,28 @@ run_finish "$repo" 12 "Add the marker" || {
 }
 grep -Fq "triage published on #12" <<<"$(message "$repo")" || fail "the commit message does not mention the published triage"
 
+# A round triaged by the owner's override, with the original proposal of the
+# agent recorded, is accepted like any other published triage.
+repo="$(setup_repo owner-directed PASS_WITH_MINOR_FINDINGS "$minor")"
+add_triage "$repo" ACCEPT
+jq '.triage = {agent: "owner", model: "owner-directed"}
+    | .owner_directed = {account: "owner-login", directed_at: "2026-01-02T00:00:00Z",
+        reason: "Not worth another cycle.",
+        original_proposal: {decisions: [{finding_id: "MIN1", decision: "FIX_NOW", rationale: "Rename.", followup: null}]}}' \
+  "$repo/$triage" >"$tmp/owner.tmp"
+mv "$tmp/owner.tmp" "$repo/$triage"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing with an owner-directed triage failed"
+}
+grep -Fq "triage published on #12" <<<"$(message "$repo")" || fail "the commit message does not mention the owner-directed triage"
+# An unpublished owner-directed triage is still refused.
+repo="$(setup_repo owner-directed-unpublished PASS_WITH_MINOR_FINDINGS "$minor")"
+add_triage "$repo" ACCEPT no
+jq '.owner_directed = {account: "owner-login", directed_at: "2026-01-02T00:00:00Z", reason: "r"}' "$repo/$triage" >"$tmp/owner.tmp"
+mv "$tmp/owner.tmp" "$repo/$triage"
+expect_no_commit "$repo" "the owner-directed triage was not published" 12 "Add the marker"
+
 # add_second_round <repo>: a passed, current review round 2.
 add_second_round() {
   jq '.round = 2 | .verdict = "PASS" | .findings = []' "$1/$review" >"$1/.agents/reviews/feature-12-marker-review-02.json"
