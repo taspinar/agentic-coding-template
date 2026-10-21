@@ -353,10 +353,12 @@ triage_artifact_errors() {
     if type != "object" or .schema != "triage/v1" then
       "the file is not a triage/v1 artifact"
     else
-      unexpected(["approved_at", "decisions", "issue", "published_at", "review_verdict", "reviewed_tree",
+      unexpected(["approved_at", "decisions", "historical", "issue", "published_at", "review_verdict", "reviewed_tree",
                   "owner_directed", "schema", "source_review", "triage", "unattended"]; "the triage"),
       (if .unattended == null or .unattended == true then empty
        else "unattended must be true or absent" end),
+      (if .historical == null or .historical == true then empty
+       else "historical must be true or absent" end),
       (if has("owner_directed") and .unattended == true then "an owner-directed triage cannot be unattended"
        else empty end),
       (if has("owner_directed") | not then empty
@@ -519,6 +521,7 @@ triage_render_markdown() {
     (if .owner_directed != null then "Decisions: given by the owner, not proposed by an agent\n\n"
      else "Triage agent: \(.triage.agent) (\(.triage.model))\n\n" end) +
     "Approved at: \(.approved_at)\(if .unattended == true then ", by an unattended run; no human approved these decisions" else "" end)\n\n" +
+    (if .historical == true then "Historical triage: the findings were classified against the reviewed content, not the current code; a later review confirms whether they were fixed.\n\n" else "" end) +
     (if .owner_directed != null then
        "## Owner-directed triage\n\n" +
        "- Directed by: \(.owner_directed.account) at \(.owner_directed.directed_at)\n" +

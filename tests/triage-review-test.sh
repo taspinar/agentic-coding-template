@@ -410,6 +410,98 @@ jq '.unattended = false' "$artifact.json" >"$tmp/not-unattended.json"
   grep -Fq "unattended must be true or absent" <<<"$(triage_artifact_errors "$tmp/not-unattended.json" "$repo/$review")"
 ) || fail "a triage with 'unattended: false' was accepted"
 
+# A review whose findings were fixed before the triage is stale. With a later
+# round and its reviewed tree available it is triaged as a historical review,
+# and the agent reads the reviewed content, not the live worktree.
+add_later_round() {
+  local repo="$1"
+
+  jq '.round = 2 | .verdict = "PASS" | .findings = []' "$repo/$review" >"$repo/.agents/reviews/feature-5-test-review-02.json"
+  record_reviewed_tree "$repo" "$repo/.agents/reviews/feature-5-test-review-02.json"
+}
+repo="$(setup_repo historical)"
+printf 'reviewed content\n' >"$repo/note.txt"
+printf 'packaging only\n' >"$repo/packaging.txt"
+printf 'packaging.txt export-ignore\n' >"$repo/.gitattributes"
+record_reviewed_tree "$repo" "$repo/$review"
+printf 'changed after the review\n' >"$repo/note.txt"
+printf 'live change\n' >"$repo/live-change.txt"
+add_later_round "$repo"
+MOCK_AGENT_ACTION="pwd -P >\"$repo.agent-dir\"; ls -A . >\"$repo.agent-files\"; cp note.txt \"$repo.agent-note\"; git rev-parse --is-inside-work-tree >\"$repo.agent-git\"" \
+  run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a historical triage failed"
+}
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage"
+[[ "$(jq -r '.historical' "$artifact.json")" == "true" ]] || fail "the triage does not record that it is historical"
+[[ "$(<"$repo.agent-dir")" != "$(cd "$repo" && pwd -P)" ]] || fail "the historical triage agent ran in the live worktree"
+if grep -Fq "live-change.txt" "$repo.agent-files"; then fail "the agent saw the live change"; fi
+grep -Fq ".agents" "$repo.agent-files" || fail "the agent did not see the reviewed content"
+[[ "$(<"$repo.agent-note")" == "reviewed content" ]] || fail "the agent did not read the reviewed version of a changed file"
+grep -Fq "packaging.txt" "$repo.agent-files" || fail "the extract lacks an export-ignore path of the reviewed content"
+[[ "$(<"$repo.agent-git")" == "true" ]] || fail "the extract is not a Git work tree, which Codex needs"
+grep -Fq "Historical triage" "$artifact.md" || fail "the report does not say that the triage is historical"
+grep -Fq "Historical triage" "$repo.gh.comments" || fail "the published triage does not say that it is historical"
+grep -Fq "as they were when the review was made" "$repo.log.stdin" || fail "the agent was not told that the files are the reviewed ones"
+(
+  source "$source_root/scripts/lib/review-data.sh"
+  [[ -z "$(triage_artifact_errors "$artifact.json" "$repo/$review")" ]] || exit 1
+  jq 'del(.historical)' "$artifact.json" >"$tmp/no-historical.json"
+  [[ -z "$(triage_artifact_errors "$tmp/no-historical.json" "$repo/$review")" ]] || exit 2
+  jq '.historical = false' "$artifact.json" >"$tmp/bad-historical.json"
+  grep -Fq "historical must be true or absent" <<<"$(triage_artifact_errors "$tmp/bad-historical.json" "$repo/$review")" || exit 3
+) || fail "the validation of the historical field is wrong (status $?)"
+
+# Declining a historical triage has no side effects either.
+repo="$(setup_repo historical-declined)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+add_later_round "$repo"
+run_triage "$repo" n "$review" || fail "a declined historical triage returned an error"
+if compgen -G "$repo/.agents/triage/*" >/dev/null || [[ -e "$repo.gh.comments" ]]; then fail "a declined historical triage had side effects"; fi
+
+# The latest stale round is refused, with the next step named.
+repo="$(setup_repo latest-stale)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+expect_no_triage "$repo" "the stale review is the latest round" "$review"
+grep -Fq "Run a new review first" "$repo.out" || fail "the refusal does not say to review again first"
+[[ ! -e "$repo.log" ]] || fail "a triage agent was started for a stale latest review"
+
+# A reviewed tree that is gone fails closed.
+repo="$(setup_repo tree-missing)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+add_later_round "$repo"
+jq '.reviewed_tree = "0123456789abcdef0123456789abcdef01234567"' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_no_triage "$repo" "the reviewed tree is missing" "$review"
+grep -Fq "not a tree in the Git object database" "$repo.out" || fail "a missing tree was not named"
+[[ ! -e "$repo.log" ]] || fail "a triage agent was started without the reviewed tree"
+
+# A reviewed_tree that is a revision, not an object hash, is not extracted.
+repo="$(setup_repo tree-is-ref)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+add_later_round "$repo"
+jq '.reviewed_tree = "HEAD"' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_no_triage "$repo" "the reviewed tree is a revision, not a hash" "$review"
+[[ ! -e "$repo.log" ]] || fail "a triage agent was started for a reviewed_tree that is a revision"
+
+# A commit hash as reviewed_tree is not a tree and is not extracted.
+repo="$(setup_repo tree-is-commit)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+add_later_round "$repo"
+jq --arg c "$(git -C "$repo" rev-parse HEAD)" '.reviewed_tree = $c' "$repo/$review" >"$repo/$review.tmp"
+mv "$repo/$review.tmp" "$repo/$review"
+expect_no_triage "$repo" "the reviewed tree is a commit" "$review"
+[[ ! -e "$repo.log" ]] || fail "a triage agent was started for a reviewed_tree that is a commit"
+
+# A later round of another Issue, or an invalid one, does not make it historical.
+repo="$(setup_repo other-issue)"
+printf 'changed after the review\n' >>"$repo/AGENTS.md"
+add_later_round "$repo"
+jq '.issue = 6' "$repo/.agents/reviews/feature-5-test-review-02.json" >"$tmp/r2.json"
+mv "$tmp/r2.json" "$repo/.agents/reviews/feature-5-test-review-02.json"
+expect_no_triage "$repo" "the later round belongs to another Issue" "$review"
+
 # Owner-directed triage: the agent proposes FIX_NOW for the suggestion, the
 # owner decides ACCEPT, and exactly the owner's decision is stored and published.
 agent_proposal="$(jq '.decisions[2] = {"finding_id": "S1", "decision": "FIX_NOW", "rationale": "Rename it now.", "followup": null}' <<<"$valid_decisions")"

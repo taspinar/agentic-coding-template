@@ -436,7 +436,7 @@ echo "  $review_relative.json  (source of truth)"
 echo "  $review_relative.md    (generated report)"
 echo
 if [[ "$(jq '.findings | length' "$out.json")" -gt 0 ]]; then
-  echo "Next: triage the findings:"
+  echo "Next: triage the findings before you fix anything (review, triage, fix, verify, review):"
   echo "  ./scripts/triage-review.sh $review_relative.json"
 else
   echo "Next: the review has no findings; finish the feature:"

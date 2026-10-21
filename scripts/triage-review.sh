@@ -112,8 +112,14 @@ publish_triage() {
 # print_next_step: says what to run after a stored and published triage.
 print_next_step() {
   echo
-  if [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$artifact.json")" -gt 0 ]]; then
-    echo "Next: let the implementer resolve the FIX_NOW findings:"
+  if [[ "$(jq -r '.historical // false' "$artifact.json")" == "true" ]]; then
+    echo "This is a historical triage: the reviewed content was changed after the review, so its FIX_NOW findings cannot be applied to it."
+    echo "A later review round confirms whether the findings were fixed. Next: run the review again if the code changed since the latest review,"
+    echo "  ./scripts/review-feature.sh $source_issue"
+    echo "otherwise finish the feature:"
+    echo "  ./scripts/finish-feature.sh $source_issue \"<commit summary>\""
+  elif [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$artifact.json")" -gt 0 ]]; then
+    echo "Next: let the implementer resolve the FIX_NOW findings (then verify and review again):"
     echo "  ./scripts/apply-triage.sh ${artifact#"$root"/}.json"
   else
     echo "Next: nothing to fix now; finish the feature:"
@@ -272,14 +278,57 @@ provenance+="[$review_ref]"
 tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/triage-review.XXXXXX")"
 trap 'rm -rf "$tmp_work"' EXIT
 
-# Triage and fixes apply only to the content that was reviewed.
+# find_later_review: sets later_review to a valid, later review round of the
+# same Issue, if there is one.
+find_later_review() {
+  local prefix="${review_path%-[0-9][0-9].json}"
+  local round
+  local candidate
+
+  later_review=""
+  [[ "$prefix" != "$review_path" ]] || return 0
+  round="$(jq -r '.round' "$review_path")"
+  for candidate in "$prefix"-[0-9][0-9].json; do
+    [[ -f "$candidate" ]] || continue
+    [[ -z "$(review_artifact_errors "$candidate")" ]] || continue
+    [[ "$(jq -r '.kind // "feature"' "$candidate")" == "feature" && "$(jq -r '.issue' "$candidate")" == "$source_issue" ]] || continue
+    if [[ "$(jq -r '.round' "$candidate")" -gt "$round" ]]; then
+      later_review="$candidate"
+      return 0
+    fi
+  done
+}
+
+# historical_blocker: says why the stale review cannot be triaged as a
+# historical one; prints nothing when it can. A review is historical only
+# when a later, valid review round of the same Issue exists (so it cannot stand
+# in for a fresh review of the current code) and the reviewed tree is still
+# in the object database.
+historical_blocker() {
+  if [[ -z "$later_review" ]]; then
+    echo "it is the latest review round of Issue #$source_issue, and a stale latest round is never triaged. Run a new review first (./scripts/review-feature.sh $source_issue), then triage this round."
+  elif [[ ! "$reviewed_tree" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
+       [[ "$(git -C "$root" cat-file -t "$reviewed_tree" 2>/dev/null)" != "tree" ]]; then
+    echo "the reviewed content ($reviewed_tree) is not a tree in the Git object database (or is not an object hash), so the findings cannot be checked against what was reviewed."
+  fi
+}
+
+# Triage and fixes apply to the content that was reviewed. A review that is
+# stale is triaged only as a historical review, against the reviewed tree.
+historical=0
+reviewed_tree="$(jq -r '.reviewed_tree' "$review_path")"
 stale_status=0
 review_is_current "$root" "$tmp_work" "$review_path" || stale_status=$?
 case "$stale_status" in
   0) ;;
   1)
-    review_stale_notice "$root" "$tmp_work" "$review_path"
-    fail "the review is stale: the reviewed content changed after $review_relative was written. Run a new review."
+    find_later_review
+    blocker="$(historical_blocker)"
+    if [[ -n "$blocker" ]]; then
+      review_stale_notice "$root" "$tmp_work" "$review_path"
+      fail "the review is stale: the reviewed content changed after $review_relative was written, and it cannot be triaged as a historical review because $blocker"
+    fi
+    historical=1
     ;;
   *) fail "could not compute the current fingerprint of the working tree." ;;
 esac
@@ -296,6 +345,10 @@ else
   echo "  Review: $review_relative"
   echo "  Agent:  $agent"
   echo "  Model:  $model"
+fi
+if [[ "$historical" -eq 1 ]]; then
+  echo "  Historical: the code changed after this review; the later round ${later_review#"$root"/} exists."
+  echo "              The findings are classified against the reviewed content ($reviewed_tree), not the current code."
 fi
 echo
 
@@ -352,6 +405,34 @@ else
     jq '{verdict, limitations, findings}' "$review_path"
   } >"$context_file"
 
+  agent_dir="$root"
+  if [[ "$historical" -eq 1 ]]; then
+    # The agent reads the reviewed content, extracted from its tree, and not
+    # the live worktree, which has changed since. The contract is the current
+    # one, supplied with the context because the extract holds an older copy.
+    agent_dir="$tmp_work/reviewed"
+    mkdir -p "$agent_dir"
+    # Every path of the tree is extracted (git archive would leave out
+    # export-ignore paths), and the extract is a repository of its own, which
+    # the agents need as a working directory.
+    reviewed_index="$tmp_work/reviewed.index"
+    { GIT_INDEX_FILE="$reviewed_index" git -C "$root" read-tree "$reviewed_tree" &&
+        GIT_INDEX_FILE="$reviewed_index" git -C "$root" checkout-index -a --prefix="$agent_dir/" &&
+        git -C "$agent_dir" init -q; } >/dev/null ||
+      fail "could not extract the reviewed content ($reviewed_tree)."
+    {
+      echo
+      echo "## Historical triage"
+      echo
+      echo "The working directory holds the files exactly as they were when the review was made. Later changes are not visible, and you cannot tell whether a finding has been fixed since. Classify every finding as it was reported against these files; a later review confirms whether it was fixed."
+      echo
+      echo "## Triage contract"
+      echo
+      cat "$prompt_file"
+    } >>"$context_file"
+    extract_before="$(cd "$agent_dir" && find . -path ./.git -prune -o -type f -exec cksum {} + | LC_ALL=C sort | cksum)"
+  fi
+
   start_prompt="Read and follow .agents/prompts/triage-reviewer.md.
 
 Source review artifact: ${review_relative}
@@ -360,6 +441,17 @@ Source feature Issue: #${source_issue}
 Standard input contains the Issue and the review findings as JSON. Classify
 every finding exactly once, using its 'id' as 'finding_id', and return JSON
 that matches the supplied schema."
+
+  if [[ "$historical" -eq 1 ]]; then
+    start_prompt="Read and follow the triage contract in the standard input; the working directory is the reviewed content, not the current code.
+
+Source review artifact: ${review_relative}
+Source feature Issue: #${source_issue}
+
+Standard input contains the Issue, the review findings as JSON, and the
+triage contract. Classify every finding exactly once, using its 'id' as
+'finding_id', and return JSON that matches the supplied schema."
+  fi
 
   review_hash_before="$(git hash-object "$review_path")"
   artifacts_before="$(fingerprint_artifacts "$root")"
@@ -370,7 +462,7 @@ that matches the supplied schema."
   for attempt in 1 2; do
     : >"$decisions_file"
     set +e
-    agent_run read-only "$agent" "$model" "$root" "$attempt_prompt" "$decisions_file" "$context_file" "$schema_file"
+    agent_run read-only "$agent" "$model" "$agent_dir" "$attempt_prompt" "$decisions_file" "$context_file" "$schema_file"
     agent_status=$?
     set -e
 
@@ -382,6 +474,10 @@ that matches the supplied schema."
       echo "Error: triage agent modified the working tree." >&2
       git -C "$root" status --short >&2
       exit 1
+    fi
+    if [[ "$historical" -eq 1 &&
+          "$(cd "$agent_dir" && find . -path ./.git -prune -o -type f -exec cksum {} + | LC_ALL=C sort | cksum)" != "$extract_before" ]]; then
+      fail "triage agent modified the extract of the reviewed content."
     fi
     [[ "$agent_status" -eq 0 ]] || fail "triage agent failed with status $agent_status."
 
@@ -521,7 +617,8 @@ jq -n \
   --arg model "$model" \
   --arg approved_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --slurpfile owner_record "${owner_record:-/dev/null}" \
-  --argjson unattended "$([[ "$AGENT_UNATTENDED" -eq 1 ]] && echo true || echo false)" '
+  --argjson unattended "$([[ "$AGENT_UNATTENDED" -eq 1 ]] && echo true || echo false)" \
+  --argjson historical "$([[ "$historical" -eq 1 ]] && echo true || echo false)" '
   {
     schema: "triage/v1",
     source_review: $source_review,
@@ -532,6 +629,7 @@ jq -n \
     approved_at: $approved_at,
     decisions: $decisions[0]
   } + (if $unattended then {unattended: true} else {} end)
+    + (if $historical then {historical: true} else {} end)
     + (if ($owner_record | length) > 0 then {owner_directed: $owner_record[0]} else {} end)' >"$pending"
 
 record_issue() {

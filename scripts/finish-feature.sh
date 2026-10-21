@@ -208,7 +208,7 @@ else
     review_round="$(jq -r '.round' "$review")"
     triage="$(review_latest_triage "$root" "$review")"
     [[ -n "$triage" ]] ||
-      fail "the findings of round $review_round are not triaged. Run ./scripts/triage-review.sh ${review#"$root"/}."
+      fail "the findings of round $review_round are not triaged. Run ./scripts/triage-review.sh ${review#"$root"/}. $([[ "$review" == "$latest" ]] && echo "(Triage before you fix.)" || echo "That round is older than the latest: if its findings were fixed since, it is triaged as a historical review against what it reviewed.")"
     triage_relative="${triage#"$root"/}"
     errors="$(triage_artifact_errors "$triage" "$review")"
     [[ -z "$errors" ]] || fail "the triage of round $review_round is invalid: ${errors//$'\n'/; }"

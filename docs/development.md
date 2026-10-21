@@ -802,6 +802,30 @@ every follow-up Issue exists; if creating one fails, nothing is stored and a
 new triage reuses the Issues created so far, which it finds by their trace
 token. A re-run reuses a follow-up Issue that already exists for a finding.
 
+The order is review, triage, fix, verify, review again. Triage every round
+with findings before you fix anything from it; `review-feature.sh` says so.
+
+**Historical triage.** Triage applies to the content that was reviewed, so a
+review whose code changed afterwards is stale. When findings were fixed before
+their triage, the round can still be triaged as a historical review, provided
+a later review round of the same Issue exists (the latest round never
+qualifies, so a historical review cannot stand in for a fresh review of the
+current code) and its reviewed tree is still in the Git object database. The
+triage agent then reads an extract of the reviewed tree, not the live
+worktree, and classifies the findings as they were reported; the later review
+confirms whether they were fixed. The proposal, the approval question,
+`--unattended`, the follow-up Issues and the publication on the Issue are the
+same as for any triage, and the artifact records `"historical": true`. When
+the review is the latest round, or its tree is gone, the script refuses and
+creates nothing: run a new review first and triage the older round after it.
+`finish-feature.sh` still needs a current latest review and an approved,
+published triage of every round with findings; nothing here replaces either.
+The extract holds every path of the reviewed tree (also `export-ignore`
+paths) and is a Git repository of its own, because Codex refuses to start in
+a directory that is not one. A complete historical triage with Codex as the
+`triage` agent has not been verified; the automated tests use fake agents, so
+full Codex compatibility is not claimed.
+
 ### Owner-directed triage
 
 Approving or declining is not always enough: the triage agent can propose
@@ -966,8 +990,10 @@ list of files (`reviewed_paths`); then only those files count.
 
 The fingerprint depends on content, not on commits. Committing the reviewed
 content keeps the review current; changing, adding, or deleting a covered file
-makes it stale. `triage-review.sh` and `apply-triage.sh` refuse a stale review
-before they start an agent. After `apply-triage.sh` changes the code, the
+makes it stale. `apply-triage.sh` refuses a stale review before it starts an
+agent. `triage-review.sh` refuses it too, unless it is a historical review (a
+later round of the Issue exists and the reviewed tree is available; see
+"Historical triage" under `triage-review.sh`). After `apply-triage.sh` changes the code, the
 review is stale by design: run a new review round, complete or with
 `--changes`, to confirm the fixes.
 
