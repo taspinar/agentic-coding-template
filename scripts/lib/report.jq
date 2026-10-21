@@ -15,16 +15,26 @@ def roles: ["project-grill", "project-planner", "planning-reviewer", "implemente
 
 def number_or_null: if type == "number" then . else null end;
 
-# tokens(f): the sum of f over the calls, with how many calls reported it.
-# A call that did not report the figure is counted as unknown, never as 0.
-def tokens(f):
-  map(f | number_or_null) as $values
-  | {sum: ($values | map(select(. != null)) | add // 0),
-     known: ($values | map(select(. != null)) | length),
-     unknown: ($values | map(select(. == null)) | length)};
+# tokens(f; g): the sum over the calls, with how many calls are in each of
+# three states. f is the complete figure of a call (known). Without it, g is
+# the figure that only some turns of the call reported (partial): it counts
+# in the sum, which is then a lower bound. A call with neither is unknown,
+# never 0.
+def tokens(f; g):
+  map({complete: (f | number_or_null), partial: (g | number_or_null)}) as $values
+  | ($values | map(select(.complete != null))) as $known
+  | ($values | map(select(.complete == null and .partial != null))) as $partial
+  | {sum: (($known | map(.complete) | add // 0) + ($partial | map(.partial) | add // 0)),
+     known: ($known | length),
+     partial: ($partial | length),
+     unknown: (($values | length) - ($known | length) - ($partial | length))};
 
 def input_tokens: (.usage // {}) | .total_input;
 def output_tokens: (.usage // {}) | .output_tokens;
+def partial_input_tokens: (.usage // {}) | .partial | if type == "object" then .input_tokens else null end;
+def partial_output_tokens: (.usage // {}) | .partial | if type == "object" then .output_tokens else null end;
+def input_of: tokens(input_tokens; partial_input_tokens);
+def output_of: tokens(output_tokens; partial_output_tokens);
 
 # The elapsed time of intervals [start, end] that may overlap: their union,
 # so that two runs side by side count once.
@@ -110,11 +120,11 @@ def report_subject($kind; $subject):
        failed: (map(select(.status != null and .status != 0)) | length),
        unfinished: (map(select(.unfinished == true)) | length),
        seconds: (map(.seconds | number_or_null // 0) | add),
-       input: tokens(input_tokens), output: tokens(output_tokens)})),
+       input: input_of, output: output_of})),
      by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
        run, command, seq, state, status,
        seconds: (if .end == null then null else .end - .start end),
-       input: ($c | tokens(input_tokens)), output: ($c | tokens(output_tokens))})),
+       input: ($c | input_of), output: ($c | output_of)})),
      rounds: {
        review: ($calls | map(select((.role == "reviewer" or .role == "planning-reviewer") and .status == 0)) | length),
        triage: ($calls | map(select(.role == "triage" and .status == 0)) | length),
@@ -126,7 +136,7 @@ def report_subject($kind; $subject):
      resumed: ($events | map(select(.type == "resumed")) | length),
      versions: ($runs | map(.versions) | unique),
      models: ($calls | map({agent, model}) | unique),
-     input: ($calls | tokens(input_tokens)), output: ($calls | tokens(output_tokens))};
+     input: ($calls | input_of), output: ($calls | output_of)};
 
 # What differs between the subjects of a comparison.
 def differences($subjects):
@@ -149,9 +159,9 @@ def series($subjects; $name):
    features_with_incomplete_elapsed: ($subjects | map(select(.elapsed.runs_without_end > 0)) | length),
    mean_review_rounds: ($subjects | mean(.rounds.review)),
    mean_repair_rounds: ($subjects | mean(.rounds.repair)),
-   mean_input_tokens: ($subjects | map(select(.input.unknown == 0)) | if length == 0 then null else mean(.input.sum) end),
-   mean_output_tokens: ($subjects | map(select(.output.unknown == 0)) | if length == 0 then null else mean(.output.sum) end),
-   features_with_unknown_tokens: ($subjects | map(select(.input.unknown > 0 or .output.unknown > 0)) | length)};
+   mean_input_tokens: ($subjects | map(select(.input.unknown == 0 and .input.partial == 0)) | if length == 0 then null else mean(.input.sum) end),
+   mean_output_tokens: ($subjects | map(select(.output.unknown == 0 and .output.partial == 0)) | if length == 0 then null else mean(.output.sum) end),
+   features_with_unknown_tokens: ($subjects | map(select(.input.unknown > 0 or .input.partial > 0 or .output.unknown > 0 or .output.partial > 0)) | length)};
 
 def report:
   ($selection | map(report_subject(.kind; .subject))) as $all
@@ -176,12 +186,15 @@ def duration:
       else "\($s)s" end
   end;
 
-# A token sum as text: "unknown" when no call reported it, "at least" when
-# some did not.
+# A token sum as text: "unknown" when no call reported any figure, "at least"
+# when some calls reported only part of it or nothing.
 def token_text:
-  if .known == 0 and .unknown == 0 then "–"
-  elif .known == 0 then "unknown"
-  elif .unknown > 0 then "at least \(.sum) (\(.unknown) of \(.known + .unknown) calls without figures)"
+  (.known + .partial + .unknown) as $calls
+  | if $calls == 0 then "–"
+  elif .known == 0 and .partial == 0 then "unknown"
+  elif .partial > 0 or .unknown > 0 then
+    "at least \(.sum) (" + ([(if .partial > 0 then "\(.partial) of \($calls) calls with partial figures" else empty end),
+                             (if .unknown > 0 then (if .partial > 0 then "\(.unknown) without figures" else "\(.unknown) of \($calls) calls without figures" end) else empty end)] | join(", ")) + ")"
   else "\(.sum)" end;
 
 # The elapsed time of a subject as text: "at least" when a run has no end.
@@ -239,7 +252,7 @@ def markdown:
   + (if .before_after == null then "" else
       "## Before and after \(.before_after.split)\n\n| Series | Features | Mean elapsed time | Mean review rounds | Mean repair sessions | Mean input tokens | Mean output tokens |\n|---|---|---|---|---|---|---|\n"
       + ([.before_after.before, .before_after.after] | map(.features as $features | "| \(.label) | \(.features) | \(.mean_elapsed_seconds | if . == null then "–" else duration end) | \(.mean_review_rounds // "–") | \(.mean_repair_rounds // "–") | \(.mean_input_tokens | if type == "number" then floor elif $features == 0 then "–" else "unknown" end) | \(.mean_output_tokens | if type == "number" then floor elif $features == 0 then "–" else "unknown" end) |\n") | add)
-      + "\nMeans of elapsed time leave out the features with runs without an end (before: \(.before_after.before.features_with_incomplete_elapsed), after: \(.before_after.after.features_with_incomplete_elapsed)). Means of tokens leave out the features with calls without figures (before: \(.before_after.before.features_with_unknown_tokens), after: \(.before_after.after.features_with_unknown_tokens)).\n\n\(.before_after.caution)\n" end);
+      + "\nMeans of elapsed time leave out the features with runs without an end (before: \(.before_after.before.features_with_incomplete_elapsed), after: \(.before_after.after.features_with_incomplete_elapsed)). Means of tokens leave out the features with calls without complete figures (before: \(.before_after.before.features_with_unknown_tokens), after: \(.before_after.after.features_with_unknown_tokens)).\n\n\(.before_after.caution)\n" end);
 
 # --- The summary on GitHub ---------------------------------------------------
 #
@@ -261,19 +274,21 @@ def summary_fields:
        model: (.model | if type == "string" and test("^[A-Za-z0-9._-]{1,64}$") then . else "other" end),
        calls: (.calls | number_or_null // 0),
        input: (.input.sum | number_or_null // 0), input_known: (.input.known | number_or_null // 0),
-       input_unknown: (.input.unknown | number_or_null // 0),
+       input_partial: (.input.partial | number_or_null // 0), input_unknown: (.input.unknown | number_or_null // 0),
        output: (.output.sum | number_or_null // 0), output_known: (.output.known | number_or_null // 0),
-       output_unknown: (.output.unknown | number_or_null // 0)})
+       output_partial: (.output.partial | number_or_null // 0), output_unknown: (.output.unknown | number_or_null // 0)})
        # Rows that became the same role and model are one row.
        | group_by([.role, .model]) | map({role: first.role, model: first.model,
            calls: (map(.calls) | add), input: (map(.input) | add), input_known: (map(.input_known) | add),
-           input_unknown: (map(.input_unknown) | add), output: (map(.output) | add),
-           output_known: (map(.output_known) | add), output_unknown: (map(.output_unknown) | add)}))}
+           input_partial: (map(.input_partial) | add), input_unknown: (map(.input_unknown) | add), output: (map(.output) | add),
+           output_known: (map(.output_known) | add), output_partial: (map(.output_partial) | add),
+           output_unknown: (map(.output_unknown) | add)}))}
     end;
 
 def summary_markdown:
-  def figure($sum; $known; $unknown):
-    if $known == 0 and $unknown > 0 then "unknown" elif $unknown > 0 then "≥ \($sum)" else "\($sum)" end;
+  def figure($sum; $known; $partial; $unknown):
+    if $known == 0 and $partial == 0 and $unknown > 0 then "unknown"
+    elif $partial > 0 or $unknown > 0 then "≥ \($sum)" else "\($sum)" end;
   summary_fields
   | if . == null then null else
     "<!-- run-records-summary -->\n### Run summary\n\n"
@@ -283,10 +298,10 @@ def summary_markdown:
     + "| Review rounds | \(.review_rounds) |\n"
     + "| Repair sessions | \(.repair_sessions) |\n"
     + (if (.tokens | length) == 0 then "" else
-        "\n| Role | Model | Calls | Input tokens | Output tokens |\n|---|---|---|---|---|\n"
-        + (.tokens | map("| \(.role) | \(.model) | \(.calls) | \(figure(.input; .input_known; .input_unknown)) | \(figure(.output; .output_known; .output_unknown)) |\n") | add)
+        "\n| Role | Model | Calls | Input tokens | Output tokens | Input calls: complete / partial / unknown | Output calls: complete / partial / unknown |\n|---|---|---|---|---|---|---|\n"
+        + (.tokens | map("| \(.role) | \(.model) | \(.calls) | \(figure(.input; .input_known; .input_partial; .input_unknown)) | \(figure(.output; .output_known; .output_partial; .output_unknown)) | \(.input_known) / \(.input_partial) / \(.input_unknown) | \(.output_known) / \(.output_partial) / \(.output_unknown) |\n") | add)
       end)
-    + "\n≥ marks a sum to which some calls reported no figure. Replaced each time the feature is published.\n"
+    + "\n≥ marks a sum to which some calls reported no figure or only part of it. Replaced each time the feature is published.\n"
     end;
 
 report
