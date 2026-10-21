@@ -103,7 +103,7 @@ event "$file" u1 120 agent-call '{"role":"reviewer","agent":"codex","model":"m",
 event "$file" u1 130 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"codex-events","total_input":500,"output_tokens":3}}'
 event "$file" u1 140 run-end '{"status":0}'
 json="$(report "$repo" 13 --json)"
-[[ "$(jq -c '.subjects[0].input' <<<"$json")" == '{"sum":500,"known":1,"unknown":2}' ]] ||
+[[ "$(jq -c '.subjects[0].input' <<<"$json")" == '{"sum":500,"known":1,"partial":0,"unknown":2}' ]] ||
   fail "unknown input figures were counted: $(jq -c '.subjects[0].input' <<<"$json")"
 markdown="$(report "$repo" 13)"
 grep -Fq "| Input tokens | at least 500 (2 of 3 calls without figures) |" <<<"$markdown" ||
@@ -119,6 +119,54 @@ json="$(report "$repo" 13 --json)"
 [[ "$(jq -c '.subjects[0].interventions' <<<"$json")" == '[{"what":"approved the triage of a review","count":1}]' ]] ||
   fail "the interventions are not the recorded ones: $(jq -c '.subjects[0].interventions' <<<"$json")"
 
+# Partial figures, which only some turns of a call reported, count in the sum
+# as a lower bound and are counted apart from complete and unknown calls.
+repo="$(setup_repo partial)"
+file="$repo/.agents/run/records/p1.jsonl"
+event "$file" p1 100 run-start '{"kind":"feature","subject":"16","command":"run-feature.sh","seq":1,"versions":{}}'
+event "$file" p1 110 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"codex-events","total_input":null,"output_tokens":null,"partial":{"input_tokens":100,"output_tokens":5}}}'
+event "$file" p1 120 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"codex-events","total_input":1000,"output_tokens":10}}'
+event "$file" p1 130 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"unavailable"}}'
+event "$file" p1 140 run-end '{"status":0}'
+json="$(report "$repo" 16 --json)"
+[[ "$(jq -c '.subjects[0] | [.input, .output]' <<<"$json")" == '[{"sum":1100,"known":1,"partial":1,"unknown":1},{"sum":15,"known":1,"partial":1,"unknown":1}]' ]] ||
+  fail "partial figures are not a separate state: $(jq -c '.subjects[0] | [.input, .output]' <<<"$json")"
+markdown="$(report "$repo" 16)"
+grep -Fq "at least 1100 (1 of 3 calls with partial figures" <<<"$(grep -F "| Input tokens |" <<<"$markdown")" ||
+  fail "the Markdown does not mark a partial sum as a lower bound"
+summary="$(report "$repo" --github-summary 16)"
+grep -Fq "| reviewer | m | 3 | ≥ 1100 | ≥ 15 |" <<<"$summary" || fail "the GitHub summary does not show a partial sum as a lower bound: $summary"
+grep -Fq "| 1 / 1 / 1 | 1 / 1 / 1 |" <<<"$summary" || fail "the GitHub summary does not count complete, partial, and unknown calls apart: $summary"
+# A feature with partial figures is left out of the means of tokens.
+run_file "$repo" p2 17 run-feature.sh 90000 90100 0
+markdown="$(report "$repo" 16 17 --split "$(jq -rn '90000 | todate | .[0:10]')")"
+grep -Fq "(before: 1, after: 0)" <<<"$markdown" || fail "a feature with partial figures is in the means of tokens"
+# A call whose only figure is partial is a lower bound, not unknown.
+repo="$(setup_repo partial-only)"
+file="$repo/.agents/run/records/q1.jsonl"
+event "$file" q1 100 run-start '{"kind":"feature","subject":"18","command":"run-feature.sh","seq":1,"versions":{}}'
+event "$file" q1 110 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"codex-events","total_input":null,"output_tokens":null,"partial":{"input_tokens":100}}}'
+event "$file" q1 120 run-end '{"status":0}'
+json="$(report "$repo" 18 --json)"
+[[ "$(jq -c '.subjects[0] | [.input, .output]' <<<"$json")" == '[{"sum":100,"known":0,"partial":1,"unknown":0},{"sum":0,"known":0,"partial":0,"unknown":1}]' ]] ||
+  fail "a partial input beside an unknown output is wrong: $(jq -c '.subjects[0] | [.input, .output]' <<<"$json")"
+grep -E "^\| reviewer \|.*\| at least 100 \(.*partial.*\) \| unknown \|$" <<<"$(report "$repo" 18)" >/dev/null ||
+  fail "a partial figure is shown as unknown or complete"
+grep -Fq "| ≥ 100 | unknown |" <<<"$(report "$repo" --github-summary 18)" ||
+  fail "the GitHub summary does not tell a partial input from an unknown output"
+grep -Fq "| 0 / 1 / 0 | 0 / 0 / 1 |" <<<"$(report "$repo" --github-summary 18)" ||
+  fail "the GitHub summary does not count a partial input apart from an unknown output"
+# A feature whose only incompleteness is a partial input is left out of the
+# mean of input tokens, and stays in the mean of the complete output tokens.
+repo="$(setup_repo partial-means)"
+file="$repo/.agents/run/records/r1.jsonl"
+event "$file" r1 90000 run-start '{"kind":"feature","subject":"19","command":"run-feature.sh","seq":1,"versions":{}}'
+event "$file" r1 90010 agent-call '{"role":"reviewer","agent":"codex","model":"m","status":0,"seconds":5,"usage":{"source":"codex-events","total_input":null,"output_tokens":10,"partial":{"input_tokens":100}}}'
+event "$file" r1 90020 run-end '{"status":0}'
+json="$(report "$repo" 19 --split "$(jq -rn '80000 | todate | .[0:10]')" --json)"
+[[ "$(jq -c '.before_after.after | [.mean_input_tokens, .mean_output_tokens, .features_with_unknown_tokens]' <<<"$json")" == "[null,10,1]" ]] ||
+  fail "a partial input is in the mean of input tokens: $(jq -c '.before_after.after' <<<"$json")"
+
 # A call or a step that started and did not finish, as in an interrupted run,
 # counts with unknown figures: a total beside it is not complete.
 repo="$(setup_repo interrupted)"
@@ -132,13 +180,13 @@ event "$file" i1 152 step-start '{"id":"s2","name":"review, round 2 of at most 5
 event "$file" i1 153 agent-start '{"id":"a2","role":"reviewer","profile":"read-only","agent":"codex","model":"m"}'
 event "$file" i1 160 run-end '{"status":130}'
 json="$(report "$repo" 14 --json)"
-[[ "$(jq -c '.subjects[0].input' <<<"$json")" == '{"sum":800,"known":1,"unknown":1}' ]] ||
+[[ "$(jq -c '.subjects[0].input' <<<"$json")" == '{"sum":800,"known":1,"partial":0,"unknown":1}' ]] ||
   fail "an unfinished call does not make the total incomplete: $(jq -c '.subjects[0].input' <<<"$json")"
 [[ "$(jq -c '.subjects[0].agents[0] | [.calls, .failed, .unfinished]' <<<"$json")" == "[2,0,1]" ]] ||
   fail "the unfinished call is not counted as one: $(jq -c '.subjects[0].agents[0]' <<<"$json")"
 [[ "$(jq -c '.subjects[0].steps[0] | [.count, .unfinished]' <<<"$json")" == "[2,1]" ]] ||
   fail "the unfinished step is not counted as one: $(jq -c '.subjects[0].steps' <<<"$json")"
-[[ "$(jq -c '.subjects[0].by_run[0].input' <<<"$json")" == '{"sum":800,"known":1,"unknown":1}' ]] ||
+[[ "$(jq -c '.subjects[0].by_run[0].input' <<<"$json")" == '{"sum":800,"known":1,"partial":0,"unknown":1}' ]] ||
   fail "the run does not show its unfinished call"
 markdown="$(report "$repo" 14)"
 grep -Fq "| reviewer | codex | m | 2 (1 unfinished) | 48s | at least 800 (1 of 2 calls without figures) |" <<<"$markdown" ||

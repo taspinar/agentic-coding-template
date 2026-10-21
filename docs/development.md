@@ -1499,10 +1499,13 @@ Some figures need care:
   calls, and is higher when calls ran side by side.
 - **A call or a step that did not finish**, as in an interrupted run, counts
   as unfinished: its time and its tokens are unknown.
-- **Tokens** that a call did not report are not zero. A sum to which some
-  calls reported nothing says "at least" and how many calls lack figures; a
-  sum without any figure is "unknown". `--split` leaves such features out of
-  the means of tokens and says how many.
+- **Tokens** that a call did not report are not zero. A call has complete
+  figures, partial figures (only some of its turns reported them), or none.
+  Partial figures count in the sum, which then says "at least" (and "≥" in
+  the GitHub summary) and how many calls are partial and how many have no
+  figures; a sum without any figure is "unknown". `--split` leaves features
+  with partial or unknown figures out of the means of tokens and says how
+  many.
 - **A subject without any record** is named and left out, not counted as zero.
 - **A comparison** names what differs between the subjects: the template
   commit, the prompts, `agents.conf`, and the models. It and `--split` say
@@ -1514,7 +1517,8 @@ Some figures need care:
 **The summary on GitHub.** `./scripts/publish-feature.sh 12 --summary` also
 posts the totals of the feature on its Issue: the elapsed time, the number of
 runs, the review rounds, the repair sessions, and the tokens per role and
-model. It is off by default, since a repository is often public. It is built
+model, with how many calls reported complete, partial, or no figures for
+each direction. It is off by default, since a repository is often public. It is built
 from an explicit list of numeric fields, so no log, path, time of day, status
 reason, or other text of the records reaches it; a role or a model name that
 does not look like one is shown as `other`. It is one comment, replaced when

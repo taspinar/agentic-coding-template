@@ -11,8 +11,8 @@ Standard input holds the analysis input as JSON (`analysis-input/v1`):
 
 - `statistics`: the run report of the selected features (`report-runs.sh
   --json`): runs and their outcome, elapsed and agent time, review and repair
-  rounds, tokens per role and model, with `known` and `unknown` counts, and
-  the versions the runs used.
+  rounds, tokens per role and model, with `known`, `partial` (a lower bound), and
+  `unknown` counts, and the versions the runs used.
 - `experiences`: per feature the valid experience records, each with its
   `run`, the `code_version`, what a script derived, and its observations with
   an `id` such as `<run>/review-1-M1`. Invalid records are only counted; they
