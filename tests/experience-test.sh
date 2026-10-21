@@ -135,6 +135,17 @@ jq -e '.observations | any(.id == "completion")' <<<"$record" >/dev/null || fail
 [[ "$(show "$repo" 12 --json | jq -c '[(.valid | length), (.invalid | length)]')" == "[1,0]" ]] || fail "the record of a blocked run is not valid"
 if grep -Fq "which ADR" <<<"$record"; then fail "the handoff note was copied into the record"; fi
 
+# A record that awaits evidence of a later gate counts it as waiting, not as
+# a criterion that is not met: the analysis must not read it as a failure.
+repo="$(setup_repo awaiting)"
+in_run "$repo" 0 'mkdir -p .agents/completion; printf "%s\n" "{\"schema\": \"completion/v1\", \"status\": \"awaiting_evidence\", \"criteria\": [{\"criterion\": \"c\", \"status\": \"met\", \"evidence\": \"e\"}, {\"criterion\": \"d\", \"gate\": \"post_merge\", \"status\": \"pending\", \"evidence\": \"later\"}], \"remaining\": []}" >.agents/completion/12.json'
+record="$(records "$repo")"
+[[ "$(jq -r '.observations[] | select(.id == "completion") | .what' <<<"$record")" == "The completion record says awaiting_evidence: 1 of 2 criteria wait for evidence of a later gate" ]] ||
+  fail "a record that awaits evidence is not described as waiting: $record"
+if grep -Fq "not met" <<<"$(jq -r '.observations[] | select(.id == "completion") | .what' <<<"$record")"; then
+  fail "pending evidence is counted as not met"
+fi
+
 # A run with nothing to observe says so.
 repo="$(setup_repo quiet)"
 in_run "$repo" 0 ':'

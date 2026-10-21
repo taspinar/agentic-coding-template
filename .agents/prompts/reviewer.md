@@ -27,6 +27,19 @@ scripts act on its status without understanding it, so you are the check:
 - A test that passes without checking the criterion is not evidence
   (`docs/evaluation.md`, "Meaningful tests").
 
+A criterion may be `pending` only when its evidence cannot exist yet: its
+`gate` is `pr_ci` (CI of the published pull request), `owner_approval`, or
+`post_merge` (after the merge). Do not report such legitimately pending
+evidence as a defect of the implementation. Do report as a `major` finding a
+criterion that is `pending` although its evidence could exist now (a test, a
+file, a local command), or a gate that does not fit the evidence; a pending
+criterion must not hide unfinished implementation work. Likewise report as
+`major` a criterion recorded as `met` at a later gate whose evidence cannot
+exist yet (for example CI of a pull request that is not published, or a
+result of the merged branch): the record would state it as shown. The owner's
+approval is never recorded as met by the implementer (the scripts refuse it);
+the merge approval gate decides it from the diff and the review.
+
 A feature that was committed on purpose as partial work says so in its
 record; then review what is there and report what the record leaves unsaid.
 

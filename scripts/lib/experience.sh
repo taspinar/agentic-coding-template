@@ -228,7 +228,11 @@ experience_record() {
          + (if ($gate.reasons // []) | length > 0 then {circumstances: ($gate.reasons | join("; "))} else {} end)),
         (if ($completion | type) == "object" and $completion.status != "complete" then
           {id: "completion", kind: "fact",
-           what: "The completion record says \($completion.status): \(($completion.criteria // []) | map(select(.status != "met")) | length) of \(($completion.criteria // []) | length) criteria not met",
+           what: (if $completion.status == "awaiting_evidence" then
+                   "The completion record says awaiting_evidence: \(($completion.criteria // []) | map(select(.status == "pending")) | length) of \(($completion.criteria // []) | length) criteria wait for evidence of a later gate"
+                 else
+                   "The completion record says \($completion.status): \(($completion.criteria // []) | map(select(.status != "met")) | length) of \(($completion.criteria // []) | length) criteria not met"
+                 end),
            evidence: [{type: "completion", ref: ".agents/completion/\($issue).json"}]}
          else empty end) ] as $observations
     | {schema: "experience/v1", run: $run, issue: $issue,

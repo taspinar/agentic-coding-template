@@ -163,7 +163,7 @@ This creates `feature/12-recipes` in `../recipe-box-12-recipes` and starts the
 implementer there. It writes code and tests, runs the verification at the end,
 and does not commit. Before it ends, it records in
 `.agents/completion/12.json` how far the Issue is done; the script shows that
-and offers the review only when the record says complete. If the session ends
+and offers the review only when the record says complete (or awaiting evidence of a later gate, which this walk-through does not need). If the session ends
 before the work is complete, continue it with
 `./scripts/start-feature.sh 12 --resume`.
 
@@ -222,7 +222,7 @@ When round 2 passes, there is nothing to triage.
 ./scripts/finish-feature.sh 12 "Add recipes"
 ```
 
-The script checks that the completion record says complete, runs the
+The script checks that the completion record says complete (or awaiting evidence), runs the
 verification, and checks that round 2 is current, reviewed the complete
 feature, and that round 1's triage was published. Your editor opens with:
 

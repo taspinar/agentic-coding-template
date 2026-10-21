@@ -376,6 +376,48 @@ grep -Fq "| not complete | no summary: the implementer wrote no summary of the c
 grep -Fqx -- "- Adds the feature file." <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
   fail "the commit message lacks the summary that the resumed implementer wrote"
 
+# Evidence that cannot exist yet does not stop the run. An implementer that
+# records awaiting_evidence, with the CI result of the pull request pending,
+# goes on to the review in one session; the commit says so and the pull
+# request closes the Issue, because that evidence exists before the merge.
+awaiting() {
+  # awaiting <gate>: the implementer's work, with a criterion pending at the gate
+  printf '%s\n' 'printf "feature\n" >>feature.txt
+mkdir -p .agents/summaries .agents/completion
+printf -- "- Adds the feature file.\n" >".agents/summaries/$RUN_ISSUE.md"
+printf "{\"schema\": \"completion/v1\", \"status\": \"awaiting_evidence\", \"criteria\": [{\"criterion\": \"The feature file exists\", \"status\": \"met\", \"evidence\": \"feature.txt\"}, {\"criterion\": \"Evidence later\", \"gate\": \"'"$1"'\", \"status\": \"pending\", \"evidence\": \"after the gate\"}], \"remaining\": []}\n" >".agents/completion/$RUN_ISSUE.json"
+reply="Done."'
+}
+
+repo="$(setup_repo awaiting-pr-ci)"
+awaiting pr_ci >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -Fqx "Completion: awaiting_evidence" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit does not say that the feature awaits evidence"
+grep -Fqx -- "- pending at pr_ci: Evidence later (after the gate)" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit does not name the pending evidence"
+grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "a feature that awaits only pr_ci evidence does not close the Issue"
+if grep -Fq -- "--draft" "$repo.control/gh.log"; then fail "a feature that awaits evidence was opened as a draft"; fi
+grep -Fq '"status": "awaiting_evidence"' "$repo.control/reviewer-1.context" || fail "the reviewer was not shown the awaiting_evidence record"
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "completion-gate" and .status == "awaiting_evidence")' >/dev/null ||
+  fail "the completion gate outcome awaiting_evidence is not in the run records"
+
+# Evidence of the post_merge gate keeps the Issue open, but the pull request
+# is ready for review.
+repo="$(setup_repo awaiting-post-merge)"
+awaiting post_merge >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+if grep -Eiq '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#2([^0-9]|$)' "$repo.control/pr-body"; then
+  fail "a feature that awaits post_merge evidence closes the Issue on the merge"
+fi
+grep -Fq "evidence of the post_merge gate is pending" "$repo.control/pr-body" || fail "the pull request does not say why the Issue stays open"
+grep -Fq "./scripts/record-post-merge.sh 2" "$repo.out" || fail "the end of the run does not name record-post-merge.sh"
+if grep -Fq -- "--draft" "$repo.control/gh.log"; then fail "a feature that awaits post_merge evidence was opened as a draft"; fi
+
 # The sessions are bounded: an implementer that never completes the Issue
 # stops the run before any review, commit, or pull request.
 repo="$(setup_repo never-complete)"

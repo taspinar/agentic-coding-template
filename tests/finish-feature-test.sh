@@ -428,6 +428,100 @@ run_finish "$repo" 12 "Add the first part of the marker" --partial || fail "part
 grep -Fqx "Completion: partial" <<<"$(message "$repo")" || fail "the corrected record was not committed as partial"
 if grep -Fqx "Completion: complete" <<<"$(message "$repo")"; then fail "work with remaining steps was committed as complete"; fi
 
+# Evidence of a later gate does not hold back the commit: the feature is
+# committed as awaiting_evidence, without --partial and without --no-review.
+repo="$(setup_repo completion-awaiting PASS "[]")"
+jq '.status = "awaiting_evidence"
+  | .criteria[1] = {criterion: "CI passes on the pull request", gate: "pr_ci", status: "pending", evidence: "after publication"}
+  | .criteria += [{criterion: "main verifies", gate: "post_merge", status: "pending", evidence: "the run on main"}]' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a feature that awaits later evidence was refused"
+}
+grep -Fqx "Completion: awaiting_evidence" <<<"$(message "$repo")" || fail "the commit does not say awaiting_evidence"
+grep -Fqx -- "- pending at post_merge: main verifies (the run on main)" <<<"$(message "$repo")" ||
+  fail "the pending post_merge evidence is not in the commit message"
+grep -Fqx 'Post-merge criterion: "main verifies"' <<<"$(message "$repo")" ||
+  fail "the exact post-merge criterion line is not in the commit message"
+if grep -Fqx "Completion: complete" <<<"$(message "$repo")"; then fail "a feature with pending evidence was committed as complete"; fi
+grep -Fq "evidence of a later gate is pending (post_merge, pr_ci)" "$repo.out" || fail "the pending gates were not named"
+
+# The owner's approval is not something a completion record can hold. A
+# record that claims it as met is invalid, and a record that leaves it pending
+# does not change whether the merge needs the owner: the gate decides from
+# the diff and the review.
+repo="$(setup_repo completion-owner-met PASS "[]")"
+jq '.criteria[1] = {criterion: "The owner approves", gate: "owner_approval", status: "met", evidence: "the owner agreed in chat"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+expect_no_commit "$repo" "owner_approval claimed as met" 12 "Add the marker"
+grep -Fq "owner_approval cannot be met in a record the implementer writes" "$repo.out" || fail "the claimed approval was not given as the reason"
+
+repo="$(setup_repo completion-owner-pending PASS "[]")"
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "The owner approves", gate: "owner_approval", status: "pending", evidence: "approval of the final commit"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+jq '.architecture_impact = {level: "major", rationale: "Because of the marker.", checked_against: ["ADR 001"]}' \
+  "$repo/$review" >"$repo/$review.tmp" && mv "$repo/$review.tmp" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || { cat "$repo.out" >&2; fail "a feature that awaits the owner's approval was refused"; }
+grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(message "$repo" | sed -n '/^Merge approval:$/,/^$/p')" ||
+  fail "a record that leaves owner_approval pending changed whether the merge needs the owner"
+grep -Fq "no script or agent may merge it" "$repo.out" || fail "the needed approval was not announced for a feature that awaits it"
+grep -Fqx -- "- pending at owner_approval: The owner approves (approval of the final commit)" <<<"$(message "$repo")" ||
+  fail "the pending approval is not shown as pending in the commit"
+if grep -Fq -- "- met: The owner approves" <<<"$(message "$repo")"; then fail "the commit states the owner's approval as met"; fi
+
+# --partial takes the commit statement from the record, so a record that
+# awaits evidence, contradicted by the handoff note, is not committed as
+# partial either: it would carry no remaining work.
+repo="$(setup_repo completion-awaiting-contradicted PASS "[]")"
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "CI", gate: "pr_ci", status: "pending", evidence: "later"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+mkdir -p "$repo/.agents/handoffs"
+printf '**Remaining:** steps 3 to 9.\n' >"$repo/.agents/handoffs/12.md"
+expect_no_commit "$repo" "--partial with an awaiting_evidence record against the handoff note" 12 "Add the marker" --partial
+grep -Fq "the completion record says awaiting_evidence, so the work cannot be committed as partial" "$repo.out" ||
+  fail "the contradicted awaiting record was not given as the reason with --partial"
+grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "what the handoff note lists was not shown for the awaiting record"
+set_completion "$repo" partial
+run_finish "$repo" 12 "Add the first part of the marker" --partial || fail "partial work with a corrected record was refused"
+grep -Fqx "Completion: partial" <<<"$(message "$repo")" || fail "the corrected record was not committed as partial"
+
+# The end of the finish names the script that closes an Issue which awaits
+# post_merge evidence; for other pending evidence it says nothing of it.
+repo="$(setup_repo completion-awaiting-hint PASS "[]")"
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "main verifies", gate: "post_merge", status: "pending", evidence: "the run on main"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature that awaits post_merge evidence failed"
+grep -Fq "./scripts/record-post-merge.sh 12" "$repo.out" || fail "the end of the finish does not name record-post-merge.sh"
+repo="$(setup_repo completion-awaiting-no-hint PASS "[]")"
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "CI", gate: "pr_ci", status: "pending", evidence: "later"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature that awaits pr_ci evidence failed"
+if grep -Fq "record-post-merge.sh" "$repo.out"; then fail "the end of the finish names record-post-merge.sh without post_merge evidence"; fi
+
+# Pending evidence does not hide an implementation criterion that is not met,
+# and --partial is for work that is incomplete, not for work that awaits.
+repo="$(setup_repo completion-awaiting-hidden PASS "[]")"
+jq '.status = "awaiting_evidence"
+  | .criteria[1] = {criterion: "The marker is documented", status: "not_met", evidence: "docs/marker.md"}
+  | .criteria += [{criterion: "main verifies", gate: "post_merge", status: "pending", evidence: "the run on main"}]' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+expect_no_commit "$repo" "an awaiting_evidence record with a criterion that is not met" 12 "Add the marker"
+grep -Fq "status is awaiting_evidence, but a criterion is not met" "$repo.out" || fail "the hidden unmet criterion was not given as the reason"
+repo="$(setup_repo completion-awaiting-partial PASS "[]")"
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "CI", gate: "pr_ci", status: "pending", evidence: "later"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+expect_no_commit "$repo" "--partial for a feature that awaits evidence" 12 "Add the marker" --partial
+grep -Fq "the feature is awaiting_evidence" "$repo.out" || fail "--partial for an awaiting feature was not explained"
+
 repo="$(setup_repo completion-partial-refused PASS "[]")"
 expect_no_commit "$repo" "--partial for a complete feature" 12 "Add the marker" --partial
 grep -Fq "the feature is complete" "$repo.out" || fail "--partial for a complete feature was not explained"
@@ -629,6 +723,22 @@ expect_no_commit "$repo" "FIX_NOW findings are not applied" 12 "Add the marker"
 
 repo="$(setup_repo empty-reason PASS "[]")"
 expect_no_commit "$repo" "--no-review has no reason" 12 "Add the marker" --no-review " "
+
+# An Issue that asks for the owner's approval in its own criteria makes the
+# merge need the owner, also when no protected path changed and the review
+# calls the change minor: the record can require approval, never grant it.
+repo="$(setup_repo completion-owner-pending-only PASS "[]")"
+set_impact "$repo" minor
+jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "The owner approves", gate: "owner_approval", status: "pending", evidence: "approval of the final commit"}' \
+  "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
+mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+run_finish "$repo" 12 "Add the marker" || { cat "$repo.out" >&2; fail "a feature that awaits the owner's approval was refused"; }
+grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(approval_of "$repo")" ||
+  fail "a pending owner_approval criterion did not make the merge need the owner"
+grep -Fqx -- "- the completion record leaves a criterion of the owner_approval gate pending: The owner approves" <<<"$(approval_of "$repo")" ||
+  fail "the reason of the requirement is not in the commit"
+if grep -Fqx -- "- not required" <<<"$(approval_of "$repo")"; then fail "the commit says both required and not required"; fi
+grep -Fq "no script or agent may merge it" "$repo.out" || fail "the needed approval was not announced"
 
 # The deadlock of fixing before the triage: round 1 had a finding that was
 # fixed, round 2 is a current review, and round 1 is still untriaged. It is

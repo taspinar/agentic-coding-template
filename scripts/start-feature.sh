@@ -121,8 +121,9 @@ $AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
   if [[ "${records_command##*/}" == "start-feature.sh" ]]; then
     records_gate "$session_worktree" "$(printf '%s\n' "$session_gate" | sed -n 1p)" "$(printf '%s\n' "$session_gate" | sed 1d)" 2>/dev/null || true
   fi
-  if [[ "$(printf '%s\n' "$session_gate" | sed -n 1p)" == "complete" ]]; then
-    echo "The implementer reports the Issue as complete ($COMPLETION_DIR/$issue.json)."
+  if completion_ready "$(printf '%s\n' "$session_gate" | sed -n 1p)"; then
+    echo "The implementer reports the Issue as $(printf '%s\n' "$session_gate" | sed -n 1p | tr '_' ' ') ($COMPLETION_DIR/$issue.json)."
+    printf '%s\n' "$session_gate" | sed '1d; s/^/  - /'
     echo
     echo "Next, in the feature worktree:"
     echo "  cd \"$session_worktree\""

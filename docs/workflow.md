@@ -152,8 +152,10 @@ flowchart TD
   complete feature: it is what establishes that the Issue is done.
 - A session that ends is not a feature that is complete. The implementer
   records where the work stands in a completion record; the commit and a
-  pull request that closes the Issue need a record that says complete, which
-  the reviewer of the complete feature checks against the code.
+  pull request that closes the Issue need a record that says complete (or
+  awaiting evidence of a later gate, which keeps the Issue open only for
+  evidence after the merge), which the reviewer of the complete feature
+  checks against the code.
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - `publish-feature.sh` pushes the branch and opens the pull request that
@@ -303,6 +305,7 @@ exits with status 3.
 | `start-feature.sh <issue> --resume` | To continue a feature whose session ended early: a new implementer session in the existing worktree, which reads the handoff note and the state of the worktree |
 | `sync-template.sh` | To take over changes of the workflow template: replaces unchanged files, merges changed ones, reports conflicts, and records the template version |
 | `update-issue-with-plan.sh <issue> <plan>` | To link an optional feature plan in `.agents/plans/` to its Issue |
+| `record-post-merge.sh <issue> "<criterion>" "<evidence>"` | After the merge of a feature that awaited `post_merge` evidence: posts the evidence on the Issue and closes it when none is left |
 | `cleanup-worktree.sh <issue>`, `planning/<name>`, or `--merged` | After a merge, from the primary checkout: removes the worktree and its branch once GitHub reports the pull request as merged, and updates `main` |
 
 ## Principles
@@ -337,8 +340,12 @@ Each kind of state has one place:
   used; one file per run, and the runs of a feature or a planning together.
   Working files, never published.
 - `.agents/completion/`: per Issue, the implementer's completion record:
-  complete, partial, or blocked, with evidence per acceptance criterion. The
-  scripts commit and close the Issue only on `complete`. Working files.
+  complete, awaiting_evidence, partial, or blocked, with evidence per
+  acceptance criterion; a criterion whose evidence cannot exist yet (CI of
+  the pull request, owner approval, the default branch after the merge) is
+  `pending` at its gate. The scripts commit on `complete` or
+  `awaiting_evidence`, and close the Issue only when no evidence of the
+  `post_merge` gate is left. Working files.
 - `.agents/run/`: the final messages of agents that ran unattended. Working
   files.
 - `.agents/verification/`: the record of the last passed verification of the
