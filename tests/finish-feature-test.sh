@@ -630,4 +630,61 @@ expect_no_commit "$repo" "FIX_NOW findings are not applied" 12 "Add the marker"
 repo="$(setup_repo empty-reason PASS "[]")"
 expect_no_commit "$repo" "--no-review has no reason" 12 "Add the marker" --no-review " "
 
+# The deadlock of fixing before the triage: round 1 had a finding that was
+# fixed, round 2 is a current review, and round 1 is still untriaged. It is
+# triaged as a historical review, and then the feature can be committed. A
+# historical triage does not excuse a stale latest review.
+cat >"$tmp/bin/gh" <<'GH'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  "auth status") exit 0 ;;
+  "issue view") printf 'Title: Marker\n\nBody.'; exit 0 ;;
+  "issue comment") exit 0 ;;
+esac
+echo "Unexpected gh invocation: $*" >&2
+exit 1
+GH
+chmod +x "$tmp/bin/gh"
+historical_decisions='{"decisions": [{"finding_id": "M1", "decision": "FIX_NOW", "rationale": "Blocks the feature.", "followup": null}]}'
+run_triage() {
+  (
+    cd "$1"
+    printf 'y\n' | PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$1.agent" MOCK_OUTPUT="$historical_decisions" \
+      ./scripts/triage-review.sh "$2"
+  ) >"$1.triage.out" 2>&1
+}
+
+printf 'triage: claude model-t\n' >"$tmp/agents.conf"
+repo="$(setup_repo deadlock CHANGES_REQUIRED "$major")"
+git -C "$repo" switch -q feature/12-marker
+printf 'fixed before the triage\n' >>"$repo/feature.txt"
+cp "$tmp/agents.conf" "$repo/.agents/agents.conf"
+add_second_round "$repo"
+expect_no_commit "$repo" "round 1 is not triaged" 12 "Add the marker"
+grep -Fq "triaged as a historical review" "$repo.out" || fail "the refusal does not name the historical triage"
+run_triage "$repo" "$review" || {
+  cat "$repo.triage.out" >&2
+  fail "the historical triage of round 1 failed"
+}
+[[ "$(jq -r '.historical' "$repo/$triage")" == "true" ]] || fail "the triage was not recorded as historical"
+if grep -Fq "apply-triage.sh" "$repo.triage.out"; then fail "a historical triage points to apply-triage.sh, which refuses a stale review"; fi
+grep -Fq "finish-feature.sh" "$repo.triage.out" || fail "a historical triage does not name the next step"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a feature with a historical triage of an earlier round was refused"
+}
+grep -Fq "Review: round 2, PASS" <<<"$(message "$repo")" || fail "the commit does not name the latest round"
+
+repo="$(setup_repo historical-latest-stale CHANGES_REQUIRED "$major")"
+printf 'fixed before the triage\n' >>"$repo/feature.txt"
+cp "$tmp/agents.conf" "$repo/.agents/agents.conf"
+add_second_round "$repo"
+run_triage "$repo" "$review" || {
+  cat "$repo.triage.out" >&2
+  fail "the historical triage failed"
+}
+printf 'changed after the latest review\n' >>"$repo/feature.txt"
+expect_no_commit "$repo" "all earlier rounds are triaged but the latest review is stale" 12 "Add the marker"
+grep -Fq "is stale" "$repo.out" || fail "a stale latest review was not reported"
+
 echo "finish-feature tests passed"
