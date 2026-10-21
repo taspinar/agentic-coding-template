@@ -16,8 +16,11 @@ usage() {
   echo
   echo "The pull request closes the Issue only when the feature is complete: the"
   echo "commit carries 'Completion: complete' of finish-feature.sh and the"
-  echo "completion gate still passes. Otherwise it is opened as a draft that"
-  echo "refers to the Issue and says why it does not close it."
+  echo "completion gate still passes. A feature that awaits evidence of a later gate"
+  echo "('Completion: awaiting_evidence') is published for review as well; it closes"
+  echo "the Issue unless evidence of the post_merge gate is pending, which"
+  echo "record-post-merge.sh records after the merge. Otherwise the pull request is"
+  echo "opened as a draft that refers to the Issue and says why it does not close it."
   echo
   echo "The script ends once the pull request is open; follow its checks on the pull"
   echo "request page and merge after they passed. It warns when the base branch does"
@@ -123,10 +126,39 @@ committed_completion="$(git -C "$root" log -1 --format=%b "$finish_commit" | sed
 gate="$(completion_gate "$root" "$issue")"
 gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
 closes=0
+# ready: the pull request is for review, not a draft. closes: it also closes
+# the Issue on a merge. They differ for a feature that awaits evidence of the
+# post_merge gate: it is ready, but the Issue stays open until that evidence
+# is recorded (record-post-merge.sh).
+ready=0
 if [[ "$committed_completion" == "complete" && "$gate_status" == "complete" ]]; then
+  ready=1
   closes=1
-elif [[ "$committed_completion" == "complete" ]]; then
-  not_closing="the commit says the feature is complete, but the completion gate does not pass now ($gate_status)"
+elif [[ "$committed_completion" == "awaiting_evidence" && "$gate_status" == "awaiting_evidence" ]] &&
+  ! diff -q <(git -C "$root" log -1 --format=%b "$finish_commit" | grep -E -- "^(- pending at (post_merge|owner_approval): |Post-merge criterion: )" | sort) \
+    <(completion_commit_lines "$root" "$issue" | grep -E -- "^(- pending at (post_merge|owner_approval): |Post-merge criterion: )" | sort) >/dev/null; then
+  # The pull request states, and record-post-merge.sh reads after the merge,
+  # the post_merge evidence of the finish commit, and the finish commit
+  # decided whether the merge needs the owner (a pending owner_approval
+  # criterion makes it need the owner). A record edited since then may
+  # differ: only a new finish may change what the pull request states.
+  not_closing="the commit and the completion record disagree on the pending post_merge or owner_approval evidence; run ./scripts/finish-feature.sh again so that the commit states it"
+elif [[ "$committed_completion" == "awaiting_evidence" && "$gate_status" == "awaiting_evidence" ]]; then
+  ready=1
+  pending_gates="$(completion_pending_gates "$root" "$issue" | paste -sd, - | sed 's/,/, /g')"
+  if completion_pending_gates "$root" "$issue" | grep -qx "post_merge"; then
+    not_closing="evidence of the post_merge gate is pending; record it with ./scripts/record-post-merge.sh after the merge (pending: $pending_gates)"
+  else
+    closes=1
+  fi
+elif [[ "$committed_completion" == "awaiting_evidence" && "$gate_status" == "complete" ]]; then
+  # A record changed after the finish commit could claim evidence of the
+  # post_merge gate before the merge: only a new finish may say so.
+  not_closing="the commit says the feature awaits evidence, but the completion record says complete now; run ./scripts/finish-feature.sh again so that the commit states it"
+elif [[ "$committed_completion" == "complete" && "$gate_status" == "awaiting_evidence" ]]; then
+  not_closing="the commit says the feature is complete, but the completion record awaits evidence now, which is weaker; run ./scripts/finish-feature.sh again so that the commit states it"
+elif [[ "$committed_completion" == "complete" || "$committed_completion" == "awaiting_evidence" ]]; then
+  not_closing="the commit says the feature is $committed_completion, but the completion gate does not pass now ($gate_status)"
 elif [[ -n "$committed_completion" ]]; then
   not_closing="the feature was committed as $committed_completion"
 else
@@ -202,11 +234,11 @@ if [[ -n "$url" ]]; then
     fail "could not update the description of $url. The branch is pushed."
   echo "Updated its description from the finish commit."
   is_draft="$(gh pr view "$url" --json isDraft --jq '.isDraft' 2>/dev/null)" || is_draft=""
-  if [[ "$closes" -eq 1 && "$is_draft" == "true" ]]; then
+  if [[ "$ready" -eq 1 && "$is_draft" == "true" ]]; then
     # Opened as a draft for partial work that is complete now.
     gh pr ready "$url" >/dev/null ||
       echo "Warning: could not mark $url as ready for review; do that on GitHub." >&2
-  elif [[ "$closes" -eq 0 && "$is_draft" != "true" ]]; then
+  elif [[ "$ready" -eq 0 && "$is_draft" != "true" ]]; then
     # A pull request that is ready for review, with work that is not
     # complete: back to a draft, so that it is not merged as a finished
     # feature. When that fails, the description still says that the Issue
@@ -219,11 +251,11 @@ if [[ -n "$url" ]]; then
   fi
 else
   create_options=()
-  [[ "$closes" -eq 1 ]] || create_options=(--draft)
+  [[ "$ready" -eq 1 ]] || create_options=(--draft)
   url="$(gh pr create --head "$branch" --title "$(git -C "$root" log -1 --format=%s "$finish_commit")" --body-file "$body" ${create_options[@]+"${create_options[@]}"})" ||
     fail "could not open the pull request. The branch is pushed; open it by hand, with 'Closes #$issue' in its description only when the feature is complete."
   url="$(printf '%s\n' "$url" | tail -n 1)"
-  if [[ "$closes" -eq 1 ]]; then
+  if [[ "$ready" -eq 1 ]]; then
     echo "Opened pull request: $url"
   else
     echo "Opened draft pull request: $url"
@@ -278,6 +310,17 @@ if [[ "$summary_wanted" -eq 1 ]] && ! post_summary; then
   echo "Warning: the run summary could not be posted on Issue #$issue; the pull request is published." >&2
 fi
 
+# print_post_merge_hint: a feature that awaits evidence of the post_merge gate
+# leaves its Issue open; say what closes it.
+print_post_merge_hint() {
+  [[ "$ready" -eq 1 && "$closes" -eq 0 ]] || return 0
+  completion_pending_gates "$root" "$issue" | grep -qx "post_merge" || return 0
+  echo
+  echo "After the merge, record the post_merge evidence with"
+  echo "  ./scripts/record-post-merge.sh $issue \"<criterion>\" \"<evidence>\""
+  echo "The Issue is closed when none is left."
+}
+
 print_manual_steps() {
   [[ -n "$manual_steps" ]] || return 0
   echo
@@ -304,6 +347,7 @@ if [[ "$wait_for_checks" -eq 0 ]]; then
     echo "the rule: docs/repository-setup.md." >&2
   fi
   print_manual_steps
+  print_post_merge_hint
   echo
   echo "After the merge, from the primary checkout:"
   echo "  ./scripts/cleanup-worktree.sh $issue"
@@ -328,6 +372,10 @@ if [[ "$started" -eq 0 ]]; then
   echo "No checks were reported for the pull request. Nothing verified it on GitHub."
   echo "Review it before merging: $url"
   print_manual_steps
+  print_post_merge_hint
+  echo
+  echo "After the merge, from the primary checkout:"
+  echo "  ./scripts/cleanup-worktree.sh $issue"
   exit 0
 fi
 
@@ -344,6 +392,7 @@ fi
 echo "All checks passed. The pull request is ready for you to merge:"
 echo "  $url"
 print_manual_steps
+print_post_merge_hint
 echo
 echo "After the merge, from the primary checkout:"
 echo "  ./scripts/cleanup-worktree.sh $issue"

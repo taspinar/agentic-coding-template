@@ -97,7 +97,8 @@ the human.
 A session that ends is not an Issue that is complete. The scripts that follow
 decide from what you record, not from the fact that you stopped: they go on to
 the review, the commit, and the pull request only when your completion record
-says `complete`, and a pull request closes the Issue only then.
+says `complete` or `awaiting_evidence`, and a pull request closes the Issue
+only when nothing is left to record after the merge.
 
 **Write the completion record before you end, every session**, also when you
 stop partway, run out of time, or are blocked:
@@ -121,14 +122,29 @@ stop partway, run out of time, or are blocked:
 
 - `criteria`: one entry for every acceptance criterion of the Issue, in its
   words, and for every step of the feature plan that no criterion covers.
-  `status` is `met`, `not_met`, or `not_applicable`. `evidence` names what
-  shows it: a test, a file and what it holds, a command and its result. For
-  `not_met` say where the work stands; for `not_applicable` say why.
+  `status` is `met`, `not_met`, `not_applicable`, or `pending`. `evidence`
+  names what shows it: a test, a file and what it holds, a command and its
+  result. For `not_met` say where the work stands; for `not_applicable` say
+  why.
+- `gate` (optional, `implementation` by default): where the evidence of a
+  criterion can exist. `implementation`: before you finish, which is almost
+  always. `pr_ci`: the CI result of the pull request, which exists after it is
+  published. `owner_approval`: the owner's approval, before the merge.
+  `post_merge`: a result that exists only on the default branch after the
+  merge. Only a criterion with one of the last three may be `pending`, and
+  its `evidence` says when it appears. Never mark a criterion `pending` to
+  avoid work that you can do and show now. A criterion of the
+  `owner_approval` gate is `pending` or `not_applicable`, never `met`: the
+  owner approves on GitHub, and the scripts refuse a record that claims it.
 - `status`:
   - `complete`: every criterion is met or not applicable, and nothing
     remains. Claim it only for what the code and the tests show: an
     independent reviewer checks every criterion against the diff, and an
     unsupported claim comes back as a finding.
+  - `awaiting_evidence`: every criterion that can be shown now is met or not
+    applicable, nothing remains, and at least one criterion is `pending` for a
+    later gate. The review, the commit, and the pull request go ahead; the
+    Issue is closed only when that evidence exists.
   - `partial`: work remains, whatever the reason. Say what in `remaining`.
     This is the honest answer when a session ends early; the implementer is
     then started again and continues from your handoff note.
@@ -136,7 +152,7 @@ stop partway, run out of time, or are blocked:
     human. Say why in `remaining`, record the question under "Open
     questions" in the handoff note, and in an unattended session end with
     the `BLOCKED:` line.
-- `remaining`: what is left, empty only for `complete`.
+- `remaining`: what is left, empty for `complete` and `awaiting_evidence`.
 
 Keep the handoff note in agreement with it: remaining work listed there
 counts as not complete, whatever the record says.

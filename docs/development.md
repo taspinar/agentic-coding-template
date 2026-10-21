@@ -674,22 +674,82 @@ The implementer writes a completion record before it ends, in every session:
 }
 ```
 
-`status` is `complete`, `partial`, or `blocked`. A criterion is `met`,
-`not_met`, or `not_applicable`, each with evidence. `complete` needs every
-criterion met or not applicable and nothing remaining; the other two need
-something that remains. A record that breaks these rules is invalid.
+`status` is `complete`, `awaiting_evidence`, `partial`, or `blocked`. A
+criterion is `met`, `not_met`, `not_applicable`, or `pending`, each with
+evidence. `complete` needs every criterion met or not applicable and nothing
+remaining; `partial` and `blocked` need something that remains. A record that
+breaks these rules is invalid.
 
-The gate passes when the record is valid and says `complete`, and the handoff
-note lists nothing under "Remaining". The note outweighs the record: remaining
-work listed there means not complete, whatever the record says.
+#### Evidence that cannot exist yet
+
+Some evidence appears only later: the CI result of a pull request that is not
+published yet, the owner's approval of the final commit, a verification of
+the default branch after the merge. A criterion therefore names the `gate` at
+which its evidence can exist (optional; `implementation` when absent):
+
+| Gate | Evidence exists | Required before |
+|---|---|---|
+| `implementation` | When the implementer ends | The commit and the pull request |
+| `pr_ci` | After the pull request is published | The merge |
+| `owner_approval` | When the owner approves the final commit | The merge |
+| `post_merge` | After the merge | Closing the Issue |
+
+Only a criterion of a later gate may be `pending`, with the moment its
+evidence appears in `evidence`. When every other criterion is met or not
+applicable, nothing remains, and something is pending, the status is
+`awaiting_evidence`: the feature is reviewed, committed, and published
+without `--partial` or `--no-review`, and the reviewer does not report the
+pending evidence as a defect. It reports a criterion that is pending although
+its evidence could exist now. `complete` keeps its meaning: every required
+criterion is satisfied. A not met criterion of the implementation gate cannot
+be hidden as pending, and a pending criterion cannot be in a `complete`
+record.
+
+Pending `pr_ci` and `owner_approval` evidence is not recorded anywhere by the
+scripts: CI and the merge approval gate on the pull request already hold the
+merge until it exists, and they are not weakened. A criterion that the record
+leaves pending at the `owner_approval` gate also makes `finish-feature.sh`
+state that the merge needs the owner's approval, whatever the diff and the
+review say: a record can require the owner's approval, never grant it. The pull request of a
+feature that awaits only these closes the Issue as usual. A feature that
+awaits `post_merge` evidence is published as ready for review, but without
+a closing keyword: the commit text refers to the Issue with `Refs`, and the
+description says that the Issue stays open and lists the pending criteria. After the merge, record each one with
+
+```bash
+./scripts/record-post-merge.sh <issue> "<criterion>" "<evidence>"
+```
+
+which posts the criterion and its evidence as a comment on the Issue and
+closes the Issue when no `post_merge` criterion is left. The criterion must
+be given exactly as the pull request lists it: the finish commit holds one
+line `Post-merge criterion: "<criterion as a JSON string>"` per pending
+`post_merge` criterion, and the script matches those strings exactly, so a
+criterion that begins like another, or holds parentheses or quotes, never
+stands for it. `publish-feature.sh` publishes a feature as ready only when
+the pending `post_merge` and `owner_approval` lines of the finish commit
+equal those of the record; a record edited after the finish needs a new
+`finish-feature.sh`, because the finish decides what the pull request states
+and whether the merge needs the owner. No pull request and
+no review round is needed; the comments are the audit trail. The script does
+not authenticate who gives the evidence: it is an agent-written or owner
+comment under the account that runs `gh`, not an independent approval. Owner
+approval stays with the merge approval gate and with the work to enforce it on
+GitHub with a separate identity (#99).
+
+The gate passes when the record is valid and says `complete` or
+`awaiting_evidence`, and the handoff note lists nothing under "Remaining".
+The note outweighs the record: remaining work listed there means not complete,
+whatever the record says.
 
 | Script | What the gate decides there |
 |---|---|
 | `start-feature.sh` | After the session it says whether the Issue is complete, and offers the review only then |
 | `run-feature.sh` | Goes on to the review only when the gate passes and the summary of the changes exists; otherwise it resumes the implementer with the reasons in the handoff note, at most four sessions in a run. `blocked` stops the run with status 3. The gate is asked again before every later review, because a session that repairs the verification is a session of the implementer too |
 | `review-feature.sh` | Gives the record to the reviewer of the complete feature, as a claim to check |
-| `finish-feature.sh` | Refuses a missing, invalid, partial, or blocked record. `--partial` commits partial work as your explicit choice |
-| `publish-feature.sh` | Asks the gate again. The pull request closes the Issue only when the commit says `Completion: complete` and the gate still passes; otherwise it is a draft that refers to the Issue and says why it does not close it |
+| `finish-feature.sh` | Refuses a missing, invalid, partial, or blocked record. `--partial` commits partial work as your explicit choice, and is refused for a feature that is complete or awaits evidence |
+| `publish-feature.sh` | Asks the gate again. The pull request closes the Issue only when the commit says `Completion: complete` (or `awaiting_evidence` with no `post_merge` evidence pending) and the gate still agrees. A feature that awaits `post_merge` evidence is published for review with `Refs`; any other outcome is a draft that refers to the Issue and says why it does not close it |
+| `record-post-merge.sh` | After the merge: records the evidence of a pending `post_merge` criterion as an Issue comment, and closes the Issue when none is left |
 
 The record is a claim of the implementer, and an implementer can claim
 `complete` wrongly. The scripts only read the status. What checks the claim

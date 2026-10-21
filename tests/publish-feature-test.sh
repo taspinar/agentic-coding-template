@@ -114,7 +114,8 @@ set_completion() {
 # statement of the commit; 'none' leaves it out.
 setup_repo() {
   local label="$1"
-  local statement="Completion: ${COMMITTED_COMPLETION:-complete}"
+  local statement="Completion: ${COMMITTED_COMPLETION:-complete}${COMMITTED_EXTRA:+
+$COMMITTED_EXTRA}"
   local remote="$tmp/$label-remote.git"
   local repo="$tmp/$label"
 
@@ -231,6 +232,96 @@ mkdir -p "$repo/.agents/handoffs"
 printf 'Remaining: steps 3 to 9\n' >"$repo/.agents/handoffs/12.md"
 run_publish "$repo" 12 || fail "publishing with remaining work in the handoff note failed"
 expect_open "$repo" "the handoff note lists remaining work" "the commit says the feature is complete, but the completion gate does not pass now (partial)"
+
+# set_awaiting <repo> <gate>...: a record that awaits evidence of these gates.
+set_awaiting() {
+  local repo="$1"
+  shift
+  mkdir -p "$repo/.agents/completion"
+  jq -n --args '{
+    schema: "completion/v1", status: "awaiting_evidence",
+    criteria: ([{criterion: "The marker exists", status: "met", evidence: "feature.txt"}]
+      + [$ARGS.positional[] | {criterion: ("Evidence at " + .), gate: ., status: "pending", evidence: "later"}]),
+    remaining: []
+  }' "$@" >"$repo/.agents/completion/12.json"
+}
+
+# A feature that awaits evidence of the pull request or the owner is published
+# for review and closes the Issue on the merge: that evidence exists before it.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence COMMITTED_EXTRA="- pending at owner_approval: Evidence at owner_approval (later)" setup_repo awaiting-before-merge)"
+set_awaiting "$repo" pr_ci owner_approval
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature that awaits pr_ci and owner_approval failed"; }
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "a feature that awaits only pre-merge evidence does not close the Issue"
+if grep -Fq "record-post-merge.sh" "$repo.out"; then fail "the publication names record-post-merge.sh without post_merge evidence"; fi
+if grep -Fq -- "--draft" "$repo.gh"; then fail "a feature that awaits evidence was opened as a draft"; fi
+
+# Evidence of the post_merge gate keeps the Issue open, but it is not a
+# draft: the work is ready for review.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence COMMITTED_EXTRA=$'- pending at post_merge: Evidence at post_merge (later)\nPost-merge criterion: "Evidence at post_merge"' setup_repo awaiting-post-merge)"
+set_awaiting "$repo" pr_ci post_merge
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature that awaits post_merge evidence failed"; }
+if grep -Eiq '(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#12([^0-9]|$)' "$repo.gh.body"; then
+  fail "the Issue would be closed by the merge although post_merge evidence is pending"
+fi
+grep -Fq "Issue #12 stays open after a merge of this pull request: evidence of the post_merge gate is pending; record it with ./scripts/record-post-merge.sh after the merge (pending: post_merge, pr_ci)." "$repo.gh.body" ||
+  fail "the description does not say that post_merge evidence keeps the Issue open"
+if grep -Fq -- "--draft" "$repo.gh"; then fail "a feature that awaits post_merge evidence was opened as a draft"; fi
+grep -Fq "Opened pull request" "$repo.out" || fail "the pull request was not announced as ready"
+grep -Fq "./scripts/record-post-merge.sh 12" "$repo.out" || fail "the end of the publication does not name record-post-merge.sh"
+grep -Fqx -- "- pending at post_merge: Evidence at post_merge (later)" "$repo.gh.body" || fail "the pending post_merge criterion is not in the description"
+
+# The gate is asked again: an awaiting commit with a record that no longer
+# agrees is not ready, and does not close the Issue.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence setup_repo awaiting-record-partial)"
+set_completion "$repo" partial
+run_publish "$repo" 12 || fail "publishing an awaiting commit with a partial record failed"
+expect_open "$repo" "the record says partial" "the commit says the feature is awaiting_evidence, but the completion gate does not pass now (partial)"
+
+# A record that differs from the commit in either direction is not ready, and
+# the reason names the difference and the remedy, not a failed gate.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence setup_repo awaiting-record-complete)"
+run_publish "$repo" 12 || fail "publishing an awaiting commit with a record that says complete failed"
+expect_open "$repo" "the record says complete against a commit that awaits evidence" "the commit says the feature awaits evidence, but the completion record says complete now; run ./scripts/finish-feature.sh again so that the commit states it"
+
+repo="$(setup_repo complete-record-awaiting)"
+set_awaiting "$repo" pr_ci
+run_publish "$repo" 12 || fail "publishing a complete commit with a record that awaits evidence failed"
+expect_open "$repo" "the record awaits evidence against a commit that says complete" "the commit says the feature is complete, but the completion record awaits evidence now, which is weaker; run ./scripts/finish-feature.sh again so that the commit states it"
+# Neither can be published with a commit that closes the Issue.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence setup_repo awaiting-record-complete-closing)"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Closes #12" -m "Completion: awaiting_evidence"
+if run_publish "$repo" 12; then fail "a commit that closes the Issue was published against a record that differs from it"; fi
+grep -Fq "a commit of the branch says that it does" "$repo.out" || fail "the closing commit was not named"
+if pushed "$repo"; then fail "the branch was pushed although a commit closes the Issue"; fi
+
+# What the pull request states about post_merge evidence is what the finish
+# commit says, because record-post-merge.sh reads it from there after the
+# merge. A record edited since then, in either direction, needs a new finish.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence COMMITTED_EXTRA=$'- pending at post_merge: Evidence at post_merge (later)\nPost-merge criterion: "Evidence at post_merge"' setup_repo awaiting-drops-post-merge)"
+set_awaiting "$repo" pr_ci
+run_publish "$repo" 12 || fail "publishing a record that dropped its post_merge criterion failed"
+expect_open "$repo" "the record dropped the post_merge criterion that the commit lists" "the commit and the completion record disagree on the pending post_merge or owner_approval evidence; run ./scripts/finish-feature.sh again so that the commit states it"
+
+repo="$(COMMITTED_COMPLETION=awaiting_evidence setup_repo awaiting-gains-post-merge)"
+set_awaiting "$repo" pr_ci post_merge
+run_publish "$repo" 12 || fail "publishing a record that gained a post_merge criterion failed"
+expect_open "$repo" "the record gained a post_merge criterion that the commit lacks" "the commit and the completion record disagree on the pending post_merge or owner_approval evidence; run ./scripts/finish-feature.sh again so that the commit states it"
+
+# The merge approval statement of the finish commit must agree with the
+# record: a record that gained a pending owner_approval criterion after the
+# finish needs a new finish (the finish makes the merge need the owner), so a
+# commit that said "not required" is never published as ready.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence setup_repo awaiting-gains-owner-approval)"
+set_awaiting "$repo" pr_ci owner_approval
+run_publish "$repo" 12 || fail "publishing a record that gained an owner_approval criterion failed"
+expect_open "$repo" "the record gained an owner_approval criterion that the commit lacks" "the commit and the completion record disagree on the pending post_merge or owner_approval evidence; run ./scripts/finish-feature.sh again so that the commit states it"
+
+# When the finish commit and the record agree on the owner_approval criterion,
+# the feature is published as ready.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence COMMITTED_EXTRA="- pending at owner_approval: Evidence at owner_approval (later)" setup_repo awaiting-owner-approval-agrees)"
+set_awaiting "$repo" pr_ci owner_approval
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature whose commit and record agree on owner_approval failed"; }
+if grep -Fq -- "--draft" "$repo.gh"; then fail "a feature whose commit and record agree on owner_approval was opened as a draft"; fi
 
 # A draft that was opened for partial work is marked ready once the feature
 # is complete; an open pull request of work that is not complete stays as it
@@ -359,6 +450,14 @@ if grep -Fq "All checks passed" "$repo.out"; then fail "a failed check was repor
 # A repository without checks is reported as unverified, not as passed.
 repo="$(setup_repo no-checks)"
 MOCK_CHECKS=none run_publish "$repo" 12 --wait || fail "a pull request without checks failed the run"
+grep -Fq "./scripts/cleanup-worktree.sh 12" "$repo.out" || fail "the ending without checks does not print the cleanup step"
+
+# The ending without checks names the script that closes an Issue which awaits
+# post_merge evidence, as the other endings do.
+repo="$(COMMITTED_COMPLETION=awaiting_evidence COMMITTED_EXTRA=$'- pending at post_merge: Evidence at post_merge (later)\nPost-merge criterion: "Evidence at post_merge"' setup_repo awaiting-no-checks)"
+set_awaiting "$repo" pr_ci post_merge
+MOCK_CHECKS=none run_publish "$repo" 12 --wait || fail "a feature that awaits post_merge evidence failed the run without checks"
+grep -Fq "./scripts/record-post-merge.sh 12" "$repo.out" || fail "the ending without checks does not name record-post-merge.sh"
 grep -Fq "No checks were reported" "$repo.out" || fail "missing checks were not reported"
 if grep -Fq "All checks passed" "$repo.out"; then fail "missing checks were reported as passed"; fi
 if grep -Fq -- "--watch" "$repo.gh"; then fail "checks that never started were awaited"; fi

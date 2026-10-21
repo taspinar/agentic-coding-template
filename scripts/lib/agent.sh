@@ -87,9 +87,11 @@ after your session and stops the run when the verification really fails.
 
 Ending normally does not mean that the Issue is done. Before you end, write
 the completion record that the implementer contract describes under
-'Completion', with the status complete, partial, or blocked as it really is.
-The scripts go on to the review and the commit only on 'complete', and start
-you again when work remains."
+'Completion', with the status complete, awaiting_evidence, partial, or blocked
+as it really is. awaiting_evidence is only for criteria whose evidence cannot
+exist yet (CI of the pull request, the owner's approval, the default branch
+after the merge). The scripts go on to the review and the commit on 'complete'
+or 'awaiting_evidence', and start you again when work remains."
 
 # agent_blocked_reason <final-message-file>
 # Prints the reason of the last 'BLOCKED: ' line of an unattended session's

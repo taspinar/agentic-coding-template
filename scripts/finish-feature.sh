@@ -22,8 +22,9 @@ usage() {
   echo "editable, structured message. It never pushes or merges."
   echo
   echo "Complete means: the implementer's completion record (.agents/completion/"
-  echo "<issue>.json) says complete with evidence for every acceptance criterion,"
-  echo "and the handoff note lists no remaining work. --partial commits work that"
+  echo "<issue>.json) says complete, or awaiting_evidence when only evidence of a"
+  echo "later gate is pending, with evidence for every acceptance criterion that can"
+  echo "have it now, and the handoff note lists no remaining work. --partial commits work that"
   echo "is not complete, as your explicit choice: the commit message says what"
   echo "remains, and publish-feature.sh then opens a draft pull request that does"
   echo "not close the Issue."
@@ -92,19 +93,20 @@ refuse_incomplete() {
   exit 1
 }
 case "$gate_status" in
-  complete)
+  complete | awaiting_evidence)
     [[ "$partial" -eq 0 ]] ||
-      fail "--partial was given, but the completion gate passes: the feature is complete. Run without --partial."
+      fail "--partial was given, but the completion gate passes: the feature is $gate_status. Run without --partial."
     ;;
   partial | blocked)
     [[ "$partial" -eq 1 ]] ||
       refuse_incomplete "the feature is not complete ($gate_status):" \
         "Continue the work with ./scripts/start-feature.sh $issue --resume. To commit the work as it is, as your own choice, add --partial: the pull request then stays a draft and does not close Issue #$issue."
     # The commit message is made from the record. A record that says complete
-    # while the handoff note lists remaining work would be committed as
-    # complete, so the record has to say what is left first.
-    [[ "$(jq -r '.status' "$completion_file")" != "complete" ]] ||
-      refuse_incomplete "the completion record says complete, so the work cannot be committed as partial:" \
+    # or awaiting_evidence while the handoff note lists remaining work would
+    # be committed as such, without what remains, so the record has to say
+    # what is left first.
+    ! completion_ready "$(jq -r '.status' "$completion_file")" ||
+      refuse_incomplete "the completion record says $(jq -r '.status' "$completion_file"), so the work cannot be committed as partial:" \
         "Correct $COMPLETION_DIR/$issue.json first: the status partial or blocked, the criteria that are not met, and what remains. Then run again with --partial."
     ;;
   missing)
@@ -258,6 +260,17 @@ if [[ -n "$feature_merge_base" ]]; then
 else
   approval_lines="owner"$'\n'"the base of the feature could not be determined, so the gate could not check the diff"
 fi
+# A criterion of the owner_approval gate that the record leaves pending asks
+# for the owner's approval too. The record can only require it, never grant
+# it: the decision stays with the heaviest of the rules, the review, and the
+# Issue's own criteria.
+owner_pending="$(jq -r '.criteria[] | select(.status == "pending" and .gate == "owner_approval") | .criterion' "$completion_file")"
+if [[ -n "$owner_pending" ]]; then
+  if [[ "$(printf '%s\n' "$approval_lines" | sed -n 1p)" != "owner" ]]; then
+    approval_lines="owner"
+  fi
+  approval_lines+=$'\n'"$(printf '%s\n' "$owner_pending" | sed 's/^/the completion record leaves a criterion of the owner_approval gate pending: /')"
+fi
 if [[ "$(printf '%s\n' "$approval_lines" | sed -n 1p)" == "owner" ]]; then
   merge_approval="- required from the project owner, for exactly this commit"
   echo "This feature needs the owner's approval before it is merged:"
@@ -316,9 +329,16 @@ echo "Committed $(git -C "$root" rev-parse --short HEAD) on $branch."
 echo
 if [[ "$gate_status" == "complete" ]]; then
   echo "Next: push the branch and open the pull request; follow its checks there:"
+elif [[ "$gate_status" == "awaiting_evidence" ]]; then
+  echo "The work is committed as $gate_status: evidence of a later gate is pending ($(completion_pending_gates "$root" "$issue" | paste -sd, - | sed 's/,/, /g'))."
+  echo "Next: push the branch and open the pull request; follow its checks there:"
 else
   echo "The work is committed as $gate_status. Next: push the branch; the pull request is"
   echo "opened as a draft and does not close Issue #$issue:"
 fi
 echo "  ./scripts/publish-feature.sh $issue"
 echo "After the merge, from the primary checkout: ./scripts/cleanup-worktree.sh $issue"
+if [[ "$gate_status" == "awaiting_evidence" ]] && completion_pending_gates "$root" "$issue" | grep -qx "post_merge"; then
+  echo "The Issue stays open until the post_merge evidence is recorded after the merge:"
+  echo "  ./scripts/record-post-merge.sh $issue \"<criterion>\" \"<evidence>\""
+fi

@@ -38,7 +38,8 @@ usage() {
   echo "complete feature again. It never merges and never removes a worktree."
   echo
   echo "The review starts only when the completion gate passes: the implementer's"
-  echo "completion record says complete, its handoff note lists no remaining work,"
+  echo "completion record says complete (or awaiting_evidence, when only evidence of"
+  echo "a later gate is pending), its handoff note lists no remaining work,"
   echo "and it wrote the summary of the changes. Until then the implementer is"
   echo "resumed, for at most $MAX_SESSIONS sessions in a run."
   echo
@@ -442,7 +443,7 @@ await_completion() {
       gate="$(completion_gate "$worktree" "$issue")"
       gate_status="$(printf '%s\n' "$gate" | sed -n 1p)"
       gate_reasons="$(printf '%s\n' "$gate" | sed 1d)"
-      if [[ "$gate_status" == "complete" ]] && ! completion_summary_present "$worktree" "$issue"; then
+      if completion_ready "$gate_status" && ! completion_summary_present "$worktree" "$issue"; then
         # Nobody edits the commit message of this run, so the summary of the
         # changes has to come from the implementer.
         gate_status="no summary"
@@ -451,7 +452,7 @@ await_completion() {
       gate_summary="$(printf '%s' "$gate_reasons" | tr '\n' ';' | sed 's/;/; /g')"
       records_gate "$worktree" "$gate_status" "$gate_reasons" 2>/dev/null || true
       case "$gate_status" in
-        complete)
+        complete | awaiting_evidence)
           echo "implemented" >"$state_file"
           return 0
           ;;
@@ -485,8 +486,9 @@ await_completion() {
         printf '%s\n' "$gate_reasons" | sed 's/^/- gate: /'
         echo
         echo "Continue the work on the Issue. Nothing is reviewed or committed before"
-        echo "$COMPLETION_DIR/$issue.json says complete with evidence for every acceptance"
-        echo "criterion, the list of what is left in this note is empty, and"
+        echo "$COMPLETION_DIR/$issue.json says complete, or awaiting_evidence for evidence of a"
+        echo "later gate, with evidence for every acceptance criterion that can have it now,"
+        echo "the list of what is left in this note is empty, and"
         echo ".agents/summaries/$issue.md exists (.agents/prompts/implementer.md,"
         echo "'Completion'). When the Issue cannot be completed without a decision of the"
         echo "human, record the status 'blocked'."
@@ -711,3 +713,9 @@ if git -C "$worktree" log -1 --format=%b | grep -Fqx -- "- required from the pro
 fi
 echo "Read it, also the triage decisions that were approved without you, follow its"
 echo "checks, and merge it. Then clean up with: ./scripts/cleanup-worktree.sh $issue"
+if git -C "$worktree" log -1 --format=%b | grep -Fq -- "- pending at post_merge: "; then
+  echo
+  echo "The Issue stays open after the merge: the commit lists evidence of the post_merge"
+  echo "gate. Record it with ./scripts/record-post-merge.sh $issue \"<criterion>\" \"<evidence>\";"
+  echo "the Issue is closed when none is left."
+fi
