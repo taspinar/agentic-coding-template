@@ -12,10 +12,14 @@ source "$script_dir/lib/fingerprint.sh"
 
 usage() {
   echo "Usage: $0 <review-json> [--agent <agent>] [--model <model>]"
+  echo "       $0 <review-json> --decisions <file> --reason <text> [--proposal <file>]"
   echo "       $0 --publish <triage-json> [--mark-only]"
   echo
   echo "The agent and model come from role 'triage' in .agents/agents.conf"
   echo "unless --agent and --model are given."
+  echo "--decisions gives the owner's own decisions instead of an agent's proposal"
+  echo "(see docs/development.md, 'Owner-directed triage'); it needs --reason and"
+  echo "cannot be combined with --unattended."
   echo
   echo "Examples:"
   echo "  $0 .agents/reviews/feature-5-rendering-review-01.json"
@@ -159,8 +163,46 @@ if [[ "${AGENT_POSITIONAL[0]:-}" == "--publish" ]]; then
   exit 0
 fi
 
+# Owner-directed triage: --decisions, --reason, and --proposal are not known to
+# agent_parse_args, so they are taken from the remaining arguments.
+owner_decisions=""
+owner_reason=""
+owner_proposal=""
+positional=()
+set -- ${AGENT_POSITIONAL[@]+"${AGENT_POSITIONAL[@]}"}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --decisions | --reason | --proposal)
+      [[ $# -ge 2 && -n "$2" ]] || fail "$1 requires a value."
+      case "$1" in
+        --decisions) owner_decisions="$2" ;;
+        --reason) owner_reason="$2" ;;
+        --proposal) owner_proposal="$2" ;;
+      esac
+      shift 2
+      ;;
+    *)
+      positional+=("$1")
+      shift
+      ;;
+  esac
+done
+AGENT_POSITIONAL=(${positional[@]+"${positional[@]}"})
+
 if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
   usage
+fi
+
+if [[ -n "$owner_decisions$owner_reason$owner_proposal" ]]; then
+  [[ -n "$owner_decisions" ]] || fail "--reason and --proposal belong to --decisions <file>."
+  [[ -n "$owner_reason" ]] && [[ "$owner_reason" =~ [^[:space:]] ]] ||
+    fail "an owner-directed triage needs a reason: --reason <text>."
+  [[ "$AGENT_UNATTENDED" -eq 0 ]] ||
+    fail "an owner-directed triage needs your confirmation and cannot run with --unattended."
+  [[ -z "$AGENT_CLI_PROVIDER$AGENT_CLI_MODEL" ]] ||
+    fail "--agent and --model choose who proposes; they do not apply to --decisions."
+  [[ -f "$owner_decisions" ]] || fail "decisions file not found: $owner_decisions"
+  [[ -z "$owner_proposal" || -f "$owner_proposal" ]] || fail "proposal file not found: $owner_proposal"
 fi
 
 review_input="${AGENT_POSITIONAL[0]}"
@@ -187,9 +229,14 @@ if [[ "$(jq -r '.kind // "feature"' "$review_path" 2>/dev/null)" == "planning" ]
   fail "this is a planning review; it is not triaged. Handle it with ./scripts/revise-planning.sh and review again with ./scripts/review-planning.sh."
 fi
 
-agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
-agent="$AGENT_PROVIDER"
-model="$AGENT_MODEL"
+if [[ -n "$owner_decisions" ]]; then
+  agent="owner"
+  model="owner-directed"
+else
+  agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+  agent="$AGENT_PROVIDER"
+  model="$AGENT_MODEL"
+fi
 
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated. Run: gh auth login"
@@ -240,13 +287,56 @@ esac
 decisions_file="$tmp_work/decisions.json"
 context_file="$tmp_work/context.md"
 
-echo "Starting independent review triage:"
-echo "  Review: $review_relative"
-echo "  Agent:  $agent"
-echo "  Model:  $model"
+if [[ -n "$owner_decisions" ]]; then
+  echo "Starting owner-directed triage:"
+  echo "  Review: $review_relative"
+  echo "  Decisions: $owner_decisions"
+else
+  echo "Starting independent review triage:"
+  echo "  Review: $review_relative"
+  echo "  Agent:  $agent"
+  echo "  Model:  $model"
+fi
 echo
 
-if [[ "$finding_count" -eq 0 ]]; then
+if [[ -n "$owner_decisions" ]]; then
+  # The owner's decisions are validated like an agent's, against the same
+  # rules: a critical or major finding stays FIX_NOW.
+  # Both inputs are copied once; everything below, including what is shown
+  # and what is stored, comes from the copies, so a change to the files while
+  # the question is open has no effect.
+  cp "$owner_decisions" "$tmp_work/owner-decisions.json"
+  owner_decisions="$tmp_work/owner-decisions.json"
+  if [[ -n "$owner_proposal" ]]; then
+    cp "$owner_proposal" "$tmp_work/owner-proposal.json"
+    owner_proposal="$tmp_work/owner-proposal.json"
+  fi
+  decision_errors="$(triage_decision_errors "$owner_decisions" "$review_path")"
+  if [[ -n "$decision_errors" ]]; then
+    echo "The decisions are invalid:" >&2
+    printf '%s\n' "$decision_errors" | sed 's/^/  - /' >&2
+    fail "triage decisions are invalid. No artifact or GitHub Issues were created."
+  fi
+  if [[ -n "$owner_proposal" ]]; then
+    proposal_errors="$(triage_decision_errors "$owner_proposal" "$review_path")"
+    if [[ -n "$proposal_errors" ]]; then
+      echo "The original proposal is invalid:" >&2
+      printf '%s\n' "$proposal_errors" | sed 's/^/  - /' >&2
+      fail "the original proposal is invalid. No artifact or GitHub Issues were created."
+    fi
+  fi
+  owner_account="$(gh api user --jq .login </dev/null 2>/dev/null || true)"
+  [[ -n "$owner_account" ]] ||
+    fail "could not determine the authenticated GitHub account (gh api user). No artifact or GitHub Issues were created."
+  jq '{decisions}' "$owner_decisions" >"$decisions_file"
+  # The record of the override is complete before it is shown, and is stored
+  # as it is shown.
+  owner_record="$tmp_work/owner-record.json"
+  jq -n --arg account "$owner_account" --arg reason "$owner_reason" \
+    --arg at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --slurpfile proposal "${owner_proposal:-/dev/null}" '
+    {account: $account, directed_at: $at, reason: $reason}
+    + (if ($proposal | length) > 0 then {original_proposal: {decisions: $proposal[0].decisions}} else {} end)' >"$owner_record"
+elif [[ "$finding_count" -eq 0 ]]; then
   echo "The review has no findings; no triage agent is needed."
   echo '{"decisions": []}' >"$decisions_file"
 else
@@ -357,7 +447,17 @@ render_proposal() {
 }
 
 echo
-echo "Proposed triage:"
+if [[ -n "$owner_decisions" ]]; then
+  echo "OWNER-DIRECTED TRIAGE: these decisions come from you, not from an agent."
+  echo "Reason: $owner_reason"
+  echo "Account: $owner_account"
+  echo "Record stored with the triage (owner_directed):"
+  jq . "$owner_record"
+  echo
+  echo "Triage to store:"
+else
+  echo "Proposed triage:"
+fi
 echo
 render_proposal "$proposal_file"
 
@@ -370,6 +470,9 @@ echo "Approval will publish the review and triage reports as a comment on Issue 
 if [[ "$AGENT_UNATTENDED" -eq 1 ]]; then
   echo "Approved without a question (--unattended)."
 else
+  if [[ -n "$owner_decisions" ]]; then
+    echo "Approving stores exactly the triage above and records you as its author."
+  fi
   printf "Proceed with this triage? [y/N] "
   approval=""
   read -r approval || true
@@ -417,6 +520,7 @@ jq -n \
   --arg agent "$agent" \
   --arg model "$model" \
   --arg approved_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --slurpfile owner_record "${owner_record:-/dev/null}" \
   --argjson unattended "$([[ "$AGENT_UNATTENDED" -eq 1 ]] && echo true || echo false)" '
   {
     schema: "triage/v1",
@@ -427,7 +531,8 @@ jq -n \
     triage: {agent: $agent, model: $model},
     approved_at: $approved_at,
     decisions: $decisions[0]
-  } + (if $unattended then {unattended: true} else {} end)' >"$pending"
+  } + (if $unattended then {unattended: true} else {} end)
+    + (if ($owner_record | length) > 0 then {owner_directed: $owner_record[0]} else {} end)' >"$pending"
 
 record_issue() {
   local finding_id="$1"
@@ -497,6 +602,25 @@ if [[ -n "$artifact_errors" ]]; then
   echo "Error: the triage artifact would be invalid; nothing was stored:" >&2
   printf '%s\n' "$artifact_errors" | sed 's/^/  - /' >&2
   exit 1
+fi
+
+if [[ -n "$owner_decisions" ]]; then
+  # The follow-up references are resolved: this is the complete artifact. It
+  # is shown and confirmed once more, and stored exactly as shown; only
+  # published_at is added when it is published.
+  echo
+  echo "The complete triage artifact, as it will be stored:"
+  cat "$pending"
+  printf "Store and publish exactly this artifact? [y/N] "
+  final_approval=""
+  read -r final_approval || true
+  case "$final_approval" in
+    y | Y | yes | YES) ;;
+    *)
+      echo "Not stored or published. Follow-up Issues that were created are reused by the next triage of this review."
+      exit 0
+      ;;
+  esac
 fi
 
 cp "$pending" "$artifact.json"

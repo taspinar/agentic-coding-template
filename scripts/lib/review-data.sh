@@ -354,9 +354,25 @@ triage_artifact_errors() {
       "the file is not a triage/v1 artifact"
     else
       unexpected(["approved_at", "decisions", "issue", "published_at", "review_verdict", "reviewed_tree",
-                  "schema", "source_review", "triage", "unattended"]; "the triage"),
+                  "owner_directed", "schema", "source_review", "triage", "unattended"]; "the triage"),
       (if .unattended == null or .unattended == true then empty
        else "unattended must be true or absent" end),
+      (if has("owner_directed") and .unattended == true then "an owner-directed triage cannot be unattended"
+       else empty end),
+      (if has("owner_directed") | not then empty
+       elif (.owner_directed | type) != "object" then "owner_directed must be an object"
+       else
+         (.owner_directed | unexpected(["account", "directed_at", "original_proposal", "reason"]; "owner_directed")),
+         (if (.owner_directed.reason | nonempty) then empty else "an owner-directed triage needs a reason" end),
+         (if (.owner_directed.account | nonempty) then empty else "an owner-directed triage needs the account that directed it" end),
+         (if (.owner_directed.directed_at | type) == "string"
+             and (.owner_directed.directed_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) then empty
+          else "owner_directed.directed_at must be a UTC timestamp" end),
+         (if (.owner_directed.original_proposal // null) == null then empty
+          else (.owner_directed.original_proposal
+                | triage_decision_rules($review[0].findings | map({key: .id, value: .severity}) | from_entries)
+                | "the original proposal is invalid: \(.)") end)
+       end),
       (if .published_at == null or ((.published_at | type) == "string"
           and (.published_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))) then empty
        else "published_at must be a UTC timestamp" end),
@@ -500,8 +516,18 @@ triage_render_markdown() {
     "Source review: `\(.source_review)`\n\n" +
     "Source feature Issue: #\(.issue)\n\n" +
     "Reviewer verdict: \(.review_verdict | gsub("_"; " "))\n\n" +
-    "Triage agent: \(.triage.agent) (\(.triage.model))\n\n" +
+    (if .owner_directed != null then "Decisions: given by the owner, not proposed by an agent\n\n"
+     else "Triage agent: \(.triage.agent) (\(.triage.model))\n\n" end) +
     "Approved at: \(.approved_at)\(if .unattended == true then ", by an unattended run; no human approved these decisions" else "" end)\n\n" +
+    (if .owner_directed != null then
+       "## Owner-directed triage\n\n" +
+       "- Directed by: \(.owner_directed.account) at \(.owner_directed.directed_at)\n" +
+       "- Reason: \(.owner_directed.reason)\n" +
+       (if (.owner_directed.original_proposal // null) == null then "- Original agent proposal: none\n\n"
+        else "- Original agent proposal:\n" +
+             (.owner_directed.original_proposal.decisions | map("  - \(.finding_id): \(.decision) — \(.rationale)\n") | join("")) + "\n"
+        end)
+     else "" end) +
     group("FIX_NOW"; "Fix now") + "\n" +
     group("DEFER"; "Deferred") + "\n" +
     group("ACCEPT"; "Accepted")
