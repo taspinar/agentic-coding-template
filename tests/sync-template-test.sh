@@ -311,6 +311,122 @@ if run_sync "$project" --template "$tmp/no-such-template"; then fail "a missing 
 [[ -z "$(git -C "$project" status --porcelain)" ]] || fail "a refused sync changed the project"
 [[ "$(git -C "$project" branch --show-current)" == "main" ]] || fail "a refused sync created a branch"
 
+# A template version that only extends 'paths:' to files that already exist
+# and do not change: the files are not in the diff. A project without one gets
+# it; a project with its own content keeps it, and the file is reported.
+owned="$tmp/owned-template"
+mkdir -p "$owned/scripts" "$owned/docs" "$owned/.agents"
+git -C "$owned" init -q -b main
+lines "repository: $owned" "" "paths: scripts .agents/template.conf" >"$owned/.agents/template.conf"
+cp "$source_root/scripts/sync-template.sh" "$owned/scripts/sync-template.sh"
+lines "tool one" >"$owned/scripts/tool.sh"
+lines "removed with the listing" >"$owned/docs/gone.md"
+lines "guide" >"$owned/docs/guide.md"
+lines "notes" >"$owned/docs/notes.md"
+lines "#!/usr/bin/env bash" "echo helper" >"$owned/docs/helper.sh"
+chmod +x "$owned/docs/helper.sh"
+commit_all "$owned" "Owned one"
+owned_one="$(git -C "$owned" rev-parse HEAD)"
+lines "repository: $owned" "" "paths: scripts docs .agents/template.conf :(exclude)docs/notes.md" >"$owned/.agents/template.conf"
+lines "tool two" >"$owned/scripts/tool.sh"
+lines "template added" >"$owned/docs/added.md"
+git -C "$owned" rm -q docs/gone.md
+lines "edited helper" >>"$owned/docs/notes.md"
+lines "#!/usr/bin/env bash" "echo helper two" >"$owned/docs/helper.sh"
+commit_all "$owned" "Owned two: lists the docs"
+for case_name in lacks has; do
+  project="$tmp/owned-$case_name"
+  mkdir -p "$project"
+  git -C "$owned" archive "$owned_one" | tar -x -C "$project"
+  git -C "$project" init -q -b main
+  rm -rf "$project/docs"
+  rm "$project/scripts/tool.sh"
+  mkdir -p "$project/docs"
+  if [[ "$case_name" == "has" ]]; then
+    lines "project guide" >"$project/docs/guide.md"
+    lines "project helper" >"$project/docs/helper.sh"
+  fi
+  commit_all "$project" "Create the project"
+  run_sync "$project" --from "$owned_one" || {
+    cat "$project.out" >&2
+    fail "a sync that only extends the template paths failed"
+  }
+  [[ ! -e "$project/scripts/tool.sh" ]] || fail "an always-owned file the project deleted was added again"
+  grep -Fq "scripts/tool.sh: changed in the template, but the project has no such file; left out" "$project.out" ||
+    fail "a deleted, changed template file was not reported as left out"
+  [[ ! -e "$project/docs/notes.md" ]] || fail "a file the template excludes was added as newly owned"
+  if [[ "$case_name" == "lacks" ]]; then
+    grep -Fqx "guide" "$project/docs/guide.md" || fail "a newly owned file was not added"
+    [[ -x "$project/docs/helper.sh" ]] || fail "a newly owned file lost its executable bit"
+    grep -Fqx "echo helper two" "$project/docs/helper.sh" || fail "a newly owned file that also changed was not added"
+    grep -Fq "docs/helper.sh (newly owned by the template)" "$project.out" || fail "a changed, newly owned file was not reported as added"
+    grep -Fq "docs/guide.md (newly owned by the template)" "$project.out" || fail "an added newly owned file was not reported"
+  else
+    grep -Fqx "project guide" "$project/docs/guide.md" || fail "a project file at a newly owned path was replaced"
+    grep -Fq "docs/guide.md: newly owned by the template, but the project has its own version" "$project.out" ||
+      fail "a kept project file at a newly owned path was not reported"
+    grep -Fqx "project helper" "$project/docs/helper.sh" || fail "a project file at a newly owned and changed path was merged or replaced"
+    grep -Fq "docs/helper.sh: newly owned by the template, but the project has its own version" "$project.out" ||
+      fail "a kept project file at a newly owned and changed path was not reported"
+    if grep -Fq "<<<<<<<" "$project/docs/helper.sh"; then fail "a newly owned file was merged"; fi
+  fi
+done
+
+# A file the template adds in the range, where the project already has its own
+# file at that path, is never overwritten silently: it is merged against
+# nothing and left as a conflict.
+project="$tmp/owned-added"
+mkdir -p "$project"
+git -C "$owned" archive "$owned_one" | tar -x -C "$project"
+git -C "$project" init -q -b main
+mkdir -p "$project/docs"
+lines "project added" >"$project/docs/added.md"
+lines "project own file" >"$project/docs/gone.md"
+commit_all "$project" "Create the project"
+if run_sync "$project" --from "$owned_one"; then fail "a project file at a path the template adds was not reported as a conflict"; fi
+if grep -Fq "docs/gone.md" "$project.out"; then fail "a file the template never owned for the project was reported as removed from the template"; fi
+grep -Fq "docs/added.md" "$project.out" || fail "the conflict at a path the template adds was not reported"
+grep -Fq "project added" "$project/docs/added.md" || fail "a project file at a path the template adds was lost"
+grep -Fq "<<<<<<<" "$project/docs/added.md" || fail "a project file at a path the template adds was not marked as a conflict"
+# A project copy that equals the previous, unowned template version is its own
+# file as well: it is kept and reported, not replaced.
+grep -Fqx "echo helper" "$project/docs/helper.sh" || fail "a project file equal to the unowned base version was replaced"
+grep -Fq "docs/helper.sh: newly owned by the template, but the project has its own version" "$project.out" ||
+  fail "a kept project file equal to the unowned base version was not reported"
+
+# A base version whose list matches no file is an empty ownership set, not
+# missing information: a file the target newly lists is still newly owned.
+empty="$tmp/empty-template"
+mkdir -p "$empty/scripts" "$empty/.agents"
+git -C "$empty" init -q -b main
+lines "repository: $empty" "" "paths: nothing-here" >"$empty/.agents/template.conf"
+cp "$source_root/scripts/sync-template.sh" "$empty/scripts/sync-template.sh"
+lines "tool one" >"$empty/scripts/tool.sh"
+commit_all "$empty" "Empty one"
+empty_one="$(git -C "$empty" rev-parse HEAD)"
+lines "repository: $empty" "" "paths: nothing-here scripts" >"$empty/.agents/template.conf"
+lines "tool two" >"$empty/scripts/tool.sh"
+commit_all "$empty" "Empty two"
+for case_name in lacks has; do
+  project="$tmp/empty-$case_name"
+  mkdir -p "$project"
+  git -C "$empty" archive "$empty_one" | tar -x -C "$project"
+  git -C "$project" init -q -b main
+  if [[ "$case_name" == "lacks" ]]; then rm "$project/scripts/tool.sh"; else lines "project tool" >"$project/scripts/tool.sh"; fi
+  commit_all "$project" "Create the project"
+  run_sync "$project" --from "$empty_one" --template "$empty" || {
+    cat "$project.out" >&2
+    fail "a sync with an empty base ownership set failed"
+  }
+  if [[ "$case_name" == "lacks" ]]; then
+    grep -Fqx "tool two" "$project/scripts/tool.sh" || fail "a newly listed, changed file was not added with an empty base ownership set"
+  else
+    grep -Fqx "project tool" "$project/scripts/tool.sh" || fail "a project file was merged or replaced with an empty base ownership set"
+    grep -Fq "scripts/tool.sh: newly owned by the template, but the project has its own version" "$project.out" ||
+      fail "a kept project file was not reported with an empty base ownership set"
+  fi
+done
+
 # The paths this repository hands out: the documentation site of the template
 # and the workflow that publishes it never reach a project, while the
 # workflows of the template do.

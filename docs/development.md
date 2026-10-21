@@ -1679,9 +1679,10 @@ project's own, add `:(exclude)<path>` to `paths:` in the project's
 |---|---|
 | The project did not change the file | Replaces it with the template's version |
 | Both changed it | Merges the two; a conflict is marked in the file and reported |
-| The template added the file | Adds it |
+| The template added the file | Adds it; a file of the project at that path is merged against nothing and left as a conflict |
 | The template removed the file | Reports it; the project decides whether to delete it |
 | The template changed a file the project deleted | Reports it and leaves it out |
+| The template started to list a file under `paths:` that already existed in the previous version (changed in the range or not) | Adds it when the project has no such file; keeps the project's file with other content and reports it |
 | The template changed only the executable bit | Applies it to the project's file |
 | The file, or a directory above it, is a symbolic link in the project | Reports it and writes nothing |
 

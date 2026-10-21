@@ -13,6 +13,8 @@ usage() {
   echo "  A file the project did not change is replaced."
   echo "  A file both changed is merged; a conflict is left in the file and reported."
   echo "  A file that is new in the template is added."
+  echo "  A file the template newly lists is added when the project has none, otherwise"
+  echo "  kept and reported."
   echo "  A file the template removed is reported, never deleted."
   echo
   echo "--to selects the template version (default: its default branch). --from"
@@ -231,6 +233,26 @@ merge() {
   return "$merge_status"
 }
 
+# The files owned in the base version and in the target version, to tell a
+# file the template started to list under 'paths:' from one it always owned.
+# The project's exclusions apply to both.
+template_git show "$base:$config_relative" >"$work/base.conf" 2>/dev/null || : >"$work/base.conf"
+base_paths_value="$(config_value "$work/base.conf" paths)"
+: >"$work/owned.base"
+# Whether the base version lists its files at all: a valid list that matches
+# no file is an empty ownership set, not missing information.
+base_ownership_known=0
+if [[ -n "$base_paths_value" ]]; then
+  base_ownership_known=1
+  base_specs=()
+  read -r -a base_specs <<<"$base_paths_value"
+  for spec in ${project_specs[@]+"${project_specs[@]}"}; do
+    [[ "$spec" != ":(exclude)"* && "$spec" != ":!"* && "$spec" != ":^"* ]] || base_specs+=("$spec")
+  done
+  empty_tree="$(template_git hash-object -t tree /dev/null)"
+  template_git diff --no-renames --name-only "$empty_tree" "$base" -- "${base_specs[@]}" | LC_ALL=C sort >"$work/owned.base"
+fi
+
 while IFS=$'\t' read -r status path; do
   [[ -n "$path" ]] || continue
   file="$root/$path"
@@ -246,6 +268,11 @@ while IFS=$'\t' read -r status path; do
   [[ "$status" == "A" || "$(mode_of "$base" "$path")" == "$(mode_of "$target" "$path")" ]] || mode_changed=1
   case "$status" in
     D)
+      # A file the base version did not own is not one the template removes
+      # from the project.
+      if [[ "$base_ownership_known" -eq 1 ]] && ! grep -Fxq -- "$path" "$work/owned.base"; then
+        continue
+      fi
       [[ ! -e "$file" ]] ||
         notes+=("$path: removed from the template; delete it when the project no longer needs it")
       continue
@@ -259,6 +286,9 @@ while IFS=$'\t' read -r status path; do
     if [[ "$status" == "A" ]]; then
       take "$path"
       added+=("$path")
+    elif [[ "$base_ownership_known" -eq 1 ]] && ! grep -Fxq -- "$path" "$work/owned.base"; then
+      take "$path"
+      added+=("$path (newly owned by the template)")
     else
       notes+=("$path: changed in the template, but the project has no such file; left out")
     fi
@@ -268,6 +298,9 @@ while IFS=$'\t' read -r status path; do
       set_mode "$path"
       replaced+=("$path (file mode)")
     fi
+  elif [[ "$status" != "A" && "$base_ownership_known" -eq 1 ]] && ! grep -Fxq -- "$path" "$work/owned.base"; then
+    # Newly owned: the base version is not the template's to merge against.
+    notes+=("$path: newly owned by the template, but the project has its own version; kept. Compare it with the template's, and replace it when the project does not need its own")
   elif [[ "$status" != "A" ]] && cmp -s "$file" "$work/base"; then
     take "$path"
     replaced+=("$path")
@@ -279,6 +312,32 @@ while IFS=$'\t' read -r status path; do
     conflicts+=("$path")
   fi
 done < <(template_git diff --no-renames --name-status "$base" "$target" -- "${specs[@]}")
+
+# A file the template started to list under 'paths:' without changing it is
+# not in the diff above; one that changed too was handled there.
+if [[ "$base_ownership_known" -eq 1 ]]; then
+  template_git diff --no-renames --name-only "$empty_tree" "$target" -- "${specs[@]}" | LC_ALL=C sort >"$work/owned.target"
+  template_git diff --no-renames --name-only "$base" "$target" -- "${specs[@]}" | LC_ALL=C sort >"$work/changed"
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    file="$root/$path"
+    if ! plain_path "$path"; then
+      notes+=("$path: newly owned by the template, but is, or lies under, a symbolic link in the project; left unchanged")
+      continue
+    fi
+    if [[ -e "$file" && ! -f "$file" ]]; then
+      notes+=("$path: newly owned by the template, but is not a regular file in the project; left unchanged")
+      continue
+    fi
+    template_git show "$target:$path" >"$work/target"
+    if [[ ! -e "$file" ]]; then
+      take "$path"
+      added+=("$path (newly owned by the template)")
+    elif ! cmp -s "$file" "$work/target"; then
+      notes+=("$path: newly owned by the template, but the project has its own version; kept. Compare it with the template's, and replace it when the project does not need its own")
+    fi
+  done < <(LC_ALL=C comm -13 "$work/owned.base" "$work/owned.target" | LC_ALL=C comm -23 - "$work/changed")
+fi
 
 # Record the template the project now follows and the version it has. The
 # repository is recorded too, so a sync from another location, such as a
