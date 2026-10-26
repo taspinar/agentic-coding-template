@@ -485,9 +485,11 @@ records_consolidate() {
   # that is no failure.
   if ! git -C "$primary" check-ignore -q ".agents/records/$kind-$subject.jsonl" 2>/dev/null; then
     # Nothing to lose when the subject has no run; otherwise the copy is
-    # needed and cannot be made safely, which is a failure.
+    # needed and cannot be made safely, which is a failure. grep -q reads the
+    # files itself: a pipe into a second grep -q would let the first one die of
+    # SIGPIPE under pipefail and hide a match among many files.
     if ! compgen -G "$dir/*.jsonl" >/dev/null ||
-      ! grep -lF "\"subject\":\"$subject\"" "$dir"/*.jsonl 2>/dev/null | grep -q .; then
+      ! grep -qF "\"subject\":\"$subject\"" "$dir"/*.jsonl 2>/dev/null; then
       return 0
     fi
     echo "Error: the run records of $kind $subject cannot be copied to .agents/records/, because Git does not ignore that directory in $primary. Take over the template's .gitignore with ./scripts/sync-template.sh." >&2
