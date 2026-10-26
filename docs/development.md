@@ -186,6 +186,14 @@ as Codex, and is never replaced: an unknown provider, missing CLI, missing
 model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
+`AGENT_CONFIG_FILE` selects another configuration file for a run, for the
+workflow scripts and `doctor.sh`. It does not reach the checks of
+`verify.sh`: `verify.sh` unsets it for every check, and the workflow
+self-tests that assume the repository's own `.agents/agents.conf` unset it
+themselves, so they give the same result when you start one by hand.
+`tests/agent-test.sh` and `tests/doctor-test.sh` set it on purpose. Other
+variables, such as `CLAUDE*`, are not changed.
+
 Agents run with one of three permission profiles. The profile follows from
 the role and from how the script is run, not from the provider or model: a
 reviewing role is always read-only; a writing role gets `write`, or
