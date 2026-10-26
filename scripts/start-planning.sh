@@ -191,8 +191,11 @@ fi
 
 # A change cycle changes a planning that exists and was approved.
 if [[ "$change_cycle" -eq 1 ]]; then
-  git -C "$repo_root" show "origin/main:docs/PROJECT_REQUIREMENTS.md" 2>/dev/null |
-    grep -Fqx "Status: Approved" ||
+  # Read successfully before matching: grep -q can close a pipe early and
+  # make git show fail with SIGPIPE under pipefail for a large document.
+  approved_requirements="$(git -C "$repo_root" show "origin/main:docs/PROJECT_REQUIREMENTS.md" 2>/dev/null)" ||
+    fail "could not read origin/main:docs/PROJECT_REQUIREMENTS.md; the requirements are missing or unreadable."
+  grep -Fqx "Status: Approved" <<<"$approved_requirements" ||
     fail "origin/main has no approved docs/PROJECT_REQUIREMENTS.md; a change cycle needs an approved planning. Start the first planning without --change."
   for document in docs/architecture.md docs/roadmap.md; do
     git -C "$repo_root" cat-file -e "origin/main:$document" 2>/dev/null ||
