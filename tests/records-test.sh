@@ -270,6 +270,20 @@ grep -Fq "cannot be copied to .agents/records/" "$tmp/half" || fail "the reason 
 [[ ! -e "$repo/.agents/records/feature-12.jsonl" ]] || fail "a copy was written that Git does not ignore"
 in_repo "$repo" 'records_consolidate feature 99' || fail "a subject without a run failed its copy"
 
+# Many run files that match: the missing ignore rule is still reported. A
+# pipeline of two greps loses the match to SIGPIPE under pipefail.
+repo="$(setup_repo many-runs)"
+grep -Ev '^\.agents/records/$' "$repo/.gitignore" >"$tmp/gitignore" && cp "$tmp/gitignore" "$repo/.gitignore"
+mkdir -p "$repo/.agents/run/records"
+long="$(printf 'x%.0s' $(seq 1 120))"
+for i in $(seq 1 3000); do
+  printf '{"type":"run-start","subject":"12"}\n' >"$repo/.agents/run/records/$long-$i.jsonl"
+done
+status=0
+in_repo "$repo" 'records_consolidate feature 12' 2>"$tmp/many" || status=$?
+[[ "$status" -ne 0 ]] || fail "many matching run files hid the missing ignore rule"
+grep -Fq "cannot be copied to .agents/records/" "$tmp/many" || fail "the missing ignore rule was not reported for many run files"
+
 # A run file that cannot be read leaves an existing copy as it was.
 repo="$(setup_repo unreadable-run)"
 in_repo "$repo" 'records_begin feature 12 run-feature.sh; records_end 0; records_consolidate feature 12'
