@@ -934,6 +934,11 @@ setup_approved_repo() {
   ) || fail "the first planning of $label failed"
   mkdir -p "$worktree/docs/decisions"
   printf '# ADR 001: Local component\n\n## Status\n\nAccepted.\n' >"$worktree/docs/decisions/001-local-component.md"
+  # Generate more than a pipe buffer without an early-closing producer pipe.
+  if [[ "${PAD_REQUIREMENTS:-}" == 1 ]]; then
+    awk 'BEGIN { for (i = 0; i < 20000; i++) print "A line of approved requirements that makes the document large." }' \
+      >>"$worktree/docs/PROJECT_REQUIREMENTS.md"
+  fi
   record_planning_approval "$worktree"
   git -C "$worktree" add -A
   git -C "$worktree" -c user.name="Planning Test" -c user.email="planning-test@example.com" \
@@ -968,6 +973,18 @@ run_change() {
 phases() {
   awk -F= '/^PHASE=/ { print $2 }' "$1" | paste -sd, -
 }
+
+# An early approval line in a large document must not cause producer SIGPIPE.
+big_repo="$(PAD_REQUIREMENTS=1 setup_approved_repo big)"
+[[ "$(git -C "$big_repo" show origin/main:docs/PROJECT_REQUIREMENTS.md | wc -c)" -gt 1000000 ]] ||
+  fail "the large requirements fixture is too small"
+MOCK_CHANGE_PLANNER="$add_feature" run_change "$big_repo" change-big "" big-change --change "$change_request" || {
+  cat "$tmp/change-big.out" >&2
+  fail "a change cycle on a large approved requirements file failed"
+}
+[[ "$(phases "$tmp/change-big.log")" == "planner" ]] || fail "large requirements did not reach the planner"
+cmp -s "$big_repo/docs/PROJECT_REQUIREMENTS.md" "$big_repo-planning-big-change/docs/PROJECT_REQUIREMENTS.md" ||
+  fail "the large approved requirements changed"
 
 # A new feature that fits the requirements changes only the roadmap. Only the
 # planner runs, the requirements keep their approval, and the change request
@@ -1103,6 +1120,33 @@ expect_change_refused "planning cannot run unattended" unattended "$change_repo"
 grep -Fq "cannot run with --unattended" "$tmp/refused.out" || fail "the refusal of an unattended planning gave no reason"
 fresh_repo="$(setup_repo change-unapproved)"
 expect_change_refused "no planning was approved yet" early "$fresh_repo" --change "$change_request"
+
+# A missing Git object is a read failure, distinct from an unapproved file.
+grep -Fq "has no approved" "$tmp/refused.out" || fail "draft requirements were not classified as unapproved"
+missing_repo="$(setup_repo change-missing)"
+git -C "$missing_repo" rm -q docs/PROJECT_REQUIREMENTS.md
+git -C "$missing_repo" commit -qm "Remove requirements"
+git -C "$missing_repo" push -q origin main
+expect_change_refused "the requirements are missing" missing-requirements "$missing_repo" --change "$change_request"
+grep -Fq "could not read origin/main:docs/PROJECT_REQUIREMENTS.md" "$tmp/refused.out" ||
+  fail "missing requirements were not classified as a read failure"
+
+# Simulate a Git read that emits approved content but then fails. Partial
+# output must never authorize a cycle, even when it contains the exact line.
+cat >"$tmp/bin/git" <<'GIT'
+#!/usr/bin/env bash
+if [[ "$*" == *"show origin/main:docs/PROJECT_REQUIREMENTS.md"* ]]; then
+  printf 'Status: Approved\n'
+  exit 1
+fi
+exec /usr/bin/git "$@"
+GIT
+chmod +x "$tmp/bin/git"
+expect_change_refused "the requirements read fails after partial output" unreadable "$change_repo" --change "$change_request"
+rm "$tmp/bin/git"
+grep -Fq "could not read origin/main:docs/PROJECT_REQUIREMENTS.md" "$tmp/refused.out" ||
+  fail "unreadable requirements were not classified as a read failure"
+[[ ! -e "$change_repo-planning-unreadable" ]] || fail "a read failure created a worktree"
 
 # The planning on origin/main must have a current approval: a change cycle
 # does not start from a planning that was never approved, or that changed
