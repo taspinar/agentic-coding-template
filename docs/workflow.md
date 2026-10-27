@@ -156,6 +156,13 @@ flowchart TD
   awaiting evidence of a later gate, which keeps the Issue open only for
   evidence after the merge), which the reviewer of the complete feature
   checks against the code.
+- The implementer, the reviewer, and the triage agent read the Issue with the
+  comments of its owner, members, and collaborators, after the body; the
+  comments of anyone else and the reports the workflow publishes there are
+  never passed on. Each step says how many comments it passed on. A comment is
+  read when a session starts, so a comment that is added or edited later
+  applies to the next session only (`docs/development.md`, "Comments on the
+  Issue").
 - When the triage has no `FIX_NOW` findings, only deferred and accepted ones,
   you can finish directly.
 - `publish-feature.sh` pushes the branch and opens the pull request that

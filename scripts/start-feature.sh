@@ -9,6 +9,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/completion.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/issue-comments.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>] [--unattended]"
@@ -60,6 +61,22 @@ slug="${AGENT_POSITIONAL[1]:-}"
 base="${AGENT_POSITIONAL[2]:-main}"
 
 [[ "$issue" =~ ^[0-9]+$ ]] || agent_fail "issue number must be numeric: $issue"
+
+# read_comments: the owner's later comments on the Issue, which the reviewer
+# and the triage agent get too, appended to the prompt as
+# COMMENTS_PROMPT. The session does not start without them.
+read_comments() {
+  command -v gh >/dev/null 2>&1 ||
+    agent_fail "GitHub CLI 'gh' is needed to read the comments of Issue #$issue."
+  issue_comments "$issue" implementer ||
+    agent_fail "could not read the comments of Issue #$issue ($ISSUE_COMMENTS_ERROR). The implementer was not started, since it would work without the owner's clarifications."
+  COMMENTS_PROMPT=""
+  if [[ -n "$ISSUE_COMMENTS_SECTION" ]]; then
+    COMMENTS_PROMPT="
+
+$ISSUE_COMMENTS_SECTION"
+  fi
+}
 
 # run_session <worktree> <prompt>: runs the implementer and reports the result.
 run_session() {
@@ -205,6 +222,7 @@ ${newer%$'\n'}"
     note_prompt="The earlier session left no handoff note in $note_relative, so the state of the
 work has to be read from the repository."
   fi
+  read_comments
   echo
 
   RESUME_PROMPT="Read and follow .agents/prompts/implementer.md.
@@ -232,7 +250,7 @@ date with where the work stands then (implementer contract, 'Completion').
 
 Work only on this issue.
 
-Do not commit, push, merge, or deploy."
+Do not commit, push, merge, or deploy.${COMMENTS_PROMPT}"
 
   run_session "$worktree" "$RESUME_PROMPT"
   exit 0
@@ -303,6 +321,10 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 1
 fi
 
+# Read before anything is created, so a failure leaves nothing behind.
+read_comments
+echo
+
 # Warn if no plan exists.
 # This is allowed when the roadmap/issue explicitly says no plan is required.
 if ! ls "$repo_root/.agents/plans/${issue}-"*.md >/dev/null 2>&1; then
@@ -365,6 +387,6 @@ Read the matching .agents/plans/${issue}-*.md if one exists.
 
 Work only on this issue.
 
-Do not commit, push, merge, or deploy."
+Do not commit, push, merge, or deploy.${COMMENTS_PROMPT}"
 
 run_session "$worktree" "$START_PROMPT"

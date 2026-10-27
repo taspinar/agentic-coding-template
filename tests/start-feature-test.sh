@@ -26,6 +26,9 @@ make_fake_agents "$tmp/bin"
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "api" && "${2:-}" == repos/*/comments ]]; then
+  exec "$(dirname "$0")/gh-comments" "$@"
+fi
 if [[ "${1:-} ${2:-}" == "issue view" ]]; then
   [[ -z "${MOCK_GH_FAIL:-}" ]] || exit 1
   if [[ -n "${MOCK_GH_NOT_FOUND:-}" ]]; then
@@ -385,5 +388,45 @@ repo="$(setup_repo attended)"
 MOCK_OUTPUT="BLOCKED: nothing" run_start "$repo" 7 thing || fail "an attended start failed"
 if grep -Fq "This session is unattended" "$repo.log"; then fail "an attended session was told it is unattended"; fi
 [[ ! -e "$tmp/attended-7-thing/.agents/run" ]] || fail "an attended session stored a final message"
+
+# The implementer gets the owner's comments after its instructions, in order,
+# with their authors and times, for a new session and for --resume; the
+# comments of others and the workflow's own reports it does not get. The run
+# record says how many were passed on.
+write_issue_comments "$tmp/comments.json"
+repo="$(setup_repo comments)"
+MOCK_ISSUE_COMMENTS="$tmp/comments.json" run_start "$repo" 14 thing || {
+  cat "$repo.out" >&2
+  fail "starting a feature of an Issue with comments failed"
+}
+expect_owner_comments "$repo.log" "Do not commit, push, merge, or deploy." "the implementer"
+expect_comments_recorded "$repo/.agents/run/records" implementer
+rm -f "$repo.log"
+MOCK_ISSUE_COMMENTS="$tmp/comments.json" run_start "$repo" 14 --resume || {
+  cat "$repo.out" >&2
+  fail "resuming a feature of an Issue with comments failed"
+}
+expect_owner_comments "$repo.log" "Do not commit, push, merge, or deploy." "the resumed implementer"
+
+# Without comments to pass on, the prompt ends where it ended before.
+repo="$(setup_repo comments-none)"
+jq '[.[] | select(.author_association == "NONE")]' "$tmp/comments.json" >"$tmp/comments-others.json"
+MOCK_ISSUE_COMMENTS="$tmp/comments-others.json" run_start "$repo" 15 thing || {
+  cat "$repo.out" >&2
+  fail "starting a feature of an Issue without owner comments failed"
+}
+[[ "$(tail -n 1 "$repo.log")" == "Do not commit, push, merge, or deploy." ]] ||
+  fail "an Issue without comments to pass on changed the prompt of the implementer: $(tail -n 3 "$repo.log")"
+
+# Comments that cannot be read stop the start before anything is created, and
+# a resumed session before the implementer starts.
+repo="$(setup_repo comments-unreadable)"
+if MOCK_GH_COMMENTS_FAIL=1 run_start "$repo" 16 thing; then fail "a feature started without the comments of its Issue"; fi
+[[ ! -e "$tmp/comments-unreadable-16-thing" && ! -e "$repo.log" ]] ||
+  fail "a feature whose comments cannot be read left a worktree or started the implementer"
+run_start "$repo" 16 thing || fail "starting the feature to resume failed"
+rm -f "$repo.log"
+if MOCK_GH_COMMENTS_FAIL=1 run_start "$repo" 16 --resume; then fail "a session resumed without the comments of its Issue"; fi
+[[ ! -e "$repo.log" ]] || fail "the resumed implementer started without the comments of its Issue"
 
 echo "start-feature tests passed"

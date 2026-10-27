@@ -35,6 +35,9 @@
 #   intervention what: something the human did that a script observed
 #   note         step, outcome, reason, action: a line of the log of
 #                run-feature.sh, which is written from the same call
+#   issue-comments issue, role, passed, authors, left_out, others,
+#                workflow: the Issue comments a step passed on to its agent
+#                and what it left out (lib/issue-comments.sh)
 # A run without a run-end was interrupted and is incomplete.
 #
 # usage holds what the provider reported, with its own field names, and

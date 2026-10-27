@@ -97,6 +97,7 @@ the website describes the current template.
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
+| `scripts/lib/issue-comments.sh` | The comments of a feature Issue that are passed on to the implementer, the reviewer, and the triage agent: those of the owner, members, and collaborators, without the workflow's own reports, bounded in size |
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
 | `scripts/lib/records.sh` | The run records: duration and token usage per run, step, and agent call, and the copy per feature or planning |

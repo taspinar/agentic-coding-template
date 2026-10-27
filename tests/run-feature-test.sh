@@ -141,6 +141,7 @@ case "${1:-} ${2:-}" in
     ;;
   "pr view") echo "main" ;;
   "api repos/{owner}/{repo}/rules/branches/main") echo "1" ;;
+  "api repos/"*"/comments") exec "$(dirname "$0")/gh-comments" "$@" ;;
   *)
     echo "Unexpected gh invocation: $*" >&2
     exit 97
