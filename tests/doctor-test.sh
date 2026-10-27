@@ -7,6 +7,7 @@ set -euo pipefail
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source "$source_root/tests/lib-fakes.sh"
 script="$source_root/scripts/doctor.sh"
 bash_path="$(command -v bash)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/doctor-test.XXXXXX")"

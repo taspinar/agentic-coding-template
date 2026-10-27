@@ -7,6 +7,7 @@ set -euo pipefail
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source "$source_root/tests/lib-fakes.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/verify-test.XXXXXX")"
 
 cleanup() {
@@ -457,5 +458,50 @@ AGENT_CONFIG_FILE=/nonexistent.conf ATTRIBUTION_CONFIG_FILE=/nonexistent.conf ru
   source "$source_root/tests/lib-fakes.sh"
   [[ -z "${AGENT_CONFIG_FILE:-}" && -z "${ATTRIBUTION_CONFIG_FILE:-}" ]]
 ) || fail "tests/lib-fakes.sh kept AGENT_CONFIG_FILE or ATTRIBUTION_CONFIG_FILE"
+
+# A self-test started by hand inside a recorded run writes nothing into that
+# run's record: tests/lib-fakes.sh drops the run's RECORDS_* variables, as
+# verify.sh does for its checks. The workflow script here is verify.sh, which
+# records itself into the run it finds.
+project="$(setup_project inside-run "lint: ruff check .")"
+mkdir -p "$project/scripts/lib"
+cp "$source_root/scripts/lib/records.sh" "$project/scripts/lib/records.sh"
+: >"$tmp/parent-run.jsonl"
+(
+  export RECORDS_RUN_ID=parent-run RECORDS_FILE="$tmp/parent-run.jsonl" RECORDS_COMMAND=scripts/run-feature.sh \
+    RECORDS_KIND=feature RECORDS_SUBJECT=1
+  source "$source_root/tests/lib-fakes.sh"
+  run_verify "$project"
+) || {
+  cat "$project/out.log" >&2
+  fail "verify.sh failed inside a recorded run"
+}
+[[ ! -s "$tmp/parent-run.jsonl" ]] || fail "a test wrote into the record of the run that started it: $(cat "$tmp/parent-run.jsonl")"
+
+# A partial run inside a recorded run is not a verification and writes
+# nothing into that run's record; a complete run there records itself.
+project="$(setup_project partial-inside-run "lint [code]: ruff check ." "tests: pytest")"
+mkdir -p "$project/scripts/lib"
+cp "$source_root/scripts/lib/records.sh" "$project/scripts/lib/records.sh"
+: >"$tmp/partial-run.jsonl"
+inside_run() {
+  RECORDS_RUN_ID=parent-run RECORDS_FILE="$tmp/partial-run.jsonl" RECORDS_COMMAND=scripts/run-feature.sh \
+    RECORDS_KIND=feature RECORDS_SUBJECT=1 run_with "$@"
+}
+inside_run "$project" --only code || {
+  cat "$project/out.log" >&2
+  fail "verify.sh --only failed inside a recorded run"
+}
+[[ "$(ran "$project")" == "ruff check .;" ]] || fail "--only code inside a run ran: $(ran "$project")"
+[[ ! -s "$tmp/partial-run.jsonl" ]] || fail "a partial run wrote into the record of its run: $(cat "$tmp/partial-run.jsonl")"
+inside_run "$project" || fail "verify.sh failed inside a recorded run"
+jq -e -s 'any(.type == "verification" and .groups == "all")' "$tmp/partial-run.jsonl" >/dev/null ||
+  fail "a complete run inside a recorded run was not recorded"
+
+# Every self-test passes through tests/lib-fakes.sh before it starts anything.
+for test in "$source_root"/tests/*-test.sh; do
+  grep -Eq '^source "\$(source_)?root/tests/lib-fakes\.sh"$' "$test" ||
+    fail "${test#"$source_root/"} does not source tests/lib-fakes.sh"
+done
 
 echo "verify tests passed"

@@ -18,7 +18,7 @@ fail() {
   exit 1
 }
 
-unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+source "$source_root/tests/lib-fakes.sh"
 
 # No network: a GitHub CLI or curl that is called fails the test.
 mkdir -p "$tmp/bin"

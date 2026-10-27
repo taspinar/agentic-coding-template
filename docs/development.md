@@ -75,8 +75,9 @@ added without a group runs on a laptop and never in CI. Compare the output of
 `--groups` with the groups of the workflow file in a test of the project.
 
 A partial run is never a verification. With `--only` nothing is recorded as
-passed and `--reuse` is refused, so `review-feature.sh` and
-`finish-feature.sh` still run every check. A failing partial run removes an
+passed, nothing is written into the record of a run it was started in, and
+`--reuse` is refused, so `review-feature.sh` and `finish-feature.sh` still run
+every check. A failing partial run removes an
 existing record, like any failing run. The workflow self-tests keep their own
 rule with `--only`: they run when a workflow file changed, or with `--all`.
 
@@ -1614,7 +1615,7 @@ brings the rules.
 | `run-start` | `kind` (`feature` or `planning`), `subject` (the Issue or the name of the planning), `command`, `seq` (the number of the run within its subject, which orders runs that start in the same second; claimed with a link in `.agents/run/records/.sequence/`, `null` when it could not be claimed), `previous` (the run before it of the same subject), `repository` (owner/name), `versions` (the template commit, a hash of the prompts and of `agents.conf`) |
 | `run-end` | `status`: the exit status; 130 when the run was interrupted. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
 | `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`) and ends (the same, with `status`, `seconds`, `usage`) |
-| `verification-start`, `verification` | a verification begins (`id`, `groups`: `all`, or the groups of `--only`) and ends (with `status`, `seconds`, and `reused`: a recorded pass stood in for the run) |
+| `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, and `reused`: a recorded pass stood in for the run) |
 | `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
 | `wait-start`, `wait` | the pause before a step is tried again: the `planned` seconds, and the `seconds` it really took |
 | `intervention` | `what` you did that a script saw: an approval, a resume by hand, `--implemented`, `--partial` |
@@ -1646,6 +1647,23 @@ No prompt, no answer, no secret, and no transcript is recorded: every event
 passes a filter that replaces what looks like a key or a token, a private key
 with its whole body, by `[redacted]`. A record that
 cannot be written is reported, and the work goes on with its own outcome.
+
+**Self-tests started inside a run.** A run passes its `RECORDS_*` variables to
+everything it starts, so a workflow script that an agent starts belongs to the
+run. The workflow self-tests do not: every `tests/*-test.sh` sources
+`tests/lib-fakes.sh`, which unsets them, as `verify.sh` does for each check,
+so a test that an agent starts by hand inside a run writes nothing into that
+run's record. A test of the records sets what it needs itself.
+
+Records written before the self-tests did this may contain the fake events of
+such tests, under the run's own `run` id. They are recognizable by their
+model: `agent-start` and `agent-call` events whose `model` is a fake of the
+tests, `model-` followed by a letter or a word (`model-a`, `model-b`,
+`model-t`, `model-claude`, `model-codex`), mostly with usage figures `null`.
+The same runs hold many `verification-start` and `verification` events within
+seconds, and review or triage rounds that the run never had.
+`report-runs.sh` counts these events like the others; such records are not
+repaired.
 
 ### Reporting on the records
 

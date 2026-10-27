@@ -2,9 +2,13 @@
 
 # Shared fakes for the workflow tests. Source this file.
 #
-# Sourcing it also unsets AGENT_CONFIG_FILE and ATTRIBUTION_CONFIG_FILE: these
-# tests assume the repository's own .agents/agents.conf and the attribution
-# files of their fixtures, also when started by hand.
+# Every test sources it, so a test started by hand behaves like a test started
+# by verify.sh. Sourcing it unsets AGENT_CONFIG_FILE and ATTRIBUTION_CONFIG_FILE:
+# these tests assume the repository's own .agents/agents.conf and the
+# attribution files of their fixtures. It also unsets the RECORDS_* variables
+# of the run that started the test: the workflow scripts that a test starts
+# must not write their fake events into that run's record. A test of the
+# records sets what it needs after sourcing this file.
 #
 # make_fake_agents <bin-dir>
 # Creates fake 'codex' and 'claude' executables that log their arguments and
@@ -12,6 +16,7 @@
 # call of a test returns that value instead. MOCK_AGENT_ACTION is evaluated in
 # the agent's working directory; MOCK_AGENT_EXIT sets the exit status.
 unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
+unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
 
 make_fake_agents() {
   local bin="$1"

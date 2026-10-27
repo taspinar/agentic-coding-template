@@ -84,12 +84,13 @@ if [[ "$list_groups" -eq 1 && ( "$partial" -eq 1 || "$reuse" -eq 1 || "$run_all"
 fi
 
 # The verification is recorded (lib/records.sh): its duration, its status,
-# whether a recorded pass was reused, and the groups of a partial run. Inside
+# and whether a recorded pass was reused. A partial run (--only) is not a
+# verification and is not recorded, also not into a run it was started in. Inside
 # a run of the workflow it belongs to that run; run on its own in a feature or
 # a planning worktree it is a run of that feature or planning. It runs as a
 # child, so that every exit below is seen. Recording is best-effort: when it
 # cannot be prepared, the verification runs without it.
-if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_groups" -eq 0 ]] &&
+if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_groups" -eq 0 && "$partial" -eq 0 ]] &&
   [[ -f "$root/scripts/lib/records.sh" ]] && command -v jq >/dev/null 2>&1; then
   source "$root/scripts/lib/records.sh"
   if [[ -z "${RECORDS_RUN_ID:-}" ]]; then
@@ -108,13 +109,13 @@ if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_gro
     rm -f "$records_mark" 2>/dev/null || true
     records_started="$(date +%s)"
     records_call="$(records_id)"
-    records_verification_start "$records_call" "${only:-all}"
+    records_verification_start "$records_call" all
     records_status=0
     RECORDS_VERIFICATION="$records_mark" "$0" ${records_arguments[@]+"${records_arguments[@]}"} || records_status=$?
     records_reused=false
     [[ ! -e "$records_mark" ]] || records_reused=true
     rm -f "$records_mark" 2>/dev/null || true
-    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" "${only:-all}" "$records_call"
+    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" all "$records_call"
     exit "$records_status"
   fi
 fi

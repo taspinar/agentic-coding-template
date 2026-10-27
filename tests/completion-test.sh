@@ -6,6 +6,7 @@ set -euo pipefail
 # what a handoff note lists as remaining work, and how the two decide.
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source "$source_root/tests/lib-fakes.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/completion-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 

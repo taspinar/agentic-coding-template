@@ -7,6 +7,7 @@ set -euo pipefail
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 root="$(git rev-parse --show-toplevel)"
+source "$root/tests/lib-fakes.sh"
 script_source="$root/scripts/start-planning.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/start-planning-test.XXXXXX")"
 
