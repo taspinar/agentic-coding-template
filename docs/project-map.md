@@ -76,14 +76,14 @@ the website describes the current template.
 | `scripts/review-feature.sh` | Independent, read-only review of the complete feature diff, or with `--changes` of what changed since the previous round |
 | `scripts/triage-review.sh` | Classifies review findings, creates follow-up Issues, and publishes the reports on the Issue |
 | `scripts/apply-triage.sh` | Lets an implementer resolve only the `FIX_NOW` findings |
-| `scripts/finish-feature.sh` | Checks the feature, including the completion gate and a review of the complete feature, and creates the commit; `--partial` commits unfinished work as your choice |
+| `scripts/finish-feature.sh` | Checks the feature, including the completion gate and a review of the complete feature, and creates the commit; prints the content tree next to the commit SHA, and writes the approval request when only the owner may merge; `--partial` commits unfinished work as your choice |
 | `scripts/run-feature.sh` | Runs a feature from `start-feature.sh` to `publish-feature.sh` without questions: resumes the implementer until the completion gate passes, then at most five review rounds, the last of the complete feature; never merges and never removes a worktree |
 | `scripts/record-post-merge.sh` | After the merge, records the evidence of a pending `post_merge` criterion as an Issue comment and closes the Issue when none is left |
-| `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request, which closes the Issue only for a complete feature (or one whose only pending evidence is before the merge) and is a draft for incomplete work; with `--wait` stays until CI finishes; with `--summary` posts the totals of the run records on the Issue; never merges |
+| `scripts/publish-feature.sh` | Pushes the feature branch and opens its pull request, which closes the Issue only for a complete feature (or one whose only pending evidence is before the merge) and is a draft for incomplete work; names the content tree of the finish commit next to its SHA and displays the approval request; with `--wait` stays until CI finishes; with `--summary` posts the totals of the run records on the Issue; never merges |
 | `scripts/show-experience.sh` | Shows the experience records of a feature, with an invalid record marked as such |
 | `scripts/analyze-runs.sh` | Analyses several feature runs with a read-only agent and proposes improvements, each with its place; changes nothing |
 | `scripts/report-runs.sh` | Reports on the run records of features and planning cycles, in Markdown or JSON, without the network |
-| `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
+| `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base; recomputes the content tree of the commit with the exclusion list of the base and refuses an approval request that names another one or has a field its schema does not name |
 | `scripts/check-risk.sh` | The risk level of a feature, `low`, `medium`, or `high`, with every reason and what the level requires of the review rounds, by the risk policy of its base; exits 0, 1, or 2 for the level |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
@@ -101,13 +101,13 @@ the website describes the current template.
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
 | `scripts/lib/issue-comments.sh` | The comments of a feature Issue that are passed on to the implementer, the reviewer, and the triage agent: those of the owner, members, and collaborators, without the workflow's own reports, bounded in size |
-| `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files, without the metadata the workflow writes while it runs; a feature review's fingerprint also covers the completion record and the handoff note of its Issue |
+| `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree, a commit, or a set of files, with the one fixed list of what is left out: the metadata the workflow writes about the content and the approval requests; a feature review's fingerprint also covers the completion record and the handoff note of its Issue |
 | `scripts/lib/verification.sh` | The record of the last passed verification of a working tree, and the results of its budget checks, with their report for the reviewer, the handoff note, the commit, and the run record |
 | `scripts/lib/records.sh` | The run records: duration and token usage per run, step, and agent call, and the copy per feature or planning |
 | `scripts/lib/experience.sh` | The experience record of a feature run: what a script derives from the run, and the agent's optional notes once they are valid |
 | `scripts/lib/report.jq` | The report of `report-runs.sh`: totals, comparisons, and the summary for GitHub, from numeric fields only |
 | `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
-| `scripts/lib/guardrails.sh` | The merge approval gate: the protected and sensitive paths on the diff, by the rules of the base, and the decision with the reviewer's classification |
+| `scripts/lib/guardrails.sh` | The merge approval gate: the protected and sensitive paths on the diff, by the rules of the base, the decision with the reviewer's classification, the approval requests (writing, validation against their schema, display), and the finish commit of a branch that merged its base afterwards |
 | `scripts/lib/risk.sh` | The risk level of a feature: the path classes of `.agents/policies/risk.conf` on the diff, the fixed escalations, and what the agents recorded, of which the highest counts; and what a level requires of the review rounds, by the same policy |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions: a snapshot of the worktree before and after, which leaves out the directories Git ignores as a whole |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
@@ -130,6 +130,7 @@ the website describes the current template.
 | `.agents/schemas/feature-review.schema.json` | Results of feature reviews: the same, with the reviewer's classification of the impact on the architecture |
 | `.agents/schemas/triage.schema.json` | Triage decisions |
 | `.agents/schemas/analysis.schema.json` | The result of an analysis of runs |
+| `.agents/schemas/approval-request.schema.json` | An approval request: references and an explanation only; `check-guardrails.sh` refuses a request with any other field |
 | `.agents/schemas/revision.schema.json` | Planning revision decisions |
 
 ## Working directories
@@ -144,7 +145,8 @@ the website describes the current template.
 | `.agents/completion/` | Per Issue, the implementer's completion record: `complete`, `partial`, or `blocked`, with evidence per acceptance criterion. The gate before the commit and before a pull request that closes the Issue | No |
 | `.agents/records/` | Per feature and per planning, its run records together: how long every step took and how many tokens its agents used. The run files themselves are in `.agents/run/records/` | No |
 | `.agents/run/` | The final messages, and for Codex the session logs, of agents that ran with `--unattended`; the mark of `run-feature.sh` that the implementation was completed, its log of interruptions (`<issue>-log`), and the output of a failed verification. Never part of a content fingerprint | No |
-| `.agents/plans/` | Optional feature plans | Yes |
+| `.agents/plans/` | Optional feature plans; part of the content fingerprint, since a plan can change what a feature has to do | Yes |
+| `.agents/approval-requests/` | Per Issue, what the owner is asked to approve and why, written by `finish-feature.sh` when only the owner may merge: references and an explanation, never part of the content fingerprint, never an instruction, grants nothing | Yes |
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |
 | `tests/` | Integration tests of the workflow scripts, run by `verify.sh` when a workflow file changed, and always in CI | Yes |

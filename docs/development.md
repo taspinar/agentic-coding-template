@@ -1666,6 +1666,49 @@ agreement that the scripts and agents keep, not a lock: the agent works with
 your GitHub account and could do what you can do. A lock needs a separate
 identity for the agent, with code owners and required reviews on GitHub.
 
+**Three things, kept apart.** What was verified and reviewed, what you are
+asked to approve, and the approval itself are three different things, and
+no file stands in for another:
+
+| Role | What it is | Where |
+|---|---|---|
+| The content tree | What was verified and reviewed: the Git tree hash of the content without the workflow's metadata under `.agents/` | Computed by `scripts/lib/fingerprint.sh`; printed by `finish-feature.sh` and `publish-feature.sh` next to the commit SHA, and in the commit message under `Merge approval:`; recomputed by `check-guardrails.sh` |
+| The approval request | What you are asked to approve, and why: references and an explanation, nothing else | `.agents/approval-requests/<issue>.json`, written by `finish-feature.sh` when the gate requires you, committed with the feature, constrained by `.agents/schemas/approval-request.schema.json` |
+| The approval | Your review of the pull request on GitHub, which GitHub binds to the commit | GitHub, and only there |
+
+The content tree is one value: `finish-feature.sh` computes it from the
+working tree before the commit, prints it as the content tree next to the
+commit SHA, writes it into the request as `content_tree`, and checks after
+the commit that the commit holds exactly that content. `publish-feature.sh`
+computes it again from the finish commit and puts it into the pull request,
+next to the commit SHA, labelled as the content tree. The reviewer gets it in
+the review context. No other fingerprint is printed in the same statement:
+the `reviewed_tree` of a review artifact is a different value, since it also
+covers the completion record and the handoff note (see "What does not change
+the fingerprint"), and comparing the two was a recurring false finding in
+Physics by Construction.
+
+The request asks and records. It grants nothing and changes nothing: no
+script reads it for anything but display, and the one check that reads a
+field, `check-guardrails.sh`, can only refuse it. The check recomputes the
+content tree from the commit it checks, with the exclusion list of
+`scripts/lib/fingerprint.sh` and the schema as the base branch has them, and
+refuses a request whose `content_tree` differs, that has a field the schema
+does not name, or that is not named `<issue>.json`; it exits 4 then, and CI
+runs it on every pull request with the script of the base. A merge of the
+base into a finished feature is passed over, as `publish-feature.sh` passes
+it over: the request names the finish commit. Any other commit after the
+finish needs a new finish, which rewrites the request, or removes it when
+the gate no longer requires you. The request is never executed and is never
+an instruction for an agent, as the prompts of the implementer and the
+reviewer say.
+
+The authority of the approval stays with #99: today the request records who
+is asked and why, and the approval is bound to the commit by GitHub, not to a
+trusted owner identity. Until #99 provides that identity, `finish-feature.sh`
+and `publish-feature.sh` require your approval in exactly the cases they
+did before, and nothing an agent can write counts as it.
+
 ### The risk level of a feature
 
 Every feature has a risk level, `low`, `medium`, or `high`, computed from one
@@ -1890,17 +1933,64 @@ minutes, which is why the template ships `full`.
 
 **What does not change the fingerprint.** The content fingerprint that a
 verification is recorded for, and that decides whether a review is stale,
-leaves out what the workflow writes while it runs: the review and triage
+leaves out what the workflow writes about the content: the review and triage
 artifacts, the record of the last passed verification
-(`.agents/verification/`), the run records and the state and logs of a run
-(`.agents/run/`, `.agents/records/`). A review therefore cannot be made stale
-by the metadata it produces, also in a project whose `.gitignore` does not
-name those paths. The fingerprint of a feature review covers one thing more
-than the content: the implementer's completion record and handoff note of
-the Issue, which the reviewer of the complete feature judged too. A change
-to either after the review makes the review stale, while the verification
-pass stays valid, since a note about the verification does not change what
-was verified.
+(`.agents/verification/`), the run records and the state, logs, and risk
+notes of a run (`.agents/run/`, `.agents/records/`), and the approval
+requests (`.agents/approval-requests/`). A review therefore cannot be made
+stale by the metadata it produces, also in a project whose `.gitignore` does
+not name those paths, and an edited explanation of an approval request keeps
+the verification and the review valid. The list is fixed and lives in one
+place, `scripts/lib/fingerprint.sh`, which the merge approval gate protects;
+`check-guardrails.sh` reads it from the base branch, so a feature cannot add
+an exclusion for itself. Nothing else is left out: the plans under
+`.agents/plans/` stay in, because a plan can change the acceptance criteria,
+the review scope, or the risk, and so do the policies, prompts, schemas,
+check lists, and manifests. The fingerprint of a feature review covers one
+thing more than the content: the implementer's completion record and handoff
+note of the Issue, which the reviewer of the complete feature judged too. A
+change to either after the review makes the review stale, while the
+verification pass stays valid, since a note about the verification does not
+change what was verified.
+
+**The rule for what is left out.** The files the content fingerprint
+leaves out are of two kinds, and the rule differs:
+
+- *Display-only files*: the approval request. It changes the behavior of no
+  script; a script reads it only to display it, and `check-guardrails.sh` can
+  only refuse it. The tests change every field of a request and show that no
+  script's exit status or output changes but the displayed request
+  (`tests/publish-feature-test.sh`, `tests/guardrails-test.sh`,
+  `tests/finish-feature-test.sh`). The sentence "a field which affects
+  behavior must enter the content fingerprint" applies to display-only files
+  and to nothing else: a file that a script would read for more than display
+  is not left out as display-only, and the list is not extended for it.
+- *Decision artifacts*: the review and triage artifacts. The gates read them,
+  and that is their purpose: `finish-feature.sh` reads the verdict, the
+  findings, the base, and the scope of the latest review and the decisions,
+  the mode, and the publication of every triage. They change behavior only
+  for the content tree they name: a review names the content it judged
+  (`reviewed_tree`); an artifact whose `reviewed_tree` is not the tree of the
+  current content is not current (`check-review.sh`), and a gate acts only on
+  a current artifact that passes its schema. A triage must name the reviewed
+  tree and the verdict of its review, and is published on the Issue before a
+  commit rests on it. So editing a behavior-driving field of a current
+  artifact (the verdict, a finding's severity, a triage decision) changes
+  what the gate does, and the gate follows the edited artifact; the same
+  artifact against other content is refused as not current
+  (`tests/finish-feature-test.sh`, cases `gate-review-field` and
+  `gate-triage-field`). The artifacts are left out of the content tree so
+  that the evidence cannot invalidate what it describes: editing one leaves
+  the content tree, the recorded verification, and the currency of the
+  latest review unchanged, and the edit shows in the hash of the artifacts
+  (`fingerprint_artifacts` in `scripts/lib/fingerprint.sh`), which
+  `review-feature.sh`, `triage-review.sh`, `apply-triage.sh`, and
+  `analyze-runs.sh` take before they start an agent and compare after, and
+  refuse the result of an agent that changed or removed an artifact
+  (`tests/fingerprint-test.sh`, `tests/finish-feature-test.sh`). The
+  verification record and the run records are left out the same way and
+  bound the same way: the record names the tree it passed for, and
+  `verify.sh --reuse` reuses it for that tree only.
 
 ## Run records
 

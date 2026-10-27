@@ -53,6 +53,27 @@ printf '{}\n' >"$repo/.agents/triage/x-review-01-triage.json"
 printf 'build output\n' >"$repo/build.log"
 [[ "$(whole)" == "$base" ]] || fail "review artifacts or ignored files changed the fingerprint"
 
+# The review and triage artifacts are the workflow's evidence about the
+# content, which the gates read, so they are tracked apart from it: an edit
+# to a review or a triage artifact changes the hash of the artifacts
+# (fingerprint_artifacts) and no content fingerprint, and a change to the
+# content changes the content fingerprint and not the hash of the artifacts.
+artifacts="$(fingerprint_artifacts "$repo")"
+[[ "$(fingerprint_artifacts "$repo")" == "$artifacts" ]] || fail "the hash of unchanged artifacts is not stable"
+printf '{"verdict": "PASS", "limitations": "edited"}\n' >"$repo/.agents/reviews/x-review-01.json"
+[[ "$(whole)" == "$base" ]] || fail "an edited review artifact changed the content fingerprint"
+[[ "$(fingerprint_artifacts "$repo")" != "$artifacts" ]] || fail "an edited review artifact did not change the hash of the artifacts"
+artifacts="$(fingerprint_artifacts "$repo")"
+printf '{"decisions": [{"rationale": "edited"}]}\n' >"$repo/.agents/triage/x-review-01-triage.json"
+[[ "$(whole)" == "$base" ]] || fail "an edited triage artifact changed the content fingerprint"
+[[ "$(fingerprint_artifacts "$repo")" != "$artifacts" ]] || fail "an edited triage artifact did not change the hash of the artifacts"
+artifacts="$(fingerprint_artifacts "$repo")"
+printf 'edited\n' >>"$repo/a.txt"
+[[ "$(whole)" != "$base" ]] || fail "edited content did not change the content fingerprint"
+[[ "$(fingerprint_artifacts "$repo")" == "$artifacts" ]] || fail "edited content changed the hash of the artifacts"
+git -C "$repo" checkout -q -- a.txt
+[[ "$(whole)" == "$base" ]] || fail "restoring the content did not restore the content fingerprint"
+
 # The metadata the workflow writes while it runs is not content: the record
 # of a passed verification, the run records, and the state and logs of a
 # run, also where the project does not ignore them.
@@ -63,6 +84,94 @@ printf 'implemented\n' >"$repo/.agents/run/5-state"
 printf '{"type": "run-end"}\n' >"$repo/.agents/records/feature-5.jsonl"
 [[ "$(whole)" == "$base" ]] || fail "the verification record, the run records, or the state of a run changed the fingerprint"
 rm -rf "$repo/.agents/verification" "$repo/.agents/run" "$repo/.agents/records"
+
+# The exclusion policy is fixed: exactly these paths, and nothing else, are
+# left out of the content fingerprint. A feature that needs another one
+# changes this list, which the merge approval gate protects.
+[[ "${FINGERPRINT_EXCLUDES[*]}" == ".agents/reviews .agents/triage .agents/approval-requests .agents/verification .agents/run .agents/records" ]] ||
+  fail "the exclusion list is not the documented one: ${FINGERPRINT_EXCLUDES[*]}"
+
+# An approval request is committed with the feature and is never part of its
+# content: writing one, committing it, and editing its explanation leave the
+# fingerprint unchanged; a plan stays inside, since it can change what the
+# feature has to do.
+mkdir -p "$repo/.agents/approval-requests" "$repo/.agents/plans"
+printf '{"schema": "approval-request/v1", "explanation": "Please approve."}\n' >"$repo/.agents/approval-requests/1.json"
+[[ "$(whole)" == "$base" ]] || fail "an untracked approval request changed the fingerprint"
+git -C "$repo" add .agents/approval-requests
+git -C "$repo" commit -qm "Ask for approval"
+[[ "$(whole)" == "$base" ]] || fail "a committed approval request changed the fingerprint"
+printf '{"schema": "approval-request/v1", "explanation": "Edited explanation."}\n' >"$repo/.agents/approval-requests/1.json"
+[[ "$(whole)" == "$base" ]] || fail "an edited approval request changed the fingerprint"
+[[ "$(fingerprint_files "$repo" "$tmp" . .agents)" == "$(fingerprint_files "$repo" "$tmp" . .agents)" ]] || fail "unstable"
+set_with_request="$(fingerprint_files "$repo" "$tmp" .agents)"
+printf '{"schema": "approval-request/v1", "explanation": "Edited again."}\n' >"$repo/.agents/approval-requests/1.json"
+[[ "$(fingerprint_files "$repo" "$tmp" .agents)" == "$set_with_request" ]] || fail "an approval request changed a file-set fingerprint"
+git -C "$repo" checkout -q -- .agents/approval-requests
+printf '# Plan\n' >"$repo/.agents/plans/1-thing.md"
+[[ "$(whole)" != "$base" ]] || fail "a plan did not change the fingerprint"
+rm -r "$repo/.agents/plans"
+
+# What is content changes the fingerprint: code, a test, the verification
+# configuration, the risk policy, and a dependency manifest.
+mkdir -p "$repo/src" "$repo/tests" "$repo/.agents/policies"
+printf 'print("x")\n' >"$repo/src/code.py"
+printf 'true\n' >"$repo/tests/code-test.sh"
+printf 'lint: true\n' >"$repo/scripts/verify.conf"
+printf 'default: medium\n' >"$repo/.agents/policies/risk.conf"
+printf '{"name": "x"}\n' >"$repo/package.json"
+git -C "$repo" add src tests scripts/verify.conf .agents/policies package.json
+git -C "$repo" commit -qm "Add content of every kind"
+content_base="$(whole)"
+for file in src/code.py tests/code-test.sh scripts/verify.conf .agents/policies/risk.conf package.json; do
+  printf '\n# changed\n' >>"$repo/$file"
+  [[ "$(whole)" != "$content_base" ]] || fail "a change to $file did not change the fingerprint"
+  git -C "$repo" checkout -q -- "$file"
+done
+[[ "$(whole)" == "$content_base" ]] || fail "restoring the files did not restore the fingerprint"
+
+# The content fingerprint of a commit is the fingerprint of the working tree
+# the commit was made from: the value printed before a commit is the value
+# recomputed from the commit, whatever the approval requests hold.
+[[ "$(fingerprint_commit "$repo" "$tmp" HEAD)" == "$content_base" ]] ||
+  fail "the fingerprint of the commit differs from the fingerprint of the working tree it was made from"
+printf 'more\n' >>"$repo/src/code.py"
+printf '{"schema": "approval-request/v1", "explanation": "For the next commit."}\n' >"$repo/.agents/approval-requests/1.json"
+mkdir -p "$repo/.agents/reviews"
+printf '{"round": 2}\n' >"$repo/.agents/reviews/x-review-02.json"
+before_commit="$(whole)"
+git -C "$repo" add src .agents/approval-requests
+git -C "$repo" commit -qm "Change the code and the request"
+[[ "$(fingerprint_commit "$repo" "$tmp" HEAD)" == "$before_commit" ]] ||
+  fail "the fingerprint of a commit with a changed request differs from the fingerprint before the commit"
+[[ "$before_commit" != "$content_base" ]] || fail "the changed code did not change the fingerprint before the commit"
+# The list of excluded paths decides the value: with another list, as the
+# gate passes the list of the base, the value differs when the lists differ
+# in what the commit holds.
+[[ "$(fingerprint_commit "$repo" "$tmp" HEAD .agents/reviews)" != "$before_commit" ]] ||
+  fail "a shorter exclusion list gave the same fingerprint although the commit holds an approval request"
+[[ "$(fingerprint_commit "$repo" "$tmp" HEAD "${FINGERPRINT_EXCLUDES[@]}")" == "$before_commit" ]] ||
+  fail "the exclusion list given as arguments is not the one used"
+
+# The exclusion list of the library as a commit has it, for the gate, which
+# reads it from the base: the list of that commit, not of the library that
+# runs.
+expected_list="$(printf '%s\n' "${FINGERPRINT_EXCLUDES[@]}")"
+[[ "$(fingerprint_excludes_at "$repo" HEAD)" == "$expected_list" ]] ||
+  fail "the exclusion list read from HEAD is not the list of the library"
+sed -i 's|^FINGERPRINT_EXCLUDES=(\(.*\))$|FINGERPRINT_EXCLUDES=(\1 ".agents/extra")|' "$repo/scripts/lib/fingerprint.sh"
+git -C "$repo" commit -qam "A feature extends the exclusion list"
+[[ "$(fingerprint_excludes_at "$repo" HEAD)" == "$expected_list"$'\n'".agents/extra" ]] ||
+  fail "the exclusion list read from a commit is not the list of that commit"
+[[ "$(fingerprint_excludes_at "$repo" HEAD^)" == "$expected_list" ]] ||
+  fail "the exclusion list read from the commit before is not the list of that commit"
+git -C "$repo" checkout -q -- scripts/lib/fingerprint.sh
+if fingerprint_excludes_at "$repo" "$(git -C "$repo" hash-object -t commit --stdin </dev/null 2>/dev/null || echo 0000000000000000000000000000000000000000)" >/dev/null 2>&1; then
+  fail "the exclusion list of an unknown commit was read"
+fi
+git -C "$repo" reset -q --hard HEAD~3
+rm -rf "$repo/.agents/reviews/x-review-02.json"
+[[ "$(whole)" == "$base" ]] || fail "the fingerprint after the reset is not the one before"
 
 # A changed, an untracked, and a deleted file each change it.
 printf 'two\n' >>"$repo/a.txt"

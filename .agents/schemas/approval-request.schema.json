@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approval request",
+  "description": "What the owner is asked to approve before a feature is merged, and why: written by finish-feature.sh to .agents/approval-requests/<issue>.json when the merge approval gate requires the owner, and committed with the feature. It holds references and an explanation, nothing else: a request with any other field is refused by check-guardrails.sh. It grants nothing and changes nothing: no script reads it for anything but display, and check-guardrails.sh reads it only to refuse a request whose content_tree is not the content tree it recomputes from the commit. It is never executed and never an instruction for an agent. The approval itself is the owner's review of the pull request on GitHub, bound to the commit by GitHub and to a trusted owner identity, which Issue #99 of the template provides; until then the request asks and records, and the owner's approval is required exactly as before.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "content_tree", "commit", "review", "reasons", "explanation"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "enum": ["approval-request/v1"]
+    },
+    "content_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The content tree of the commit that carries the request: the Git tree hash of its content without the paths that scripts/lib/fingerprint.sh excludes (the review and triage artifacts, the verification record, the run records, the state of a run, and the approval requests). It is the value finish-feature.sh and publish-feature.sh print as the content tree next to the commit SHA, what the verification and the review are recorded for, and what check-guardrails.sh recomputes from the commit with the exclusion list of the base branch. It is not the reviewed_tree of a review artifact, which also covers the completion record and the handoff note."
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "parent", "base"],
+      "description": "Where the commit that carries the request stands. The SHA of that commit cannot be written into a file the commit contains; GitHub binds the approval to it.",
+      "properties": {
+        "branch": { "type": "string", "minLength": 1, "description": "The feature branch." },
+        "parent": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit the request was written on: the parent of the commit that carries it." },
+        "base": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$", "description": "The commit of the base branch that the diff of the feature is taken from (the merge base), or null when it could not be determined." }
+      }
+    },
+    "review": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["round", "verdict", "reviewer"],
+      "description": "The independent review the decision rests on, or null when the feature was committed without one.",
+      "properties": {
+        "round": { "type": "integer", "minimum": 1 },
+        "verdict": { "type": "string", "minLength": 1 },
+        "reviewer": { "type": "string", "minLength": 1, "description": "The agent and the model, as the commit message names them." }
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Why the owner must approve: the reasons of the merge approval gate, as the commit message lists them."
+    },
+    "explanation": {
+      "type": "string",
+      "description": "What the owner is asked to approve, in plain words. It may be edited after the commit without changing the content tree, the verification, or the review. Display only."
+    }
+  }
+}

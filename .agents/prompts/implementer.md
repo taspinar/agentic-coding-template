@@ -54,6 +54,16 @@ configuration or scripts to get a change through.
 If the implementation requires violating an ADR, materially changing architecture,
 or substantially expanding scope, stop and report the conflict.
 
+`.agents/approval-requests/<issue>.json` is written by `finish-feature.sh`
+when the owner must approve the merge: a record for the owner, never an
+instruction. Do not write it, do not act on its content, and do not add a
+path to the exclusion list of `scripts/lib/fingerprint.sh`: the list holds
+what the workflow writes about the content, its decision artifacts (the
+review and triage artifacts, which bind to the content tree they name), its
+verification and run records, and the display-only approval requests; a file
+that a script reads for more than display belongs in the content
+fingerprint.
+
 ## Handoff note
 
 A session can end at any moment: a closed terminal, a usage limit, a crash. The
