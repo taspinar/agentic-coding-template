@@ -384,19 +384,25 @@ step_once() {
 # moment (never from a level stored in a review), and notes them in the run
 # record. Sets risk_level, and what the level requires of the rounds by the
 # risk policy: risk_verification ('full', or 'groups <group> ...') and
-# risk_review ('full', 'delta', or 'none'). When the level cannot be
-# determined, the strictest requirements apply. finish-feature.sh enforces
-# the level again before the commit.
+# risk_review ('full', 'delta', or 'none'), and risk_triage ('full' or
+# 'light'; triage-review.sh derives it again itself). When the level cannot
+# be determined, the strictest requirements apply. finish-feature.sh
+# enforces the level again before the commit. A value of the policy that is
+# refused, such as 'high: triage: light', is printed with the reasons and
+# noted in the log of the feature; the strictest requirement applies.
 risk_level=""
 risk_verification="full"
 risk_review="full"
+risk_triage="full"
 report_risk() {
   local output
   local status=0
+  local refused
 
   risk_level=""
   risk_verification="full"
   risk_review="full"
+  risk_triage="full"
   output="$( (cd "$worktree" && ./scripts/check-risk.sh "$base" </dev/null) 2>&1)" || status=$?
   if [[ "$status" -gt 2 ]]; then
     echo "run-feature.sh: the risk level could not be determined $1 (check-risk.sh exited with status $status); the full verification and complete reviews apply."
@@ -405,12 +411,19 @@ report_risk() {
   risk_level="$(printf '%s\n' "$output" | sed -n '1s/^risk: //p')"
   risk_verification="$(printf '%s\n' "$output" | sed -n 's/^verification: //p' | sed -n 1p)"
   risk_review="$(printf '%s\n' "$output" | sed -n 's/^review: //p' | sed -n 1p)"
+  risk_triage="$(printf '%s\n' "$output" | sed -n 's/^triage: //p' | sed -n 1p)"
   [[ -n "$risk_verification" ]] || risk_verification="full"
   [[ -n "$risk_review" ]] || risk_review="full"
+  [[ "$risk_triage" == "light" ]] || risk_triage="full"
   echo
   echo "run-feature.sh: risk level $1: $risk_level"
   printf '%s\n' "$output" | sed '1d; s/^/  /'
   records_risk "$1" "$risk_level" "$(printf '%s\n' "$output" | sed -n 's/^- //p')" 2>/dev/null || true
+  refused="$(printf '%s\n' "$output" | sed -n 's/^refused: \([a-z]*: triage: .*\)$/\1/p' | sed -n 1p)"
+  if [[ -n "$refused" ]]; then
+    echo "run-feature.sh: $refused"
+    note "risk policy $1" "refused" "$refused" "The full triage applies"
+  fi
 }
 
 # level_rank <level>: 0 for low, 1 for medium, 2 for high; 3 otherwise, so
@@ -831,6 +844,18 @@ if uncommitted; then
     fi
 
     if [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage")" -eq 0 ]]; then
+      # Nothing to fix: the round ends without a fix session. A light triage
+      # (the mode the policy set when the round was triaged) says so in the
+      # log; every finding is then a suggestion or minor, deferred or
+      # accepted, since a critical or major finding is always FIX_NOW.
+      if [[ "$(jq -r '.triage.mode // "full"' "$triage")" == "light" ]]; then
+        if intermediate "$review"; then
+          next_step="Reviewing the complete feature"
+        else
+          next_step="Going on to the commit"
+        fi
+        note "triage of round $round" "light" "every finding is a suggestion or minor and was deferred or accepted; the light triage of the project policy ends the round without a fix session" "$next_step"
+      fi
       intermediate "$review" || break
       complete_review=1
       continue

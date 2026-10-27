@@ -948,7 +948,11 @@ The script validates the decisions before showing them: every finding is
 decided exactly once, Critical and Major findings are `FIX_NOW`, and a deferred
 finding has a follow-up title, action, and acceptance criteria. Invalid
 decisions are retried once and then rejected. A review without findings needs
-no triage agent.
+no triage agent. The triage mode of the project policy for the risk level of
+the feature, `full` or `light` (see "What each level requires" and "Light
+triage"), is derived by the script itself from the diff and the rules of the
+base, shown before the proposal, told to the agent when it is `light`, and
+recorded in the artifact; a `high` feature always gets the full triage.
 
 The script displays the complete proposal before side effects. Only after
 interactive approval does it create one GitHub Issue per `DEFER` finding and
@@ -1254,7 +1258,9 @@ Then publish the feature:
 ```
 
 The script pushes the branch and opens a pull request whose description is
-the commit message, the manual steps, and `Closes #12`. For a pull request
+the commit message, one line with the triage mode of the project policy for
+the risk level of the feature (`Triage mode: full` or `light`, see "What each
+level requires"), the manual steps, and `Closes #12`. For a pull request
 that is already open it pushes and replaces the description with the current
 one, since a fix round can change the manual steps. It never merges.
 
@@ -1417,7 +1423,9 @@ From the primary checkout it runs:
    --unattended` and, when the triage has `FIX_NOW` findings,
    `apply-triage.sh --unattended`, followed by the next review round. This
    repeats until a review of the complete feature has no findings or its
-   triage has nothing to fix.
+   triage has nothing to fix: a round whose findings were all deferred or
+   accepted ends without a fix session, in every triage mode of the policy
+   (see "Light triage" under "What each level requires").
 3. `finish-feature.sh --unattended`, with the title of the Issue as the
    summary of the commit, and `publish-feature.sh`.
 
@@ -1703,15 +1711,18 @@ The risk policy also says what a level requires of the rounds of
 | `<level>: review: delta` | A later round may review only the changes since the round before (`review-feature.sh --changes`), when it can build on that round |
 | `<level>: review: full` | Every round reviews the complete feature |
 | `low: review: none` | A `low` feature is committed without a review. Only `low` may have it; `medium: review: none` and `high: review: none` are refused |
+| `<level>: triage: full` | The findings of a review round are triaged as the triage contract says, with nothing added: the triage agent decides `FIX_NOW`, `DEFER`, or `ACCEPT` for every finding |
+| `<level>: triage: light` | The light triage of suggestions and minor findings (see "Light triage" below). Only `low` and `medium` may have it; `high: triage: light` is refused, and the full triage applies |
 
-The template ships `verification: full` and `review: delta` for every level,
-which is exactly what the workflow did before it knew the levels: the full
-verification before each round, a review of the changes when it can build on
-the round before, a complete review last. A level without a line gets the
-same. Of the base refs the rules are read from (the local base and
-`origin/<base>`), the strictest requirement counts, and a value that is not
-accepted counts as the strictest and is reported by `check-risk.sh` and the
-scripts: `full` before `groups`, `full` before `delta` before `none`.
+The template ships `verification: full`, `review: delta`, and `triage: full`
+for every level, which is exactly what the workflow did before it knew the
+levels: the full verification before each round, a review of the changes
+when it can build on the round before, a complete review last, and the
+triage as the contract says. A level without a line gets the same. Of the
+base refs the rules are read from (the local base and `origin/<base>`), the
+strictest requirement counts, and a value that is not accepted counts as the
+strictest and is reported by `check-risk.sh` and the scripts: `full` before
+`groups`, `full` before `delta` before `none`, `full` before `light`.
 
 **Intermediate and final rounds.** In an intermediate round of a level with
 `verification: groups`, the fixes are verified with those groups
@@ -1760,6 +1771,31 @@ merge approval gate requires your approval, as it does today for a feature
 without a valid classification; CI stays required. A feature that has a
 review is committed on it as before. Without the line, a `low` feature is
 reviewed like any other.
+
+**Light triage.** In every mode, a round whose triage has no `FIX_NOW`
+finding ends the review loop without a fix session: `run-feature.sh` goes on
+to the commit when that round reviewed the complete feature on the full
+verification, and to the review of the complete feature when it was an
+intermediate round; a `FIX_NOW` finding, also a minor one, is fixed and
+reviewed again. With `<level>: triage: light` in the policy of the base, for
+`low` or `medium`, `triage-review.sh` tells the triage agent that the policy
+prefers to defer or accept a suggestion or a minor finding over a fix
+session: `FIX_NOW` for such a finding only when it blocks the feature,
+otherwise `DEFER` with a follow-up Issue, or `ACCEPT`. The agent still
+decides every finding, and nothing is accepted by a script. Critical and
+major findings are `FIX_NOW` in every mode, also in an owner-directed
+triage; the validation of the decisions is the same. The triage artifact
+records the mode (`triage.mode`), the log of the run notes a round that the
+light triage ended, and the pull request description names the mode of the
+policy (`Triage mode:`); the published triage comment, the follow-up Issues
+of the deferred findings, and the commit message are unchanged.
+`triage-review.sh` derives the level itself, from the diff and the rules of
+the base, and never runs a light triage for a `high` feature, whatever the
+review or the completion record says; `check-risk.sh`, `run-feature.sh`, and
+`finish-feature.sh` report `high: triage: light` as refused, the full triage
+applies, and `finish-feature.sh` refuses to commit on a light triage of a
+feature that is `high` when the commit is made. With the shipped `full`,
+nothing changes.
 
 The template ships no `low` class. A project that wants one defines it by
 paths only, and any escalation wins over the path class. Physics by

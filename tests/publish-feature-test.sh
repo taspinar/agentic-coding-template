@@ -567,6 +567,28 @@ run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a commit witho
 grep -Fqx "Risk: medium" "$repo.gh.body" || { cat "$repo.gh.body" >&2; fail "a commit without a level got none in the pull request"; }
 grep -Fqx "Closes #12" "$repo.gh.body" || fail "the appended risk block broke the rest of the description"
 
+# The triage mode of the project policy for the level computed at the
+# publication is one line of the description after the risk block: the
+# commit message does not carry it. Without the line in the policy of the
+# base the mode is full; with 'medium: triage: light' on the base (on
+# origin too, since the strictest ref counts) it is light.
+repo="$(setup_repo triage-mode-full)"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing without a triage line in the policy failed"; }
+grep -Fqx "Triage mode: full (the default; .agents/policies/risk.conf of the base has no 'medium: triage:' line)" "$repo.gh.body" ||
+  { cat "$repo.gh.body" >&2; fail "the pull request does not name the full triage of the shipped policy"; }
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "the triage mode line broke the rest of the description"
+repo="$(setup_repo triage-mode-light)"
+git -C "$repo" checkout -q main
+mkdir -p "$repo/.agents/policies"
+printf 'default: medium\nmedium: triage: light\n' >"$repo/.agents/policies/risk.conf"
+git -C "$repo" add .agents/policies/risk.conf
+git -C "$repo" commit -qm "The risk policy"
+git -C "$repo" push -q origin main
+git -C "$repo" checkout -q feature/12-marker
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing with a light triage in the policy failed"; }
+grep -Fqx "Triage mode: light (.agents/policies/risk.conf of the base says 'medium: triage: light')" "$repo.gh.body" ||
+  { cat "$repo.gh.body" >&2; fail "the pull request does not name the light triage of the policy"; }
+
 # The run summary on the Issue is off by default. With --summary it is one
 # comment with numbers only, replaced on a later publication; a failure to
 # post it warns and the publication succeeds.

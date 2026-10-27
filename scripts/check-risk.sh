@@ -22,8 +22,9 @@ usage() {
   echo
   echo "After the reasons it prints what the level requires of the workflow by the"
   echo "same policy: 'verification: full' or 'verification: groups <group>...' for"
-  echo "the intermediate review rounds, and 'review: full', 'review: delta', or"
-  echo "'review: none' for the later rounds; a value of the policy that is not"
+  echo "the intermediate review rounds, 'review: full', 'review: delta', or"
+  echo "'review: none' for the later rounds, and 'triage: full' or 'triage: light'"
+  echo "for the triage of their findings; a value of the policy that is not"
   echo "accepted is printed as 'refused: ...' and the strictest requirement applies."
   echo
   echo "Exits 0 for low, 1 for medium, 2 for high, and 3 on a usage error."

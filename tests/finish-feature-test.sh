@@ -230,6 +230,36 @@ run_finish "$repo" 12 "Add the marker" || {
 grep -Fqx "Review: round 3, PASS, by claude (model-r)" <<<"$(message "$repo")" ||
   fail "the commit message does not name the review of the complete feature"
 
+# A latest round made on a partial check (verification.status: partial) is
+# an intermediate round too, also when it reviewed the complete feature
+# after a further change; a later round on the full verification is
+# accepted. The hand-run path after an interrupted run of a high-risk
+# feature ends here.
+# add_partial_review <repo>: makes round 2 a passed review of the complete
+# feature on a partial check, after a further change, and prints its path.
+add_partial_review() {
+  local repo="$1"
+  local second="$repo/.agents/reviews/feature-12-marker-review-02.json"
+
+  jq '.round = 2 | .verdict = "PASS" | .findings = []
+      | .verification = {status: "partial", groups: ["fast"], verified_at: "2026-01-01T00:00:00Z"}' "$repo/$review" >"$second"
+  printf 'the fix\n' >>"$repo/feature.txt"
+  record_reviewed_tree "$repo" "$second"
+  printf '%s\n' "$second"
+}
+
+repo="$(setup_repo partial-latest PASS "[]")"
+second="$(add_partial_review "$repo")"
+expect_no_commit "$repo" "the latest review was made on a partial check" 12 "Add the marker"
+grep -Fq "partially checked content" "$repo.out" || fail "the partial check was not given as the reason"
+jq '.round = 3 | del(.verification)' "$second" >"$repo/.agents/reviews/feature-12-marker-review-03.json"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing on a review on the full verification after a review on a partial check failed"
+}
+grep -Fqx "Review: round 3, PASS, by claude (model-r)" <<<"$(message "$repo")" ||
+  fail "the commit message does not name the review on the full verification"
+
 # Minor findings that were triaged without FIX_NOW and published are fine.
 repo="$(setup_repo minor PASS_WITH_MINOR_FINDINGS "$minor")"
 add_triage "$repo" DEFER
@@ -879,6 +909,60 @@ policy_on_base "$repo" "$(printf 'default: medium\nlow: docs\nlow: review: none'
 jq '.risk = "low"' "$repo/.agents/completion/12.json" >"$repo/completion.tmp" && mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
 expect_no_feature_commit "$repo" "a medium-risk feature whose record claims low, without a review" 12 "Add the marker"
 grep -Fq "claims risk: low, but the feature is medium" "$repo.out" || fail "the claim of low was not refused"
+
+# The triage mode. A light triage of a medium-risk feature, by 'medium:
+# triage: light' on the base, is committed on like any published triage,
+# and the commit message does not change. A light triage of a feature that
+# is high when it is committed is refused, whatever the policy says, and so
+# is an artifact with a mode that does not exist; 'high: triage: light' is
+# reported as refused, and the full triage of the same round is accepted.
+# set_triage_mode <repo> <mode>
+set_triage_mode() {
+  jq --arg mode "$2" '.triage.mode = $mode' "$1/$triage" >"$1/triage.tmp" && mv "$1/triage.tmp" "$1/$triage"
+}
+# policy_for_triage <repo> <policy>: the policy on the base, with the
+# fixture review and its triage made current for the moved base.
+policy_for_triage() {
+  policy_on_base "$1" "$2"
+  jq --arg merge_base "$(git -C "$1" rev-parse main)" '.merge_base = $merge_base' "$1/$review" >"$1/$review.tmp" &&
+    mv "$1/$review.tmp" "$1/$review"
+  claims_changed "$1"
+}
+repo="$(setup_repo light-medium PASS_WITH_MINOR_FINDINGS "$minor")"
+set_impact "$repo" minor
+add_triage "$repo" ACCEPT
+set_triage_mode "$repo" light
+policy_for_triage "$repo" "$(printf 'default: medium\nmedium: triage: light')"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing on a light triage of a medium-risk feature failed"
+}
+grep -Fq "Triage mode: light (" "$repo.out" || fail "the triage mode of the policy was not shown"
+grep -Fq "triage published on #12" <<<"$(message "$repo")" || fail "the commit message does not mention the light triage as published"
+if message "$repo" | grep -Fq "Triage mode"; then fail "the commit message carries the triage mode"; fi
+repo="$(setup_repo light-high-refused PASS_WITH_MINOR_FINDINGS "$minor")"
+set_impact "$repo" minor
+add_triage "$repo" ACCEPT
+set_triage_mode "$repo" light
+printf 'hot\n' >"$repo/hot.txt"
+policy_for_triage "$repo" "$(printf 'default: medium\nhigh: hot.txt\nhigh: triage: light')"
+expect_no_feature_commit "$repo" "a light triage of a high-risk feature" 12 "Add the marker"
+grep -Fq "is a light triage, but the feature is high risk" "$repo.out" || fail "the light triage of a high-risk feature was not given as the reason"
+grep -Fq "triage-review.sh" "$repo.out" || fail "the refusal does not say how to triage again"
+set_triage_mode "$repo" full
+claims_changed "$repo"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing on the full triage of a high-risk feature failed"
+}
+grep -Fq "Triage mode: full (high: triage: light is refused" "$repo.out" || fail "the refused 'high: triage: light' was not reported"
+grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the commit does not record the high level"
+repo="$(setup_repo mode-invalid PASS_WITH_MINOR_FINDINGS "$minor")"
+add_triage "$repo" ACCEPT
+set_triage_mode "$repo" maybe
+claims_changed "$repo"
+expect_no_commit "$repo" "the triage records a mode that does not exist" 12 "Add the marker"
+grep -Fq "triage.mode must be full or light" "$repo.out" || fail "the invalid mode was not given as the reason"
 
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
