@@ -18,7 +18,7 @@ fail() {
   exit 1
 }
 
-unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+source "$source_root/tests/lib-fakes.sh"
 
 # Agents and the network that are called fail the test: a record costs no
 # agent and no tokens.

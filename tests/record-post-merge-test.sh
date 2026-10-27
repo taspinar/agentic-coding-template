@@ -6,6 +6,7 @@ set -euo pipefail
 # stays open until every one has its evidence, and then it is closed.
 
 source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+source "$source_root/tests/lib-fakes.sh"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/record-post-merge-test.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 

@@ -30,7 +30,7 @@
 #   run-end      status (exit status; 130 for an interruption)
 #   step         name, status, seconds: a step of run-feature.sh
 #   wait         name, seconds: a pause before a step is tried again
-#   verification status, seconds, reused, groups ("all" or the --only list)
+#   verification status, seconds, reused, groups (always "all": a --only run is not recorded)
 #   agent-call   role, profile, agent, model, status, seconds, usage
 #   intervention what: something the human did that a script observed
 #   note         step, outcome, reason, action: a line of the log of
