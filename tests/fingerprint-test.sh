@@ -53,6 +53,17 @@ printf '{}\n' >"$repo/.agents/triage/x-review-01-triage.json"
 printf 'build output\n' >"$repo/build.log"
 [[ "$(whole)" == "$base" ]] || fail "review artifacts or ignored files changed the fingerprint"
 
+# The metadata the workflow writes while it runs is not content: the record
+# of a passed verification, the run records, and the state and logs of a
+# run, also where the project does not ignore them.
+mkdir -p "$repo/.agents/verification" "$repo/.agents/run/records" "$repo/.agents/records"
+printf 'tree: abc\n' >"$repo/.agents/verification/passed"
+printf '{"type": "risk", "level": "high"}\n' >"$repo/.agents/run/records/run-1.jsonl"
+printf 'implemented\n' >"$repo/.agents/run/5-state"
+printf '{"type": "run-end"}\n' >"$repo/.agents/records/feature-5.jsonl"
+[[ "$(whole)" == "$base" ]] || fail "the verification record, the run records, or the state of a run changed the fingerprint"
+rm -rf "$repo/.agents/verification" "$repo/.agents/run" "$repo/.agents/records"
+
 # A changed, an untracked, and a deleted file each change it.
 printf 'two\n' >>"$repo/a.txt"
 changed="$(whole)"
@@ -119,6 +130,39 @@ grep -Eq "^  A[[:space:]]+added.txt$" "$tmp/stale.err" || fail "the stale review
 [[ "$(grep -c '^  [AMD]' "$tmp/stale.err")" -eq 2 ]] || fail "the stale review named an unchanged file"
 git -C "$repo" checkout -q -- a.txt
 rm "$repo/added.txt"
+
+# The claims of the implementer about the feature, which Git ignores, are
+# part of what a feature review covers, since the reviewer judged them: a
+# changed completion record or handoff note makes the review stale. They
+# are not part of the content fingerprint that a verification is recorded
+# for: a note about the verification does not change what was verified.
+printf '.agents/completion/\n.agents/handoffs/\n' >>"$repo/.gitignore"
+mkdir -p "$repo/.agents/completion" "$repo/.agents/handoffs"
+printf '{"schema": "completion/v1", "status": "complete"}\n' >"$repo/.agents/completion/1.json"
+printf 'Done.\n' >"$repo/.agents/handoffs/1.md"
+record_reviewed_tree "$repo" "$review"
+content="$(whole)"
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || fail "a review with the claims recorded was reported as stale"
+printf '{"schema": "completion/v1", "status": "partial"}\n' >"$repo/.agents/completion/1.json"
+status=0
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>"$tmp/stale.err") || status=$?
+[[ "$status" -eq 1 ]] || fail "a changed completion record did not make the feature review stale (status $status)"
+grep -Eq "^  M[[:space:]]+.agents/completion/1.json$" "$tmp/stale.err" || fail "the stale review did not name the changed completion record"
+[[ "$(whole)" == "$content" ]] || fail "a changed completion record changed the content fingerprint of the verification"
+record_reviewed_tree "$repo" "$review"
+printf 'Remaining: the docs.\n' >>"$repo/.agents/handoffs/1.md"
+status=0
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>&1) || status=$?
+[[ "$status" -eq 1 ]] || fail "a changed handoff note did not make the feature review stale (status $status)"
+[[ "$(whole)" == "$content" ]] || fail "a changed handoff note changed the content fingerprint of the verification"
+# The claims of another Issue, and the artifacts of the review itself, are
+# not part of it.
+record_reviewed_tree "$repo" "$review"
+printf 'Other.\n' >"$repo/.agents/handoffs/2.md"
+printf '{"changed": true}\n' >"$repo/.agents/reviews/x-review-01.json"
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || fail "the claims of another Issue, or a review artifact, made the review stale"
+rm -rf "$repo/.agents/completion" "$repo/.agents/handoffs/1.md" "$repo/.agents/handoffs/2.md"
+record_reviewed_tree "$repo" "$review"
 
 jq --arg tree "$(files)" '.reviewed_paths = ["docs/plan.md"] | .reviewed_tree = $tree' "$review" >"$review.tmp"
 mv "$review.tmp" "$review"

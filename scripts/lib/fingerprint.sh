@@ -6,16 +6,34 @@
 # A fingerprint is the Git tree hash of the current file contents, including
 # uncommitted and untracked changes. It depends on content only, so committing
 # unchanged content keeps it valid, and any change to a covered file changes
-# it. Review and triage artifacts are never part of a fingerprint. The real
-# Git index is not touched; objects may be written to the object database.
+# it. Review and triage artifacts are never part of a fingerprint, nor is the
+# metadata the workflow writes while it runs: the verification record, the
+# run records, and the logs of a run. The real Git index is not touched;
+# objects may be written to the object database.
+#
+# The fingerprint of a feature review also covers the implementer's claims
+# about the feature, which Git ignores: the completion record and the handoff
+# note of the Issue (fingerprint_feature_claims). The reviewer of the
+# complete feature judged them, so a change to either makes the review stale.
+# The fingerprint of a verification does not cover them: a note about the
+# verification does not change what was verified.
 
 # The review and triage artifacts, which the content fingerprints leave out and
 # fingerprint_artifacts covers.
 FINGERPRINT_ARTIFACTS=(".agents/reviews" ".agents/triage")
-# Left out of the content fingerprints: the artifacts, and the run records
-# (lib/records.sh), which are written while a step runs and are never content,
-# also in a project whose .gitignore does not name them.
-FINGERPRINT_EXCLUDES=("${FINGERPRINT_ARTIFACTS[@]}" ".agents/run/records" ".agents/records")
+# Left out of the content fingerprints: the artifacts, and what a run writes
+# while it works and is never content, also in a project whose .gitignore does
+# not name it: the record of the last passed verification (lib/verification.sh),
+# the records of the runs (lib/records.sh), and the state, logs, and risk
+# notes of run-feature.sh under .agents/run.
+FINGERPRINT_EXCLUDES=("${FINGERPRINT_ARTIFACTS[@]}" ".agents/verification" ".agents/run" ".agents/records")
+
+# fingerprint_feature_claims <issue>
+# Prints the files of the implementer's claims about a feature, one per line:
+# the completion record and the handoff note of the Issue.
+fingerprint_feature_claims() {
+  printf '.agents/completion/%s.json\n.agents/handoffs/%s.md\n' "$1" "$1"
+}
 
 # feature_base <root> <base>
 # Prints two lines: the ref of the base branch a feature is compared with,
@@ -46,16 +64,24 @@ feature_base() {
   printf '%s\n%s\n' "$best_ref" "$best"
 }
 
-# fingerprint_worktree <root> <scratch-dir>
+# fingerprint_worktree <root> <scratch-dir> [<path>...]
 # Prints the fingerprint of the whole working tree. Ignored files are left
-# out unless Git already tracks them.
+# out unless Git already tracks them, or they are named as <path>: such a
+# file is covered although Git ignores it, when it exists.
 fingerprint_worktree() {
   local root="$1"
   local index="$2/fingerprint.index"
   local real_index
   local exclude_specs=()
+  local forced=()
   local path
 
+  shift 2
+  for path in "$@"; do
+    if [[ -e "$root/$path" || -L "$root/$path" ]]; then
+      forced+=("$path")
+    fi
+  done
   # An excluded path that Git ignores is left out anyway; naming it would
   # make 'git add' refuse the ignored directory it is in.
   for path in "${FINGERPRINT_EXCLUDES[@]}"; do
@@ -72,6 +98,7 @@ fingerprint_worktree() {
 
   GIT_INDEX_FILE="$index" git -C "$root" rm -r -q --cached --ignore-unmatch -- "${FINGERPRINT_EXCLUDES[@]}" >/dev/null &&
     GIT_INDEX_FILE="$index" git -C "$root" add -A -- . ${exclude_specs[@]+"${exclude_specs[@]}"} >/dev/null &&
+    { [[ "${#forced[@]}" -eq 0 ]] || GIT_INDEX_FILE="$index" git -C "$root" add -f -- "${forced[@]}" >/dev/null; } &&
     GIT_INDEX_FILE="$index" git -C "$root" write-tree
 }
 
@@ -122,13 +149,16 @@ fingerprint_artifacts() {
 
 # fingerprint_review <root> <scratch-dir> <review-json>
 # Prints the current fingerprint of what the review covers: the paths in
-# reviewed_paths when the review lists them, otherwise the whole working tree.
+# reviewed_paths when the review lists them, otherwise the whole working
+# tree, and for a feature review the claims of the implementer about its
+# Issue too (fingerprint_feature_claims).
 fingerprint_review() {
   local root="$1"
   local scratch="$2"
   local review="$3"
   local paths=()
   local path
+  local issue
 
   if jq -e '(.reviewed_paths | type) == "array"' "$review" >/dev/null; then
     while IFS= read -r path; do
@@ -136,7 +166,13 @@ fingerprint_review() {
     done < <(jq -r '.reviewed_paths[]' "$review")
     fingerprint_files "$root" "$scratch" ${paths[@]+"${paths[@]}"}
   else
-    fingerprint_worktree "$root" "$scratch"
+    issue="$(jq -r 'if (.kind // "feature") == "feature" and (.issue | type) == "number" then (.issue | tostring) else "" end' "$review")"
+    if [[ "$issue" =~ ^[0-9]+$ ]]; then
+      while IFS= read -r path; do
+        paths+=("$path")
+      done < <(fingerprint_feature_claims "$issue")
+    fi
+    fingerprint_worktree "$root" "$scratch" ${paths[@]+"${paths[@]}"}
   fi
 }
 

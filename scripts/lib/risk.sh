@@ -27,6 +27,16 @@
 # relax the rules it is classified by; the diff is taken from where the
 # feature left its base. When that base cannot be determined, or the changes
 # of the feature cannot be enumerated, the level is high.
+#
+# The same policy says what each level requires of the workflow
+# (risk_requirement): '<level>: verification: full|groups <group>...' for the
+# verification of the intermediate review rounds of run-feature.sh, and
+# '<level>: review: full|delta|none' for its later rounds. Without the line a
+# level requires the full verification and allows a review of changes only
+# (delta), which is what the workflow did before the policy knew the levels.
+# 'none' is accepted for low only. Of the refs the rules come from, the
+# strictest requirement counts, and a value that is not accepted counts as
+# the strictest and is reported.
 
 if ! declare -F guardrails_rules_refs >/dev/null; then
   source "${BASH_SOURCE[0]%/*}/guardrails.sh"
@@ -44,6 +54,13 @@ RISK_BUILTIN_TESTS=(tests test)
 RISK_ESCALATION_DIRS=(.agents/policies .agents/prompts .agents/schemas)
 # Left out of the diff: the artifacts a run writes while it works.
 RISK_EXCLUDES=(":(exclude).agents/reviews" ":(exclude).agents/triage" ":(exclude).agents/run/records" ":(exclude).agents/records")
+# What a level requires of the workflow, '<level>: <kind>: <value>' in the
+# policy, and what the template ships for every level: the full verification
+# before each review round, and a review of changes only when it can build on
+# the round before.
+RISK_REQUIREMENT_KINDS="verification|review"
+RISK_DEFAULT_VERIFICATION="full"
+RISK_DEFAULT_REVIEW="delta"
 
 # risk_is_level <text>
 risk_is_level() {
@@ -77,12 +94,122 @@ risk_config_exists() {
   git -C "$1" cat-file -e "$2:$RISK_CONFIG" 2>/dev/null
 }
 
+# risk_config_lines <root> <ref> <key>
+# Prints the value of every line of the policy of <ref> that has the key, as
+# written, one line each; nothing when the file or the key is absent.
+risk_config_lines() {
+  git -C "$1" show "$2:$RISK_CONFIG" 2>/dev/null |
+    sed -n "s/^$3:[[:space:]]*//p" || true
+}
+
 # risk_config_values <root> <ref> <key>
 # Prints the values of a key in the policy of <ref>, one per line; nothing
-# when the file or the key is absent.
+# when the file or the key is absent. The requirement lines of a level
+# ('<level>: verification: ...', '<level>: review: ...') are not paths and
+# are left out.
 risk_config_values() {
-  git -C "$1" show "$2:$RISK_CONFIG" 2>/dev/null |
-    sed -n "s/^$3:[[:space:]]*//p" | tr -s '[:space:]' '\n' | grep . || true
+  risk_config_lines "$1" "$2" "$3" |
+    grep -Ev "^($RISK_REQUIREMENT_KINDS):" | tr -s '[:space:]' '\n' | grep . || true
+}
+
+# risk_requirement_value <root> <ref> <level> <kind>
+# Prints the requirement of <kind> ('verification' or 'review') for <level>
+# in the policy of <ref>, as written, with single spaces; nothing when the
+# file or the line is absent. The first such line counts.
+risk_requirement_value() {
+  risk_config_lines "$1" "$2" "$3" |
+    sed -n "s/^$4:[[:space:]]*//p" | sed -n 1p | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
+}
+
+# risk_requirement <root> <rules-refs> <level> <kind>
+# Prints on the first line what the level requires: for 'verification', 'full'
+# or 'groups <group> ...' (the groups of verify.sh that the intermediate
+# review rounds run); for 'review', 'full', 'delta', or 'none'. Every line
+# after it names a value of the policy that is not accepted. The requirement
+# is the strictest over the refs (full before groups; full before delta before
+# none), the built-in default (RISK_DEFAULT_VERIFICATION,
+# RISK_DEFAULT_REVIEW) stands for a ref without the line, and a value that
+# is not accepted counts as the strictest: a word the policy does not know, a
+# group name that is none, or 'none' for a level other than low.
+risk_requirement() {
+  local root="$1"
+  local rules="$2"
+  local level="$3"
+  local kind="$4"
+  local ref
+  local value
+  local rank=-1
+  local groups=""
+  local problems=""
+
+  for ref in $rules; do
+    value="$(risk_requirement_value "$root" "$ref" "$level" "$kind")"
+    case "$kind" in
+      verification)
+        if [[ -z "$value" || "$value" == "full" ]]; then
+          rank=1
+        elif [[ "$value" =~ ^groups([[:space:]][a-z0-9][a-z0-9-]*)+$ ]]; then
+          [[ "$rank" -ge 0 ]] || rank=0
+          groups+="${value#groups}"
+        else
+          problems+="$level: verification: $value is not accepted in $RISK_CONFIG of $ref (full, or groups <group>...); the full verification applies"$'\n'
+          rank=1
+        fi
+        ;;
+      review)
+        case "$value" in
+          "") [[ "$rank" -ge 1 ]] || rank=1 ;;
+          full) rank=2 ;;
+          delta) [[ "$rank" -ge 1 ]] || rank=1 ;;
+          none)
+            if [[ "$level" == "low" ]]; then
+              [[ "$rank" -ge 0 ]] || rank=0
+            else
+              problems+="$level: review: none is refused in $RISK_CONFIG of $ref: only a low-risk feature may go without a review; a complete review applies"$'\n'
+              rank=2
+            fi
+            ;;
+          *)
+            problems+="$level: review: $value is not accepted in $RISK_CONFIG of $ref (full, delta, or none for low); a complete review applies"$'\n'
+            rank=2
+            ;;
+        esac
+        ;;
+    esac
+  done
+
+  case "$kind" in
+    verification)
+      if [[ "$rank" -eq 0 ]]; then
+        echo "groups$(printf '%s\n' $groups | sort -u | tr '\n' ' ' | sed 's/ $//; s/^/ /')"
+      else
+        echo "$RISK_DEFAULT_VERIFICATION"
+      fi
+      ;;
+    review)
+      case "$rank" in
+        0) echo "none" ;;
+        1) echo "$RISK_DEFAULT_REVIEW" ;;
+        *) echo "full" ;;
+      esac
+      ;;
+  esac
+  printf '%s' "$problems"
+}
+
+# risk_requirements <root> <rules-refs> <level>
+# Prints 'verification: <requirement>' and 'review: <requirement>' for the
+# level, then one line 'refused: <problem>' per value of the policy that is
+# not accepted.
+risk_requirements() {
+  local verification
+  local review
+
+  verification="$(risk_requirement "$1" "$2" "$3" verification)"
+  review="$(risk_requirement "$1" "$2" "$3" review)"
+  echo "verification: $(printf '%s\n' "$verification" | sed -n 1p)"
+  echo "review: $(printf '%s\n' "$review" | sed -n 1p)"
+  { printf '%s\n' "$verification" | sed 1d; printf '%s\n' "$review" | sed 1d; } | grep . | sed 's/^/refused: /' || true
 }
 
 # risk_default <root> <rules-refs>

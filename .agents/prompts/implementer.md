@@ -125,7 +125,9 @@ stop partway, run out of time, or are blocked:
   `status` is `met`, `not_met`, `not_applicable`, or `pending`. `evidence`
   names what shows it: a test, a file and what it holds, a command and its
   result. For `not_met` say where the work stands; for `not_applicable` say
-  why.
+  why. A partial run of the checks (`./scripts/verify.sh --only <group>`),
+  which a repair round of a high-risk feature may use, is not a
+  verification and is no evidence: the record cannot cite it.
 - `gate` (optional, `implementation` by default): where the evidence of a
   criterion can exist. `implementation`: before you finish, which is almost
   always. `pr_ci`: the CI result of the pull request, which exists after it is

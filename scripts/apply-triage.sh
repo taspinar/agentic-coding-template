@@ -11,13 +11,19 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 
 usage() {
-  echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>] [--unattended] [--continue]"
+  echo "Usage: $0 <triage-json> [--agent <agent>] [--model <model>] [--unattended] [--continue] [--checks <group>[,<group>...]]"
   echo
   echo "--continue takes up a fix session of this triage that was interrupted after"
   echo "it had changed files. The review is then no longer current, which is refused"
   echo "otherwise; everything else is as for a new session: the same findings, the"
   echo "same contract, the same protection of the review and the triage. It is"
   echo "refused when no session of this triage was started and left unfinished."
+  echo
+  echo "--checks verifies the result with only the named groups of ./scripts/verify.sh"
+  echo "(--only), and tells the agent to do the same, as the risk policy may allow"
+  echo "for an intermediate round of run-feature.sh. A partial check is not a"
+  echo "verification: it records nothing, and the full verification runs before"
+  echo "the commit."
   echo
   echo "The agent and model come from role 'triage-implementer' in"
   echo ".agents/agents.conf unless --agent and --model are given."
@@ -35,13 +41,22 @@ report_errors() {
 }
 
 continue_session=0
+checks=""
 arguments=()
-for argument in "$@"; do
-  if [[ "$argument" == "--continue" ]]; then
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--continue" ]]; then
     continue_session=1
+  elif [[ "$1" == "--checks" ]]; then
+    [[ $# -ge 2 && "$2" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]] || {
+      echo "Error: --checks requires the groups of verify.sh to run, separated by commas." >&2
+      exit 1
+    }
+    checks="$2"
+    shift
   else
-    arguments+=("$argument")
+    arguments+=("$1")
   fi
+  shift
 done
 agent_parse_args ${arguments[@]+"${arguments[@]}"}
 if [[ "${#AGENT_POSITIONAL[@]}" -ne 1 ]]; then
@@ -225,6 +240,16 @@ if [[ -n "$source_issue" && -f "$root/.agents/handoffs/$source_issue.md" ]]; the
 There is a handoff note: .agents/handoffs/$source_issue.md. Read it first; it
 may hold the human's answer to a question of an earlier session."
 fi
+if [[ -n "$checks" ]]; then
+  start_prompt+="
+
+This is an intermediate round: after your last change run
+./scripts/verify.sh --only $checks
+instead of the full ./scripts/verify.sh, as the risk policy allows for this
+round. A partial run is not a verification: it records nothing and cannot be
+cited as evidence in the completion record; the full verification runs
+before the commit."
+fi
 
 file_signature() {
   local path="$1"
@@ -310,14 +335,23 @@ if [[ "$triage_signature_before" != "$triage_signature_after" ]]; then
 fi
 
 # The fixed content must pass verification. A pass that the agent's own run
-# recorded for exactly this content is not repeated.
+# recorded for exactly this content is not repeated. With --checks only the
+# named groups run: a partial check, which records nothing.
 echo
-echo "Checking repository verification..."
 set +e
-(
-  cd "$root"
-  ./scripts/verify.sh --reuse
-)
+if [[ -n "$checks" ]]; then
+  echo "Running only the groups ${checks//,/, } of the verification (a partial check, not a verification)..."
+  (
+    cd "$root"
+    ./scripts/verify.sh --only "$checks"
+  )
+else
+  echo "Checking repository verification..."
+  (
+    cd "$root"
+    ./scripts/verify.sh --reuse
+  )
+fi
 verification_status=$?
 set -e
 
@@ -359,7 +393,11 @@ fi
 
 echo
 rm -f "$started_mark"
-echo "FIX_NOW implementation completed and verification passed."
+if [[ -n "$checks" ]]; then
+  echo "FIX_NOW implementation completed and the partial check of the groups ${checks//,/, } passed (not a verification)."
+else
+  echo "FIX_NOW implementation completed and verification passed."
+fi
 echo "The code changed, so the review is stale. Next: review again to confirm the fixes:"
 echo "  ./scripts/review-feature.sh $source_issue"
 echo "Then triage any earlier round that has no triage yet (a round fixed before its triage is triaged as a historical review):"

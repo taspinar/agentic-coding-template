@@ -390,6 +390,87 @@ expect_level "$repo" high "a feature whose changes cannot be enumerated is high,
 expect_reason "$repo" "could not be enumerated" "the failed enumeration was not given as the reason"
 check_path_prefix=""
 
+# What a level requires of the workflow, by the same policy. The template
+# ships the full verification and delta reviews for every level, and a
+# level without a line gets the same.
+requirement_of() {
+  sed -n "s/^$2: //p" "$1.out" | sed -n 1p
+}
+repo="$(setup_repo requirements-template template)"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "the template classifies a documentation change as medium"
+[[ "$(requirement_of "$repo" verification)" == "full" ]] || fail "the template does not require the full verification: $(cat "$repo.out")"
+[[ "$(requirement_of "$repo" review)" == "delta" ]] || fail "the template does not allow delta reviews: $(cat "$repo.out")"
+if grep -q "^refused: " "$repo.out"; then fail "the shipped policy has a refused requirement"; fi
+repo="$(setup_repo requirements-absent none)"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "a project without a policy classifies a documentation change as medium"
+[[ "$(requirement_of "$repo" verification)" == "full" && "$(requirement_of "$repo" review)" == "delta" ]] ||
+  fail "a project without a policy does not get the shipped requirements: $(cat "$repo.out")"
+
+# A project names groups for the intermediate rounds of high, requires
+# complete reviews for high, and lets low go without a review. A requirement
+# line is not a path class: a file named like a group is not high.
+requirements_policy='default: medium
+low: docs
+high: src/auth
+high: verification: groups unit  lint
+high: review: full
+low: review: none
+medium: verification: groups unit'
+repo="$(setup_repo requirements-high "$requirements_policy")"
+mkdir -p "$repo/src/auth"
+printf 'login\n' >"$repo/src/auth/login.py"
+expect_level "$repo" high "a path of the high class is high"
+[[ "$(requirement_of "$repo" verification)" == "groups lint unit" ]] || fail "the groups of high were not read: $(cat "$repo.out")"
+[[ "$(requirement_of "$repo" review)" == "full" ]] || fail "the complete review of high was not read: $(cat "$repo.out")"
+repo="$(setup_repo requirements-low "$requirements_policy")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" low "a documentation change is low"
+[[ "$(requirement_of "$repo" verification)" == "full" ]] || fail "low without a verification line does not get the full verification: $(cat "$repo.out")"
+[[ "$(requirement_of "$repo" review)" == "none" ]] || fail "'low: review: none' was not read: $(cat "$repo.out")"
+repo="$(setup_repo requirements-medium "$requirements_policy")"
+printf 'checks\n' >"$repo/unit"
+printf 'print("y")\n' >>"$repo/src/code.py"
+expect_level "$repo" medium "a file named like a group of checks is not a path of the high class"
+if grep -Fq "listed as high" "$repo.out"; then fail "a requirement line was read as a path class"; fi
+[[ "$(requirement_of "$repo" verification)" == "groups unit" ]] || fail "the groups of medium were not read: $(cat "$repo.out")"
+[[ "$(requirement_of "$repo" review)" == "delta" ]] || fail "medium without a review line does not allow delta reviews: $(cat "$repo.out")"
+
+# 'review: none' is refused for medium and high, and a value the policy
+# does not know is refused: the strictest requirement applies and the
+# refusal is reported.
+repo="$(setup_repo requirements-refused "$(printf 'default: medium\nmedium: review: none\nmedium: verification: groups')")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "a documentation change is medium"
+[[ "$(requirement_of "$repo" review)" == "full" ]] || fail "'medium: review: none' was not refused with a complete review: $(cat "$repo.out")"
+expect_reason "$repo" "refused: medium: review: none is refused" "the refused 'medium: review: none' was not reported"
+[[ "$(requirement_of "$repo" verification)" == "full" ]] || fail "'groups' without a group was not refused with the full verification: $(cat "$repo.out")"
+expect_reason "$repo" "refused: medium: verification: groups is not accepted" "the refused verification value was not reported"
+repo="$(setup_repo requirements-refused-high "$(printf 'default: high\nhigh: review: later\nhigh: verification: some')")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" high "the default of the policy is high"
+[[ "$(requirement_of "$repo" review)" == "full" && "$(requirement_of "$repo" verification)" == "full" ]] ||
+  fail "values the policy does not know were not refused with the strictest requirements: $(cat "$repo.out")"
+expect_reason "$repo" "refused: high: review: later is not accepted" "the unknown review value was not reported"
+expect_reason "$repo" "refused: high: verification: some is not accepted" "the unknown verification value was not reported"
+
+# The strictest requirement of the base refs counts: a 'low: review: none'
+# that only the local base knows, while origin does not, gives delta.
+repo="$(setup_repo requirements-refs "$(printf 'default: medium\nlow: docs\nlow: review: none\nlow: verification: groups unit')")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+git -C "$repo" stash -q
+git -C "$repo" switch -q -c ahead main
+printf 'default: medium\nlow: docs\n' >"$repo/.agents/policies/risk.conf"
+git -C "$repo" commit -qam "Origin requires reviews of everything"
+git -C "$repo" update-ref refs/remotes/origin/main ahead
+git -C "$repo" switch -q feature/5-thing
+git -C "$repo" branch -q -D ahead
+git -C "$repo" stash pop -q
+expect_level "$repo" low "a documentation change is low"
+[[ "$(requirement_of "$repo" review)" == "delta" ]] || fail "the stricter review requirement of origin did not count: $(cat "$repo.out")"
+[[ "$(requirement_of "$repo" verification)" == "full" ]] || fail "the stricter verification of origin did not count: $(cat "$repo.out")"
+
 # Refusals.
 repo="$(setup_repo refusals template)"
 check "$repo" --fail-on-protected

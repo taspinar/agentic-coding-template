@@ -22,14 +22,22 @@ fail() {
 }
 
 # --unverified "<reason>" reviews although verification fails. --changes
-# reviews only what changed since the previous round.
+# reviews only what changed since the previous round. --checks <groups> runs
+# only those groups of verify.sh before the review: a partial check, which
+# the review records as such.
 unverified_reason=""
 changes_only=0
+checks=""
 arguments=()
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == "--unverified" ]]; then
     [[ $# -ge 2 && "$2" =~ [^[:space:]] ]] || fail "--unverified requires a reason."
     unverified_reason="$2"
+    shift 2
+  elif [[ "$1" == "--checks" ]]; then
+    [[ $# -ge 2 && "$2" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]] ||
+      fail "--checks requires the groups of verify.sh to run, separated by commas."
+    checks="$2"
     shift 2
   elif [[ "$1" == "--changes" ]]; then
     changes_only=1
@@ -42,7 +50,7 @@ done
 
 agent_parse_args ${arguments[@]+"${arguments[@]}"}
 if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; then
-  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--unverified \"<reason>\"]"
+  echo "Usage: $0 <issue-number> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--checks <group>[,<group>...]] [--unverified \"<reason>\"]"
   echo
   echo "The agent and model come from role 'reviewer' in .agents/agents.conf"
   echo "unless --agent and --model are given."
@@ -51,6 +59,12 @@ if [[ "${#AGENT_POSITIONAL[@]}" -lt 1 || "${#AGENT_POSITIONAL[@]}" -gt 2 ]]; the
   echo "content; a pass that was already recorded for it is reused. --unverified"
   echo "reviews anyway, for a review that must help diagnose a failure; the reason"
   echo "is recorded in the review."
+  echo
+  echo "--checks runs only the named groups of ./scripts/verify.sh (--only) before"
+  echo "the review, as the risk policy may allow for an intermediate round of"
+  echo "run-feature.sh. Such a run is a partial check, not a verification: it"
+  echo "records nothing, the review records that the content is partially checked,"
+  echo "the reviewer is told, and finish-feature.sh does not commit on that review."
   echo
   echo "Every round reviews the complete feature. --changes makes a later round"
   echo "review only what changed since the previous round, with that round's"
@@ -70,6 +84,8 @@ records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@
 base="${AGENT_POSITIONAL[1]:-main}"
 
 [[ "$issue" =~ ^[0-9]+$ ]] || fail "issue number must be numeric: $issue"
+[[ -z "$checks" || -z "$unverified_reason" ]] ||
+  fail "--checks and --unverified exclude each other: a partial check runs the named groups, --unverified runs nothing."
 
 root="$(git rev-parse --show-toplevel)"
 branch="$(git branch --show-current)"
@@ -150,6 +166,18 @@ verified_tree=""
 if [[ -n "$unverified_reason" ]]; then
   echo "Reviewing without verification: $unverified_reason"
   verification="$(jq -n --arg reason "$unverified_reason" '{status: "not-verified", reason: $reason}')"
+elif [[ -n "$checks" ]]; then
+  echo "Running only the groups ${checks//,/, } of the verification for the content under review (a partial check, not a verification)..."
+  verified_tree="$(fingerprint_worktree "$root" "$tmp_work")" ||
+    fail "could not compute the fingerprint of the working tree."
+  # A partial run records nothing (verify.sh --only), so there is no pass to
+  # reuse. Status 4 as for a failed verification.
+  (cd "$root" && ./scripts/verify.sh --only "$checks") || {
+    echo "Error: the checks of the groups ${checks//,/, } failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"." >&2
+    exit 4
+  }
+  verification="$(jq -n --arg groups "$checks" \
+    '{status: "partial", groups: ($groups | split(",")), verified_at: (now | todate)}')"
 else
   echo "Checking that verification passes for the content under review..."
   # The content as it is before the checks run. The review below must cover
@@ -181,15 +209,26 @@ if [[ -n "$ISSUE_COMMENTS_SECTION" ]]; then
 fi
 
 head_before="$(git -C "$root" rev-parse HEAD)"
+# The content as it is now must be what the checks ran on. A check may modify
+# a file; then the pass does not cover what would be reviewed.
+content_now="$(fingerprint_worktree "$root" "$tmp_work")" ||
+  fail "could not compute the fingerprint of the working tree."
+[[ -z "$verified_tree" || "$content_now" == "$verified_tree" ]] ||
+  fail "the content changed while verification ran, so the pass does not cover what would be reviewed. A check may modify a file; the review was not started."
 # The fingerprint of the reviewed content, including uncommitted and untracked
-# files; the diff below is built from the same snapshot.
-tree_before="$(fingerprint_worktree "$root" "$tmp_work")" ||
+# files and the implementer's claims about the Issue (the completion record
+# and the handoff note, which the reviewer judges too); the diff below is
+# built from the same snapshot.
+claims=()
+while IFS= read -r path; do claims+=("$path"); done < <(fingerprint_feature_claims "$issue")
+tree_before="$(fingerprint_worktree "$root" "$tmp_work" "${claims[@]}")" ||
   fail "could not compute the fingerprint of the working tree."
 cp "$tmp_work/fingerprint.index" "$tmp_work/index.before"
-[[ -z "$verified_tree" || "$tree_before" == "$verified_tree" ]] ||
-  fail "the content changed while verification ran, so the pass does not cover what would be reviewed. A check may modify a file; the review was not started."
 
-review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage" ":(exclude).agents/run/records" ":(exclude).agents/records")
+# The claims are shown to the reviewer as a section of their own, not as
+# files of the feature.
+review_paths=(. ":(exclude).agents/reviews" ":(exclude).agents/triage" ":(exclude).agents/run" ":(exclude).agents/records"
+  ":(exclude).agents/completion" ":(exclude).agents/handoffs")
 context_file="$tmp_work/context.md"
 report_file="$tmp_work/result.json"
 
@@ -320,6 +359,22 @@ risk="$(printf '%s\n' "$risk_lines" | sed 1d |
   echo "makes the level high. No input of an agent lowers it."
 } >>"$context_file"
 
+# A partial check: the reviewer must know what did not run.
+if [[ -n "$checks" ]]; then
+  {
+    echo
+    echo "## Verification of the content under review"
+    echo
+    echo "This content is PARTIALLY CHECKED: of ./scripts/verify.sh only the groups ${checks//,/, } ran"
+    echo "and passed, as the risk policy allows for an intermediate round of a"
+    echo "$risk_level-risk feature; every other check did not run. A partial"
+    echo "run is not a verification: do not take it as evidence that the feature works"
+    echo "or that the checks pass, and report a completion record that cites such a run"
+    echo "as evidence. The full verification runs before the commit, and the review a"
+    echo "feature is committed on is made on content that passed it."
+  } >>"$context_file"
+fi
+
 # What the implementer says about how far the Issue is done. It is given to
 # the reviewer as a claim to check, in a review of the complete feature: the
 # scripts only read the status, and only a reviewer can tell whether the code
@@ -366,6 +421,9 @@ fi
 if [[ "$changes_only" -eq 1 ]]; then
   echo "  Scope:    only the changes since round $previous_round"
 fi
+if [[ -n "$checks" ]]; then
+  echo "  Checks:   only the groups ${checks//,/, } (a partial check, not a verification)"
+fi
 echo
 
 if [[ "$changes_only" -eq 1 ]]; then
@@ -405,6 +463,14 @@ Read the previous review (JSON):
 
 Check whether its findings have been resolved, but perform an independent review of the complete current implementation. Do not limit the review to the previous findings."
   fi
+fi
+
+if [[ -n "$checks" ]]; then
+  START_PROMPT+="
+
+The content under review is partially checked: only some groups of the
+verification ran. Standard input says which, under \"Verification of the
+content under review\"."
 fi
 
 START_PROMPT+="

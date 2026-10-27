@@ -77,7 +77,11 @@ added without a group runs on a laptop and never in CI. Compare the output of
 A partial run is never a verification. With `--only` nothing is recorded as
 passed, nothing is written into the record of a run it was started in, and
 `--reuse` is refused, so `review-feature.sh` and `finish-feature.sh` still run
-every check. A failing partial run removes an
+every check. The one place the workflow uses a partial run is an intermediate
+review round of a `high` feature whose risk policy names groups for it
+(`review-feature.sh --checks`, see "What each level requires"): that review
+records the content as partially checked, and the commit still needs the full
+verification. A failing partial run removes an
 existing record, like any failing run. The workflow self-tests keep their own
 rule with `--only`: they run when a workflow file changed, or with `--all`.
 
@@ -889,7 +893,7 @@ failure reviewed, for example when its cause is unclear, pass
 The full interface is:
 
 ```text
-./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--unverified "<reason>"]
+./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--checks <group>[,<group>...]] [--unverified "<reason>"]
 ```
 
 It uses role `reviewer` with the `read-only` profile. The review is
@@ -1427,7 +1431,11 @@ Issue and the completion record: a feature with one fix round therefore has
 three reviews, the complete feature, the fix, and the complete feature.
 When the base of the branch changed between two rounds, for example because
 you merged `main` into it while the run was stopped, the next round reviews
-the complete feature.
+the complete feature; so does a round after the risk level of the feature
+rose, or when the risk policy requires complete reviews for the level. What
+the rounds require per level, and the partial checks of the intermediate
+rounds of a `high` feature, are described under "What each level requires";
+with the policy the template ships, the rounds are as described here.
 The agents and models are those of the roles in `.agents/agents.conf`.
 
 What stays with you: choosing the feature and creating its Issue, reading the
@@ -1463,7 +1471,7 @@ The run stops with a non-zero status, and keeps the worktree, when:
 | An agent or a connection keeps failing after the retries | 1 |
 | The verification still fails after three repairs, or checks are unstable more than three times | 1 |
 | The proposed triage is invalid, for example because it defers a critical or major finding | 1 |
-| Five rounds are used and the last one still has a finding that must be fixed, or reviewed only changes | 1 |
+| Five rounds are used and the last one still has a finding that must be fixed, or was an intermediate round (only the changes, or partially checked content) | 1 |
 | The implementer ended four sessions without completing the Issue | 1 |
 | The completion record says `blocked` | 3 |
 | The fixes changed nothing, the commit is refused, or the pull request cannot be opened after the retries | 1 |
@@ -1586,9 +1594,9 @@ Every feature has a risk level, `low`, `medium`, or `high`, computed from one
 policy: `.agents/policies/risk.conf`. `.agents/policies/autonomy.md` says in
 prose what the levels mean and refers to the file as the one source of the
 rules. The level is computed, recorded with the feature, and read by the
-workflow; what each level then requires in verification and review is not
-configured yet, so today every level gets the same workflow, and the shipped
-policy changes nothing for a project until it adds its own classes.
+workflow; the same policy says what each level requires of the review rounds
+("What each level requires" below). The shipped policy changes nothing for a
+project until it adds its own classes or requirements.
 
 **The policy.** One `<key>: <value> [<value>...]` per line, with Git pathspecs:
 
@@ -1677,9 +1685,116 @@ To ask, in a feature worktree or in CI:
 ./scripts/check-risk.sh develop    # against another base
 ```
 
-The first line is `risk: <level>`, then one reason per line. It exits 0 for
-`low`, 1 for `medium`, 2 for `high`, and 3 on a usage error, so a CI step can
-branch on it.
+The first line is `risk: <level>`, then one reason per line, then what the
+level requires of the review rounds (`verification: ...`, `review: ...`, and
+`refused: ...` for a value of the policy that is not accepted). It exits 0
+for `low`, 1 for `medium`, 2 for `high`, and 3 on a usage error, so a CI
+step can branch on it.
+
+### What each level requires
+
+The risk policy also says what a level requires of the rounds of
+`run-feature.sh`, one `<level>: <kind>: <value>` per line:
+
+| Line | Meaning |
+|---|---|
+| `<level>: verification: full` | The full verification runs before every review round of a feature of that level |
+| `<level>: verification: groups <group> ...` | Before an intermediate round, only the named groups of `scripts/verify.conf` run (`verify.sh --only`, see "Groups of checks"). An intermediate round is a round after the first review that is not the review of the complete feature a feature is committed on: the repair and fix rounds |
+| `<level>: review: delta` | A later round may review only the changes since the round before (`review-feature.sh --changes`), when it can build on that round |
+| `<level>: review: full` | Every round reviews the complete feature |
+| `low: review: none` | A `low` feature is committed without a review. Only `low` may have it; `medium: review: none` and `high: review: none` are refused |
+
+The template ships `verification: full` and `review: delta` for every level,
+which is exactly what the workflow did before it knew the levels: the full
+verification before each round, a review of the changes when it can build on
+the round before, a complete review last. A level without a line gets the
+same. Of the base refs the rules are read from (the local base and
+`origin/<base>`), the strictest requirement counts, and a value that is not
+accepted counts as the strictest and is reported by `check-risk.sh` and the
+scripts: `full` before `groups`, `full` before `delta` before `none`.
+
+**Intermediate and final rounds.** In an intermediate round of a level with
+`verification: groups`, the fixes are verified with those groups
+(`apply-triage.sh --checks`, which also tells the fixing agent to run only
+them) and the review of the round starts on them (`review-feature.sh
+--checks`); the groups run once after the fixes and once before the review,
+since a partial run records nothing that a later step could reuse. A partial
+check never counts as a verification, whatever the policy says: `verify.sh
+--only` records no pass, the review of that round records
+`verification.status: partial` with the groups, the reviewer is told that
+the content is partially checked, the completion record cannot cite the run
+as evidence (`finish-feature.sh` and the completion gate refuse a record
+that does), and `finish-feature.sh` does not commit on such a review. A round on a partial check is an intermediate
+round like a review of changes only: when it leaves nothing to fix, the run
+goes on to a review of the complete feature on the full verification, and
+the commit is made on that one. Before the commit the full verification runs
+(`verify.sh --reuse`: a pass that was recorded for identical content is
+reused, as before). A `high` feature keeps needing your approval through the
+merge approval gate, which this does not touch. `run-feature.sh` names a
+round on a partial check in its output (`review on a partial check of the
+groups ...`); when the policy names a group that `verify.sh` does not know,
+the full verification runs and the log of the run says so.
+
+**Baseline and delta.** The first review is complete. A later round reviews
+only the changes (`--changes`) when the policy allows it for the level, the
+previous round is valid, the branch has the same base as then and the
+content that round reviewed is still known, and the level computed now did
+not rise above the level that round recorded. Otherwise the round reviews
+the complete feature, and the log of the run says why: the base changed, the
+previous review is invalid, or the level rose because the fixes touched a
+path of a higher class or an agent raised it (the feature is reclassified by
+the rules of "The risk level of a feature"). There is no changed-line
+threshold. `run-feature.sh` computes the level again before every round from
+the diff and the rules of the base; the level a review stored is at most
+an input to the maximum.
+
+**Low without a review.** With `low: review: none` in the policy of the base,
+`run-feature.sh` verifies a `low` feature as a step of its own, repairs a
+failed verification as it would after a review, and goes on to the commit
+without a reviewer; a repair that makes the feature `medium` sends it to the
+review after all. `finish-feature.sh` accepts the feature without a review
+artifact and records `Review: not reviewed: Low risk by project policy` in
+the commit message, which `publish-feature.sh` copies into the pull request.
+Without a reviewer nobody classified the impact on the architecture, so the
+merge approval gate requires your approval, as it does today for a feature
+without a valid classification; CI stays required. A feature that has a
+review is committed on it as before. Without the line, a `low` feature is
+reviewed like any other.
+
+The template ships no `low` class. A project that wants one defines it by
+paths only, and any escalation wins over the path class. Physics by
+Construction, for example, defines its Level 1 as the documentation and
+process files outside the ADRs, the planning documents, and `AGENTS.md`:
+
+```text
+default: medium
+low: docs :(glob)**/*.md :(exclude)docs/decisions :(exclude)docs/roadmap.md :(exclude)docs/PROJECT_REQUIREMENTS.md :(exclude)AGENTS.md
+low: review: none
+high: scripts/verify.conf scripts/verify-workflow.conf src/verification
+high: verification: groups unit lint
+```
+
+With that file a feature that changes only such documentation is `low` and
+is committed without a review; a `high` feature gets a partial check of the
+groups `unit` and `lint` in its repair rounds and the full verification
+before its final review and its commit. Whether a partial check pays off
+depends on the project: it saved about 55 minutes per repair round in
+Physics by Construction, and little in a project whose full run takes a few
+minutes, which is why the template ships `full`.
+
+**What does not change the fingerprint.** The content fingerprint that a
+verification is recorded for, and that decides whether a review is stale,
+leaves out what the workflow writes while it runs: the review and triage
+artifacts, the record of the last passed verification
+(`.agents/verification/`), the run records and the state and logs of a run
+(`.agents/run/`, `.agents/records/`). A review therefore cannot be made stale
+by the metadata it produces, also in a project whose `.gitignore` does not
+name those paths. The fingerprint of a feature review covers one thing more
+than the content: the implementer's completion record and handoff note of
+the Issue, which the reviewer of the complete feature judged too. A change
+to either after the review makes the review stale, while the verification
+pass stays valid, since a note about the verification does not change what
+was verified.
 
 ## Run records
 

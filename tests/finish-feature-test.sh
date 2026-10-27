@@ -66,9 +66,11 @@ setup_repo() {
   printf 'feature work\n' >"$repo/feature.txt"
   set_completion "$repo" complete
 
-  jq -n --arg verdict "$2" --argjson findings "$3" '{
+  # The review names the base it compared the feature with: the merge base
+  # the feature has, which finish-feature.sh checks.
+  jq -n --arg verdict "$2" --argjson findings "$3" --arg merge_base "$(git -C "$repo" rev-parse main)" '{
     schema: "review/v1", kind: "feature", issue: 12, round: 1,
-    branch: "feature/12-marker", base: "main", merge_base: "aaaa", head: "bbbb",
+    branch: "feature/12-marker", base: "main", merge_base: $merge_base, head: "bbbb",
     reviewed_tree: "", reviewed_paths: null,
     reviewer: {agent: "claude", model: "model-r"}, created_at: "2026-01-01T00:00:00Z",
     verdict: $verdict, limitations: "", findings: $findings
@@ -90,6 +92,18 @@ add_triage() {
       followup: (if $decision == "DEFER" then {title: "[#12][R01][\(.id)] Later", recommended_action: "Later.",
         acceptance_criteria: ["Done."], issue_number: 99, issue_url: "https://github.com/example/project/issues/99"} else null end)}]
   } + (if $published == "yes" then {published_at: "2026-01-02T00:01:00Z"} else {} end)' "$repo/$review" >"$repo/$triage"
+}
+
+# claims_changed <repo>
+# The completion record and the handoff note are part of what a review of
+# the feature covers: a change to either after the review makes it stale.
+# A case that changes them after the fixture review, and expects the review
+# to count, records the review as made on the changed claims.
+claims_changed() {
+  local extra=""
+
+  [[ ! -f "$1/$triage" ]] || extra="$1/$triage"
+  record_reviewed_tree "$1" "$1/$review" $extra
 }
 
 minor='[{"id": "MIN1", "severity": "minor", "title": "Vague name", "evidence": "feature.txt:1", "impact": "Readability.", "recommendation": "Rename."}]'
@@ -381,6 +395,9 @@ grep -Fq "the handoff note (.agents/handoffs/12.md) lists remaining work" "$repo
   fail "the handoff note was not given as the reason"
 grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "the remaining work of the handoff note was not shown"
 printf 'Issue 12 is complete.\n' >"$repo/.agents/handoffs/12.md"
+expect_no_commit "$repo" "the handoff note changed after the review" 12 "Add the marker"
+grep -Fq "is stale" "$repo.out" || fail "a handoff note changed after the review did not make it stale"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || fail "a handoff note without remaining work stopped the commit"
 
 invalid_count=0
@@ -402,6 +419,7 @@ done
 # commit says so, with what remains.
 repo="$(setup_repo completion-partial-chosen PASS "[]")"
 set_completion "$repo" partial
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the first part of the marker" --partial || {
   cat "$repo.out" >&2
   fail "committing partial work with --partial failed"
@@ -424,6 +442,7 @@ grep -Fq "the completion record says complete, so the work cannot be committed a
 grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "what the handoff note lists was not shown with --partial"
 # With the record corrected, the same work is committed as partial.
 set_completion "$repo" partial
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the first part of the marker" --partial || fail "partial work with a corrected record was refused"
 grep -Fqx "Completion: partial" <<<"$(message "$repo")" || fail "the corrected record was not committed as partial"
 if grep -Fqx "Completion: complete" <<<"$(message "$repo")"; then fail "work with remaining steps was committed as complete"; fi
@@ -436,6 +455,7 @@ jq '.status = "awaiting_evidence"
   | .criteria += [{criterion: "main verifies", gate: "post_merge", status: "pending", evidence: "the run on main"}]' \
   "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
 mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || {
   cat "$repo.out" >&2
   fail "a feature that awaits later evidence was refused"
@@ -465,6 +485,7 @@ jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "The owner approv
 mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
 jq '.architecture_impact = {level: "major", rationale: "Because of the marker.", checked_against: ["ADR 001"]}' \
   "$repo/$review" >"$repo/$review.tmp" && mv "$repo/$review.tmp" "$repo/$review"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || { cat "$repo.out" >&2; fail "a feature that awaits the owner's approval was refused"; }
 grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(message "$repo" | sed -n '/^Merge approval:$/,/^$/p')" ||
   fail "a record that leaves owner_approval pending changed whether the merge needs the owner"
@@ -487,6 +508,7 @@ grep -Fq "the completion record says awaiting_evidence, so the work cannot be co
   fail "the contradicted awaiting record was not given as the reason with --partial"
 grep -Fq "remaining: steps 3 to 9." "$repo.out" || fail "what the handoff note lists was not shown for the awaiting record"
 set_completion "$repo" partial
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the first part of the marker" --partial || fail "partial work with a corrected record was refused"
 grep -Fqx "Completion: partial" <<<"$(message "$repo")" || fail "the corrected record was not committed as partial"
 
@@ -496,12 +518,14 @@ repo="$(setup_repo completion-awaiting-hint PASS "[]")"
 jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "main verifies", gate: "post_merge", status: "pending", evidence: "the run on main"}' \
   "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
 mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || fail "finishing a feature that awaits post_merge evidence failed"
 grep -Fq "./scripts/record-post-merge.sh 12" "$repo.out" || fail "the end of the finish does not name record-post-merge.sh"
 repo="$(setup_repo completion-awaiting-no-hint PASS "[]")"
 jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "CI", gate: "pr_ci", status: "pending", evidence: "later"}' \
   "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
 mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || fail "finishing a feature that awaits pr_ci evidence failed"
 if grep -Fq "record-post-merge.sh" "$repo.out"; then fail "the end of the finish names record-post-merge.sh without post_merge evidence"; fi
 
@@ -576,6 +600,9 @@ setup_planned() {
   git -C "$repo" switch -q feature/12-marker
   git -C "$repo" rebase -q main
   git -C "$repo" stash pop -q >/dev/null
+  # The feature left its base elsewhere now; the review compared it there.
+  jq --arg merge_base "$(git -C "$repo" rev-parse main)" '.merge_base = $merge_base' "$repo/$review" >"$repo/$review.tmp" &&
+    mv "$repo/$review.tmp" "$repo/$review"
   printf '%s\n' "$repo"
 }
 
@@ -708,6 +735,7 @@ grep -Fq -- "- feature.txt: " "$repo.out" || fail "the refusal does not give the
 repo="$(setup_repo risk-raised PASS "[]")"
 set_impact "$repo" minor
 set_risk_claim "$repo" high
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || fail "finishing a feature whose record raises the level failed"
 grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the record did not raise the level"
 grep -Fq "recorded risk: high in the completion record" <<<"$(risk_of "$repo")" || fail "the raised level does not name the record as the reason"
@@ -743,6 +771,114 @@ run_finish "$repo" 12 "Add the marker" || {
 }
 grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the level of a feature with an earlier record was not derived and recorded"
 grep -Fq -- "- scripts/publish-feature.sh: " <<<"$(risk_of "$repo")" || fail "the reason for the derived level was not recorded"
+
+# A review made on a partial check (review-feature.sh --checks) is an
+# intermediate round: a feature is committed on a review of content that
+# passed the full verification, whatever the risk policy allows for the
+# intermediate rounds.
+repo="$(setup_repo partial-check PASS "[]")"
+set_impact "$repo" minor
+jq '.verification = {status: "partial", groups: ["fast"], verified_at: "2026-01-01T00:00:00Z"}' "$repo/$review" >"$repo/$review.tmp" &&
+  mv "$repo/$review.tmp" "$repo/$review"
+expect_no_commit "$repo" "the latest review was made on a partial check" 12 "Add the marker"
+grep -Fq "was made on partially checked content: only the groups fast" "$repo.out" || fail "the partial check was not given as the reason"
+grep -Fq "without --checks" "$repo.out" || fail "the refusal does not say how to review again"
+
+# The review compared the feature against its base: one whose merge base is
+# not the one the feature has now judged another diff.
+repo="$(setup_repo other-base PASS "[]")"
+set_impact "$repo" minor
+jq '.merge_base = "0123456789012345678901234567890123456789"' "$repo/$review" >"$repo/$review.tmp" &&
+  mv "$repo/$review.tmp" "$repo/$review"
+expect_no_commit "$repo" "the review names another merge base" 12 "Add the marker"
+grep -Fq "the base of the branch changed since the review" "$repo.out" || fail "the other merge base was not given as the reason"
+
+# Without a review, a feature is committed only when it is low risk and the
+# risk policy of the base says 'low: review: none'; the commit says so, and
+# the merge needs the owner, as for any feature without a classification of
+# the impact. 'review: none' is refused for medium and high.
+# policy_on_base <repo> <policy>: the risk policy, committed on main.
+policy_on_base() {
+  mkdir -p "$1/.agents/policies"
+  git -C "$1" switch -q main
+  printf '%s\n' "$2" >"$1/.agents/policies/risk.conf"
+  git -C "$1" add .agents/policies/risk.conf
+  git -C "$1" commit -qm "The risk policy"
+  git -C "$1" switch -q feature/12-marker
+  git -C "$1" rebase -q main
+}
+# without_review <repo>: the fixture review is removed.
+without_review() {
+  rm -f "${1:?}/${review:?}"
+}
+# expect_no_feature_commit <repo> <description> <argument...>: as
+# expect_no_commit, for a feature whose base got a commit of its own.
+expect_no_feature_commit() {
+  local repo="$1"
+  local description="$2"
+  shift 2
+
+  if run_finish "$repo" "$@"; then
+    cat "$repo.out" >&2
+    fail "expected refusal: $description"
+  fi
+  [[ "$(git -C "$repo" rev-list --count main..HEAD)" -eq 0 ]] || fail "a commit was created although: $description"
+}
+repo="$(setup_repo low-unreviewed PASS "[]")"
+without_review "$repo"
+policy_on_base "$repo" "$(printf 'default: medium\nlow: feature.txt\nlow: review: none')"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a low-risk feature was refused without a review although the policy says 'low: review: none'"
+}
+grep -Fqx "Review: not reviewed: Low risk by project policy (.agents/policies/risk.conf of the base: low: review: none)" <<<"$(message "$repo")" ||
+  fail "the commit does not say that the feature was not reviewed by project policy"
+grep -Fqx "Risk: low" <<<"$(risk_of "$repo")" || fail "the commit does not record the low level"
+grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(approval_of "$repo")" ||
+  fail "an unreviewed low-risk feature did not need the owner's approval"
+grep -Fq "no valid classification of the impact" <<<"$(approval_of "$repo")" || fail "the missing classification is not the reason for the approval"
+# The same feature with a review is committed on the review, as before.
+repo="$(setup_repo low-reviewed PASS "[]")"
+set_impact "$repo" minor
+policy_on_base "$repo" "$(printf 'default: medium\nlow: feature.txt\nlow: review: none')"
+jq --arg merge_base "$(git -C "$repo" rev-parse main)" '.merge_base = $merge_base' "$repo/$review" >"$repo/$review.tmp" &&
+  mv "$repo/$review.tmp" "$repo/$review"
+claims_changed "$repo"
+run_finish "$repo" 12 "Add the marker" || { cat "$repo.out" >&2; fail "a reviewed low-risk feature was refused"; }
+grep -Fqx "Review: round 1, PASS, by claude (model-r)" <<<"$(message "$repo")" || fail "the review of a low-risk feature was not used"
+# Without 'low: review: none' a low-risk feature needs its review.
+repo="$(setup_repo low-policy-reviews PASS "[]")"
+without_review "$repo"
+policy_on_base "$repo" "$(printf 'default: medium\nlow: feature.txt')"
+expect_no_feature_commit "$repo" "a low-risk feature without a review, in a project that reviews low" 12 "Add the marker"
+grep -Fq "no review of this feature exists, and it is low risk" "$repo.out" || fail "the missing review of a low-risk feature was not given as the reason"
+grep -Fq "low: review: none" "$repo.out" || fail "the refusal does not name the policy line that would allow it"
+# A medium feature is never committed without a review: not by the shipped
+# policy, and not by a policy that says 'medium: review: none', which is
+# refused and reported.
+repo="$(setup_repo medium-unreviewed PASS "[]")"
+without_review "$repo"
+expect_no_commit "$repo" "a medium-risk feature without a review" 12 "Add the marker"
+grep -Fq "no review of this feature exists, and it is medium risk" "$repo.out" || fail "the missing review of a medium-risk feature was not given as the reason"
+repo="$(setup_repo medium-none-refused PASS "[]")"
+without_review "$repo"
+policy_on_base "$repo" "$(printf 'default: medium\nmedium: review: none\nlow: review: none')"
+expect_no_feature_commit "$repo" "'medium: review: none' is configured" 12 "Add the marker"
+grep -Fq "medium: review: none is refused" "$repo.out" || fail "the refused 'medium: review: none' was not reported"
+repo="$(setup_repo high-none-refused PASS "[]")"
+without_review "$repo"
+policy_on_base "$repo" "$(printf 'default: medium\nhigh: scripts\nhigh: review: none\nlow: review: none')"
+printf '\n# changed\n' >>"$repo/scripts/publish-feature.sh"
+expect_no_feature_commit "$repo" "'high: review: none' is configured" 12 "Add the marker"
+grep -Fq "no review of this feature exists, and it is high risk" "$repo.out" || fail "the missing review of a high-risk feature was not given as the reason"
+grep -Fq "high: review: none is refused" "$repo.out" || fail "the refused 'high: review: none' was not reported"
+# A record that claims low does not make a medium feature unreviewed.
+repo="$(setup_repo low-claimed PASS "[]")"
+without_review "$repo"
+policy_on_base "$repo" "$(printf 'default: medium\nlow: docs\nlow: review: none')"
+jq '.risk = "low"' "$repo/.agents/completion/12.json" >"$repo/completion.tmp" && mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+expect_no_feature_commit "$repo" "a medium-risk feature whose record claims low, without a review" 12 "Add the marker"
+grep -Fq "claims risk: low, but the feature is medium" "$repo.out" || fail "the claim of low was not refused"
 
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
@@ -796,6 +932,7 @@ set_impact "$repo" minor
 jq '.status = "awaiting_evidence" | .criteria[1] = {criterion: "The owner approves", gate: "owner_approval", status: "pending", evidence: "approval of the final commit"}' \
   "$repo/.agents/completion/12.json" >"$repo/completion.tmp"
 mv "$repo/completion.tmp" "$repo/.agents/completion/12.json"
+claims_changed "$repo"
 run_finish "$repo" 12 "Add the marker" || { cat "$repo.out" >&2; fail "a feature that awaits the owner's approval was refused"; }
 grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(approval_of "$repo")" ||
   fail "a pending owner_approval criterion did not make the merge need the owner"
