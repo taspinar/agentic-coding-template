@@ -198,6 +198,41 @@ printf '%s\n' "$awaiting" >"$record"
 printf '**Remaining:** step 3.\n' >"$note"
 expect_gate "pending evidence and remaining work in the handoff note" partial "remaining: step 3."
 rm "$note"
+
+# A budget check of the verification configuration ('<name> [<group>]
+# budget: <command>', scripts/verify.sh) is a measurement that never fails
+# the verification, so it cannot be the evidence of a met criterion. The
+# check is named as a whole word; a word that merely contains the name is not
+# the check. Without a root, completion_errors cannot know the budgets.
+mkdir -p "$root/scripts"
+printf 'lint: true\nperf [code] budget: ./bench.sh\n' >"$root/scripts/verify.conf"
+printf 'paths: scripts\nbundle-size budget: du -s dist\nselftest: ./tests/x.sh\n' >"$root/scripts/verify-workflow.conf"
+[[ "$(completion_budget_checks "$root" | paste -sd, -)" == "bundle-size,perf" ]] ||
+  fail "the budget checks of both files were not found: $(completion_budget_checks "$root" | paste -sd, -)"
+cites_budget='{"schema": "completion/v1", "status": "complete", "criteria": [
+  {"criterion": "The page is fast", "status": "met", "evidence": "the perf check of verify.sh passes"},
+  {"criterion": "The bundle is small", "status": "met", "evidence": "verify.sh: bundle-size is within its target"}
+], "remaining": []}'
+printf '%s\n' "$cites_budget" >"$record"
+expect_gate "evidence that cites a budget check" invalid \
+  "criterion 1 cites the budget check 'perf' as evidence of a met criterion" \
+  "criterion 2 cites the budget check 'bundle-size' as evidence of a met criterion"
+[[ -z "$(completion_errors "$record")" ]] || fail "completion_errors without a root knew the budget checks"
+names_but_not_the_check='{"schema": "completion/v1", "status": "complete", "criteria": [
+  {"criterion": "The page is fast", "status": "met", "evidence": "tests/test_performance.py::test_perf_page passes; perf-tests/ cover it"},
+  {"criterion": "The bundle is small", "status": "met", "evidence": "the size of dist/ is asserted by tests/test_bundle.py"}
+], "remaining": []}'
+printf '%s\n' "$names_but_not_the_check" >"$record"
+expect_gate "evidence that only contains the name of a budget check in a word" complete
+budget_for_not_met='{"schema": "completion/v1", "status": "partial", "criteria": [
+  {"criterion": "The page is fast", "status": "not_met", "evidence": "the perf budget is exceeded; the optimization is not done"}
+], "remaining": ["The optimization"]}'
+printf '%s\n' "$budget_for_not_met" >"$record"
+expect_gate "a budget named in the evidence of a criterion that is not met" partial
+rm "$root/scripts/verify.conf" "$root/scripts/verify-workflow.conf"
+printf '%s\n' "$cites_budget" >"$record"
+expect_gate "the same record in a project without budget checks" complete
+printf '%s\n' "$awaiting" >"$record"
 completion_commit_lines "$root" 7 | grep -Fqx -- "- pending at post_merge: main verifies after the merge (the verify run on main)" ||
   fail "the commit lines do not name the gate of pending evidence"
 completion_commit_lines "$root" 7 | grep -Fqx "Completion: awaiting_evidence" || fail "the commit lines do not state awaiting_evidence"

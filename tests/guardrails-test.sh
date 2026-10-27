@@ -122,6 +122,26 @@ repo="$(setup_repo check-removed)"
 printf 'lint: true\n' >"$repo/scripts/verify.conf"
 expect_level "$repo" protected "a feature removes a check"
 
+# A budget ('<name> [<group>] budget: <command>') is a line of the same file:
+# making a check a budget or a budget a check changes the line, so it is
+# protected as any changed line, and adding a budget check is sensitive.
+repo="$(setup_repo check-made-budget)"
+printf 'lint: true\nunit budget: true\n' >"$repo/scripts/verify.conf"
+expect_level "$repo" protected "a feature makes an existing check a budget"
+grep -Fq "protected: scripts/verify.conf (an existing check or line is changed or removed)" "$repo.out" ||
+  fail "the changed line was not named for a check made a budget"
+
+repo="$(setup_repo budget-made-check)"
+printf 'lint: true\nunit [code] budget: true\n' >"$repo/scripts/verify.conf"
+git -C "$repo" commit -qam "Declare a budget"
+git -C "$repo" branch -f main HEAD
+printf 'lint: true\nunit [code]: true\n' >"$repo/scripts/verify.conf"
+expect_level "$repo" protected "a feature makes a budget an ordinary check"
+
+repo="$(setup_repo budget-added)"
+printf 'perf budget: true\n' >>"$repo/scripts/verify.conf"
+expect_level "$repo" sensitive "a feature adds a budget check"
+
 repo="$(setup_repo checks-deleted)"
 rm "$repo/scripts/verify.conf"
 expect_level "$repo" protected "a feature deletes the verification configuration"

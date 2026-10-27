@@ -66,7 +66,7 @@ the website describes the current template.
 |---|---|
 | `scripts/doctor.sh` | Checks the local prerequisites, and reports the attribution preference and whether the clients can be made to follow it |
 | `scripts/check-docs.sh` | Checks that the tracked Markdown files name files that exist: relative links, and paths in backticks into a tracked directory. `--later` names paths that come later. The template runs it in its verification; a project can add it to `scripts/verify.conf` |
-| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; records a pass and skips a repeated run with `--reuse`; used by humans, agents, and CI. `--only <group>` runs the checks of named groups for a CI with parallel jobs; such a partial run records nothing |
+| `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; records a pass and skips a repeated run with `--reuse`; used by humans, agents, and CI. `--only <group>` runs the checks of named groups for a CI with parallel jobs; such a partial run records nothing. A check declared as a budget (`<name> [<group>] budget: <command>`) is a measurement: over its target it is `BUDGET`, with its output, not `FAIL`, and the verification still passes |
 | `scripts/start-planning.sh` | Project Grill, requirements approval, and project planning in a planning worktree |
 | `scripts/review-planning.sh` | Independent, read-only review of the planning documents |
 | `scripts/revise-planning.sh` | The planner's decision per planning finding, then the revision |
@@ -102,7 +102,7 @@ the website describes the current template.
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
 | `scripts/lib/issue-comments.sh` | The comments of a feature Issue that are passed on to the implementer, the reviewer, and the triage agent: those of the owner, members, and collaborators, without the workflow's own reports, bounded in size |
 | `scripts/lib/fingerprint.sh` | Content fingerprints of a working tree or a set of files, without the metadata the workflow writes while it runs; a feature review's fingerprint also covers the completion record and the handoff note of its Issue |
-| `scripts/lib/verification.sh` | The record of the last passed verification of a working tree |
+| `scripts/lib/verification.sh` | The record of the last passed verification of a working tree, and the results of its budget checks, with their report for the reviewer, the handoff note, the commit, and the run record |
 | `scripts/lib/records.sh` | The run records: duration and token usage per run, step, and agent call, and the copy per feature or planning |
 | `scripts/lib/experience.sh` | The experience record of a feature run: what a script derives from the run, and the agent's optional notes once they are valid |
 | `scripts/lib/report.jq` | The report of `report-runs.sh`: totals, comparisons, and the summary for GitHub, from numeric fields only |
@@ -138,7 +138,7 @@ the website describes the current template.
 |---|---|---|
 | `.agents/reviews/` | Review and revision results (JSON and generated reports) | No |
 | `.agents/triage/` | Approved triage results (JSON and generated reports) | No |
-| `.agents/verification/` | The record of the last passed verification, written by `verify.sh` | No |
+| `.agents/verification/` | The record of the last passed verification and the results of its budget checks, written by `verify.sh` | No |
 | `.agents/manual-steps/` | Per Issue, the steps a feature needs from you, written by the implementer; copied into the commit message and the pull request | No |
 | `.agents/summaries/` | Per Issue, the implementer's summary of the changes; becomes the list of changes in the commit message | No |
 | `.agents/completion/` | Per Issue, the implementer's completion record: `complete`, `partial`, or `blocked`, with evidence per acceptance criterion. The gate before the commit and before a pull request that closes the Issue | No |

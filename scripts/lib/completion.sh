@@ -32,7 +32,11 @@
 # 'complete' needs every criterion met or not applicable and nothing
 # remaining. 'partial' and 'blocked' need something that remains. The
 # evidence of a criterion cannot be a partial run of the checks
-# ('verify.sh --only'): such a run is not a verification.
+# ('verify.sh --only'): such a run is not a verification. Nor can the
+# evidence of a met criterion be a budget check of scripts/verify.conf or
+# scripts/verify-workflow.conf ('<name> [<group>] budget: <command>'): a
+# budget is a measurement that never fails the verification, so it shows
+# nothing about a criterion.
 #
 # Evidence appears at a gate: 'implementation' (the default, before the work
 # is committed), 'pr_ci' (after the pull request is published, before the
@@ -58,18 +62,40 @@ completion_record() {
   printf '%s/%s/%s.json' "$1" "$COMPLETION_DIR" "$2"
 }
 
-# completion_errors <record>
+# completion_budget_checks <root>
+# Prints the names of the budget checks that the verification configuration
+# of the working tree at <root> declares, one per line, and nothing without
+# one. The syntax is that of scripts/verify.sh.
+completion_budget_checks() {
+  local file
+
+  for file in "$1/scripts/verify.conf" "$1/scripts/verify-workflow.conf"; do
+    [[ -f "$file" ]] || continue
+    sed -nE 's/^([a-z0-9][a-z0-9-]*)([[:space:]]*\[[a-z0-9][a-z0-9-]*\])?[[:space:]]+budget:.*$/\1/p' "$file"
+  done | sort -u
+}
+
+# completion_errors <record> [<root>]
 # Prints what is wrong with a completion record, one problem per line, and
-# nothing for a valid one.
+# nothing for a valid one. With <root>, the evidence of a met criterion may
+# not name a budget check of that working tree.
 completion_errors() {
   local record="$1"
+  local budget_checks=""
 
   if ! jq -e . "$record" >/dev/null 2>&1; then
     echo "it is not valid JSON"
     return 0
   fi
-  jq -r '
+  [[ -z "${2:-}" ]] || budget_checks="$(completion_budget_checks "$2")"
+  jq -r --arg budget_checks "$budget_checks" '
     def text: type == "string" and test("[^[:space:]]");
+    # A budget check named as a whole word in a text: not a word that merely
+    # contains the name, such as a test or a path named after it.
+    def budget_cited: . as $text
+      | [$budget_checks | split("\n")[] | select(length > 0)
+         | select(. as $name | $text | test("(^|[^a-z0-9_-])" + ($name | gsub("-"; "[-]")) + "($|[^a-z0-9_-])"))]
+      | first // "";
     if type != "object" then "it is not a JSON object"
     else
       (if .schema != "completion/v1" then "schema must be \"completion/v1\"" else empty end),
@@ -92,7 +118,9 @@ completion_errors() {
             then "criterion \($n): pending is only for evidence of a later gate (pr_ci, owner_approval, or post_merge)" else empty end),
            (if (.evidence | text) | not then "criterion \($n) has no evidence" else empty end),
            (if (.evidence | type) == "string" and (.evidence | test("verify\\.sh([[:space:]]+-[^[:space:]]*)*[[:space:]]+--only([[:space:]]|$)"))
-            then "criterion \($n) cites a partial run of the checks (verify.sh --only) as evidence, which is not a verification" else empty end)
+            then "criterion \($n) cites a partial run of the checks (verify.sh --only) as evidence, which is not a verification" else empty end),
+           (if .status == "met" and (.evidence | type) == "string" and (.evidence | budget_cited) != ""
+            then "criterion \($n) cites the budget check \u0027\(.evidence | budget_cited)\u0027 as evidence of a met criterion; a budget is a measurement that never fails the verification, so it shows nothing about the criterion" else empty end)
          end)
        end),
       (if (.remaining | type) != "array" or ([.remaining[]? | text] | all | not)
@@ -183,7 +211,7 @@ completion_gate() {
     echo "the implementer wrote no completion record ($COMPLETION_DIR/$issue.json)"
     return 0
   fi
-  errors="$(completion_errors "$record")"
+  errors="$(completion_errors "$record" "$root")"
   if [[ -n "$errors" ]]; then
     echo "invalid"
     printf '%s\n' "$errors" | sed "s|^|the completion record ($COMPLETION_DIR/$issue.json): |"

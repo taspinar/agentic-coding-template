@@ -359,6 +359,32 @@ risk="$(printf '%s\n' "$risk_lines" | sed 1d |
   echo "makes the level high. No input of an agent lowers it."
 } >>"$context_file"
 
+# The budget checks of the verification the review rests on: a budget over
+# its target is a measurement the reviewer has to see, not a failed check.
+# The whole output of each check goes in: the reviewer judges with it.
+budget_results="$(verification_budgets "$root")"
+if [[ -z "$checks" && -z "$unverified_reason" && -n "$budget_results" ]]; then
+  {
+    echo
+    echo "## Budget results of the verification"
+    echo
+    echo "The verification declares budget checks ('<name> [<group>] budget: <command>'"
+    echo "in scripts/verify.conf): each measures something against a target, and a"
+    echo "result over the target does not fail the verification. The results of the"
+    echo "verification this review rests on, with the output of each check:"
+    echo
+    printf '%s\n' "$budget_results" | verification_budget_report | sed 's/^budget /- budget /'
+    echo
+    echo "A budget is a measurement, not a defect by itself and not a repair order."
+    echo "Nothing is repaired for it automatically, it changes neither the scope of the"
+    echo "Issue nor the architecture, and no Issue is opened for it by itself. Judge it:"
+    echo "when the feature's own changes exceed the budget or make the measurement"
+    echo "worse, you may raise it as a finding with the severity it deserves, which is"
+    echo "triaged like any finding; otherwise name it in your limitations. A completion"
+    echo "record may not cite a budget check as evidence of a met criterion."
+  } >>"$context_file"
+fi
+
 # A partial check: the reviewer must know what did not run.
 if [[ -n "$checks" ]]; then
   {

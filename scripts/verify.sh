@@ -19,13 +19,24 @@ records_arguments=("$@")
 # belongs to the group 'default'. --only runs the checks of the named groups,
 # for a CI that spreads the same checks over parallel jobs. Such a partial
 # run is never a verification: it records nothing.
+#
+# A check may be a budget: '<name> [<group>] budget: <command>'. It measures
+# something (a duration, a size, a count) against a target and exits non-zero
+# over it. Such a result is a measurement, not a failure: the summary shows it
+# as BUDGET with the output of the check, and the verification passes when
+# every other check passed. The budget results are recorded with the pass
+# (lib/verification.sh) and in the run record, so that the scripts show them
+# where a decision is made; nothing repairs them. A budget check that does not
+# finish (a signal, or the status 124 of 'timeout') or could not run (125 to
+# 127, the statuses of 'timeout' and the shell for a command that was not
+# invoked) is a FAIL like any check.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 config="$root/scripts/verify.conf"
 workflow_config="$root/scripts/verify-workflow.conf"
 
 comment_pattern='^[[:space:]]*(#.*)?$'
-check_pattern='^([a-z0-9][a-z0-9-]*)([[:space:]]*\[([a-z0-9][a-z0-9-]*)\])?:[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
+check_pattern='^([a-z0-9][a-z0-9-]*)([[:space:]]*\[([a-z0-9][a-z0-9-]*)\])?([[:space:]]+budget)?:[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
 default_group="default"
 
 usage() {
@@ -46,12 +57,17 @@ usage() {
   echo "a run of every check verifies the content."
   echo
   echo "--groups prints the groups that have a check, one per line."
+  echo
+  echo "A check declared as '<name> [<group>] budget: <command>' is a budget: when it"
+  echo "exits non-zero, the summary shows BUDGET with its output, and the verification"
+  echo "passes when every other check passed. A budget check that does not finish or"
+  echo "cannot run (exit 124 to 127, or a signal) fails: nothing was measured."
   exit 1
 }
 
 config_fail() {
   echo "Error: $*" >&2
-  echo "Declare required checks as '<name>: <command>' or '<name> [<group>]: <command>'." >&2
+  echo "Declare required checks as '<name>: <command>', '<name> [<group>]: <command>', or '<name> [<group>] budget: <command>'." >&2
   exit 1
 }
 
@@ -114,15 +130,27 @@ if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_gro
     RECORDS_VERIFICATION="$records_mark" "$0" ${records_arguments[@]+"${records_arguments[@]}"} || records_status=$?
     records_reused=false
     [[ ! -e "$records_mark" ]] || records_reused=true
-    rm -f "$records_mark" 2>/dev/null || true
-    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" all "$records_call"
+    # The budget results of the run, which the child writes next to the mark
+    # (lib/verification.sh), also for a reused pass.
+    records_budgets='[]'
+    if [[ -f "$root/scripts/lib/verification.sh" ]]; then
+      source "$root/scripts/lib/verification.sh"
+      records_budgets="$(verification_budgets_json "$records_mark.budgets" 2>/dev/null)" || records_budgets='[]'
+    fi
+    rm -f "$records_mark" "$records_mark.budgets" 2>/dev/null || true
+    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" all "$records_call" "$records_budgets"
     exit "$records_status"
   fi
 fi
 
+# Working files of this run: the output of each budget check and the budget
+# results (lib/verification.sh), and the index of a fingerprint.
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/verify.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+budgets_file="$scratch/budgets"
+
 # A passed run is recorded only where the record is a file that Git ignores.
 recordable=0
-scratch=""
 for library in fingerprint verification; do
   [[ -f "$root/scripts/lib/$library.sh" ]] || continue
   source "$root/scripts/lib/$library.sh"
@@ -130,18 +158,33 @@ done
 if declare -F verification_recordable >/dev/null && declare -F fingerprint_worktree >/dev/null &&
   verification_recordable "$root"; then
   recordable=1
-  scratch="$(mktemp -d "${TMPDIR:-/tmp}/verify.XXXXXX")"
-  trap 'rm -rf "$scratch"' EXIT
 fi
+
+# budget_result <name> <status> <exit> <output-file>
+# Keeps the result of a budget check for the record and the run record, with
+# lib/verification.sh; without the library the summary alone shows it.
+budget_result() {
+  ! declare -F verification_budget_add >/dev/null || verification_budget_add "$budgets_file" "$@"
+}
+
+# hand_budgets_to_run
+# Gives the budget results to the run that records this verification, when
+# one does: the wrapper above reads them next to its mark.
+hand_budgets_to_run() {
+  [[ -n "${RECORDS_VERIFICATION:-}" && -s "$budgets_file" ]] || return 0
+  cp "$budgets_file" "$RECORDS_VERIFICATION.budgets" 2>/dev/null || true
+}
 
 names=()
 commands=()
 groups=()
+budgets=()
 workflow_paths=""
 
 # load_checks <file> <paths-entry>
-# Appends the checks of <file> to names and commands. With <paths-entry> 'yes',
-# the reserved entry 'paths:' sets workflow_paths instead of declaring a check.
+# Appends the checks of <file> to names, commands, groups, and budgets ('yes'
+# for a budget check). With <paths-entry> 'yes', the reserved entry 'paths:'
+# sets workflow_paths instead of declaring a check.
 load_checks() {
   local file="$1"
   local paths_entry="$2"
@@ -150,6 +193,7 @@ load_checks() {
   local line_number=0
   local name
   local group
+  local budget
   local value
   local existing
 
@@ -161,9 +205,11 @@ load_checks() {
 
     name="${BASH_REMATCH[1]}"
     group="${BASH_REMATCH[3]}"
-    value="${BASH_REMATCH[4]}"
+    budget="${BASH_REMATCH[4]:+yes}"
+    value="${BASH_REMATCH[5]}"
     if [[ "$paths_entry" == "yes" && "$name" == "paths" ]]; then
       [[ -z "$group" ]] || config_fail "'paths' takes no group on line $line_number of $label."
+      [[ -z "$budget" ]] || config_fail "'paths' is not a check and cannot be a budget, on line $line_number of $label."
       [[ -z "$workflow_paths" ]] ||
         config_fail "'paths' is declared more than once in $label."
       workflow_paths="$value"
@@ -176,6 +222,7 @@ load_checks() {
     names+=("$name")
     commands+=("$value")
     groups+=("${group:-$default_group}")
+    budgets+=("${budget:-no}")
   done <"$file"
 }
 
@@ -275,6 +322,13 @@ if [[ "$recordable" -eq 1 ]]; then
       echo
       echo "Verification already passed for this content at $(verification_field "$root" verified-at); not run again."
       echo "Run ./scripts/verify.sh without --reuse to run every check."
+      recorded_budgets="$(verification_budgets "$root")"
+      if [[ -n "$recorded_budgets" ]]; then
+        echo "Its budget results, recorded with the pass:"
+        printf '%s\n' "$recorded_budgets" | verification_budget_report | sed 's/^/  /'
+        printf '%s\n' "$recorded_budgets" >"$budgets_file"
+        hand_budgets_to_run
+      fi
       [[ -z "${RECORDS_VERIFICATION:-}" ]] || { : >"$RECORDS_VERIFICATION"; } 2>/dev/null || true
       exit 0
     fi
@@ -283,6 +337,7 @@ fi
 
 results=()
 failed=0
+exceeded=0
 for index in "${!names[@]}"; do
   if [[ "$index" -eq "$project_count" ]]; then
     [[ -z "$workflow_skipped" ]] || break
@@ -291,13 +346,18 @@ for index in "${!names[@]}"; do
   fi
   name="${names[$index]}"
   command="${commands[$index]}"
+  budget="${budgets[$index]}"
   if [[ "$partial" -eq 1 ]] && ! in_list "${groups[$index]}" "$only"; then
     continue
   fi
   read -r tool _ <<<"$command"
 
   echo
-  echo "-- $name: $command"
+  if [[ "$budget" == "yes" ]]; then
+    echo "-- $name (budget): $command"
+  else
+    echo "-- $name: $command"
+  fi
 
   if ! (cd "$root" && command -v "$tool" >/dev/null 2>&1); then
     echo "Error: required check '$name' cannot run; '$tool' is missing or not executable." >&2
@@ -310,20 +370,62 @@ for index in "${!names[@]}"; do
   # A check is not part of the run that verifies: a workflow script that it
   # starts, as the self-tests do, must not write into that run's records, and
   # must not use the agent or attribution configuration that was chosen for
-  # that run.
-  (
-    unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
-    unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
-    cd "$root" && bash -eo pipefail -c "$command"
-  )
-  status=$?
+  # that run. The output of a budget check is kept: it is the measurement.
+  if [[ "$budget" == "yes" ]]; then
+    output="$scratch/budget-$name.out"
+    (
+      unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
+      unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+      cd "$root" && bash -eo pipefail -c "$command"
+    ) 2>&1 | tee "$output"
+    status="${PIPESTATUS[0]}"
+  else
+    (
+      unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
+      unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+      cd "$root" && bash -eo pipefail -c "$command"
+    )
+    status=$?
+  fi
   set -e
 
   if [[ "$status" -eq 0 ]]; then
-    results+=("PASS  $name")
+    if [[ "$budget" == "yes" ]]; then
+      results+=("PASS  $name (budget within its target)")
+      budget_result "$name" within "$status" "$output"
+    else
+      results+=("PASS  $name")
+    fi
+  elif [[ "$budget" == "yes" && ("$status" -le 123 || "$status" -eq 128) ]]; then
+    # Over the target: a measurement, not a failure. The exit statuses 1..123
+    # and 128 are the check's own: 124 of 'timeout' and a death by a signal
+    # (129 and up) mean that the check did not finish, and 125..127 (an error
+    # of 'timeout' itself, a command that is not executable or not found)
+    # that it could not run; in both nothing was measured, and it fails like
+    # any check. 128 is not reserved: no utility returns it for a command that
+    # was not invoked, so a measurement may use it like any other status.
+    echo "Note: budget '$name' exceeded its target (exit $status). A budget is a measurement, not a failure: the verification does not fail for it, and nothing repairs it." >&2
+    results+=("BUDGET  $name (exit $status)")
+    if [[ -s "$output" ]]; then
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        results+=("        $line")
+      done <"$output"
+    else
+      results+=("        (no output)")
+    fi
+    budget_result "$name" exceeded "$status" "$output"
+    exceeded=$((exceeded + 1))
   else
-    echo "Error: required check '$name' failed with status $status." >&2
-    results+=("FAIL  $name (exit $status)")
+    if [[ "$budget" == "yes" && "$status" -ge 125 && "$status" -le 127 ]]; then
+      echo "Error: budget check '$name' could not run (status $status: an error of 'timeout', or a command that is not executable or not found): nothing was measured, so it fails like any check." >&2
+      results+=("FAIL  $name (exit $status, the budget check could not run)")
+    elif [[ "$budget" == "yes" ]]; then
+      echo "Error: budget check '$name' did not finish (status $status): nothing was measured, so it fails like any check." >&2
+      results+=("FAIL  $name (exit $status, the budget check did not finish)")
+    else
+      echo "Error: required check '$name' failed with status $status." >&2
+      results+=("FAIL  $name (exit $status)")
+    fi
     failed=1
   fi
 done
@@ -332,6 +434,10 @@ echo
 echo "== Verification summary =="
 [[ "${#results[@]}" -eq 0 ]] || printf '%s\n' "${results[@]}"
 [[ -z "$workflow_skipped" ]] || echo "$workflow_skipped"
+if [[ "$exceeded" -gt 0 ]]; then
+  echo "$exceeded budget check(s) exceeded their target (BUDGET): a measurement, not a failure. The owner decides whether to change the budget or the code; nothing repairs it automatically."
+fi
+[[ "$partial" -eq 1 ]] || hand_budgets_to_run
 
 if [[ "$failed" -ne 0 ]]; then
   [[ "$recordable" -eq 0 ]] || verification_forget "$root"
@@ -357,7 +463,7 @@ if [[ "$recordable" -eq 1 ]]; then
     else
       workflow_state="ran"
     fi
-    verification_write "$root" "$tree_before" "$workflow_state" ||
+    verification_write "$root" "$tree_before" "$workflow_state" "$budgets_file" ||
       echo "Warning: could not record the passed verification." >&2
   else
     verification_forget "$root"

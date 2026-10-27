@@ -30,7 +30,10 @@
 #   run-end      status (exit status; 130 for an interruption)
 #   step         name, status, seconds: a step of run-feature.sh
 #   wait         name, seconds: a pause before a step is tried again
-#   verification status, seconds, reused, groups (always "all": a --only run is not recorded)
+#   verification status, seconds, reused, groups (always "all": a --only run
+#                is not recorded), budgets: the budget checks of the run
+#                (name, status "exceeded" or "within", exit, output), empty
+#                without one
 #   agent-call   role, profile, agent, model, status, seconds, usage
 #   intervention what: something the human did that a script observed
 #   note         step, outcome, reason, action: a line of the log of
@@ -653,10 +656,17 @@ records_verification_start() {
   records_emit verification-start --arg id "$1" --arg groups "$2" '{id: $id, groups: $groups}'
 }
 
-# records_verification <status> <seconds> <reused> <groups> [<id>]
+# records_verification <status> <seconds> <reused> <groups> [<id>] [<budgets>]
+# <budgets> is a JSON array of the budget results of the run
+# (lib/verification.sh, verification_budgets_json); an empty array without
+# a budget check.
 records_verification() {
+  local budgets="${6:-[]}"
+
+  jq -e 'type == "array"' <<<"$budgets" >/dev/null 2>&1 || budgets='[]'
   records_emit verification --argjson status "$1" --argjson seconds "$2" --argjson reused "$3" --arg groups "$4" --arg id "${5:-}" \
-    '{status: $status, seconds: $seconds, reused: $reused, groups: $groups} + (if $id == "" then {} else {id: $id} end)'
+    --argjson budgets "$budgets" \
+    '{status: $status, seconds: $seconds, reused: $reused, groups: $groups, budgets: $budgets} + (if $id == "" then {} else {id: $id} end)'
 }
 
 # records_branch_issue: prints the Issue number of the feature branch that is
