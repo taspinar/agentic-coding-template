@@ -13,6 +13,7 @@ source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/review-run.sh"
 source "$script_dir/lib/guardrails.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/issue-comments.sh"
 
 fail() {
   echo "Error: $*" >&2
@@ -171,6 +172,12 @@ issue_context="$(gh issue view "$issue" \
   --json title,body \
   --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')" ||
   fail "could not read GitHub Issue #$issue."
+# The owner's later comments, after the body, as the implementer got them.
+issue_comments "$issue" reviewer ||
+  fail "could not read the comments of GitHub Issue #$issue ($ISSUE_COMMENTS_ERROR). The review was not started, since it would judge the feature without the owner's clarifications."
+if [[ -n "$ISSUE_COMMENTS_SECTION" ]]; then
+  issue_context+=$'\n\n'"$ISSUE_COMMENTS_SECTION"
+fi
 
 head_before="$(git -C "$root" rev-parse HEAD)"
 # The fingerprint of the reviewed content, including uncommitted and untracked
@@ -355,7 +362,8 @@ else
 
 Your assigned work item is GitHub Issue #${issue}.
 
-Standard input contains the Issue title and body, the implementer's
+Standard input contains the Issue title and body, the owner's later comments
+on the Issue if there are any, the implementer's
 completion record, the list of changed files,
 and the complete diff of the current implementation against ${base_ref},
 including uncommitted and untracked changes. Review that complete diff. Read

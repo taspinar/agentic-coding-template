@@ -9,6 +9,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
+source "$script_dir/lib/issue-comments.sh"
 
 usage() {
   echo "Usage: $0 <review-json> [--agent <agent>] [--model <model>]"
@@ -35,9 +36,10 @@ fail() {
 # publish_triage: publishes the stored triage <artifact>.json and its source
 # review as a comment on the source Issue and records the publication.
 # The reports are published on the Issue instead of being committed, rendered
-# from the validated JSON. A comment holds at most 65,536 characters: when both
-# reports do not fit in one comment, they are published in numbered parts, so
-# the record is never shortened.
+# from the validated JSON. Every comment starts with the marker by which
+# lib/issue-comments.sh keeps it from the agents. A comment holds at most
+# 65,536 characters: when both reports do not fit in one comment, they are
+# published in numbered parts, so the record is never shortened.
 publish_triage() {
   round="$(jq -r '.round' "$review_path")"
   comment_base="$artifact-comment"
@@ -58,7 +60,7 @@ publish_triage() {
 
   comment_limit=60000
   if [[ "$(wc -c <"$tmp_work/comment-body.md")" -le "$comment_limit" ]]; then
-    { echo "$heading"; echo; cat "$tmp_work/comment-body.md"; } >"$comment_base.md"
+    { echo "$ISSUE_COMMENTS_TRIAGE_MARKER"; echo "$heading"; echo; cat "$tmp_work/comment-body.md"; } >"$comment_base.md"
   else
     # Split on line boundaries; a part never ends inside a line.
     awk -v limit="$comment_limit" -v base="$tmp_work/part-" '
@@ -73,6 +75,7 @@ publish_triage() {
     parts="$(find "$tmp_work" -name 'part-*.md' | wc -l | tr -d ' ')"
     for ((part = 1; part <= parts; part++)); do
       {
+        echo "$ISSUE_COMMENTS_TRIAGE_MARKER"
         echo "$heading (part $part of $parts)"
         echo
         cat "$tmp_work/part-$part.md"
@@ -393,6 +396,9 @@ elif [[ "$finding_count" -eq 0 ]]; then
   echo "The review has no findings; no triage agent is needed."
   echo '{"decisions": []}' >"$decisions_file"
 else
+  # The owner's later comments, as the implementer and the reviewer got them.
+  issue_comments "$source_issue" "triage agent" ||
+    fail "could not read the comments of GitHub Issue #$source_issue ($ISSUE_COMMENTS_ERROR). The triage was not started, since it would judge the findings without the owner's clarifications. No artifact or GitHub Issues were created."
   {
     echo "# Triage context"
     echo
@@ -400,6 +406,10 @@ else
     echo
     printf '%s\n' "$source_issue_context"
     echo
+    if [[ -n "$ISSUE_COMMENTS_SECTION" ]]; then
+      printf '%s\n' "$ISSUE_COMMENTS_SECTION"
+      echo
+    fi
     echo "## Review findings (JSON)"
     echo
     jq '{verdict, limitations, findings}' "$review_path"

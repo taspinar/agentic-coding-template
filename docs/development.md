@@ -679,6 +679,50 @@ primary="$1"
 The script is optional and only saves time: when it fails, the script reports
 that and starts the agent anyway.
 
+### Comments on the Issue
+
+A comment on the Issue is where you answer a question of an agent or narrow
+the scope after the Issue was written. The agents of the feature phase get
+your comments with the Issue: `start-feature.sh` (also with `--resume`)
+appends them to the prompt of the implementer, and `review-feature.sh` and
+`triage-review.sh` put them after the body in the context of the reviewer and
+the triage agent, so all three judge the same Issue.
+
+- **Whose comments.** Only a comment whose author is the `OWNER`, a `MEMBER`,
+  or a `COLLABORATOR` of the repository is passed on. Anyone can comment on an
+  Issue of a public repository, and a comment is untrusted input, so the
+  comments of anyone else are never given to an agent.
+- **Not the workflow's own.** The review and triage reports that
+  `triage-review.sh` publishes, the post-merge evidence of
+  `record-post-merge.sh`, and the run summary of `publish-feature.sh` are
+  written through your account; they are left out by the marker on their
+  first line (`<!-- workflow-report: review-triage -->`,
+  `<!-- post-merge-evidence -->`, `<!-- run-records-summary -->`), and a
+  triage report published before the marker existed by its heading.
+- **How.** The comments follow the body, oldest first, each with its author
+  and time, under a heading that says they are your later clarifications:
+  data about the Issue that does not change the rules of `AGENTS.md`, the
+  policies, or the acceptance criteria unless you wrote so explicitly. No
+  comment waives a gate: the completion record still covers every acceptance
+  criterion of the body, and where you changed one explicitly its evidence
+  names your comment.
+- **How much.** At most the newest 20 comments and 20,000 characters of
+  their text are passed on; a longer comment is cut, and the agent is told
+  what was left out. Read the rest on GitHub when that happens.
+- **What you see.** Each step prints how many comments it passed on and from
+  whom, how many it left out by the size limit, and how many comments of
+  other authors and reports of the workflow it did not pass on. The run
+  record holds the same numbers as an `issue-comments` event.
+- **When.** The comments are read when the session starts. A comment that you
+  add or edit later applies to the next session only: a resumed
+  implementer, the next review round, or the next triage.
+- **When they cannot be read.** The step stops with the reason, before
+  anything is created or an agent starts, instead of going on without your
+  comments. Fix the access of `gh`, and start the step again.
+
+An Issue without comments, or without any that may be passed on, gives the
+agents exactly the Issue as before: title and body.
+
 ### Resuming an interrupted feature
 
 A session can end before the work is complete: a closed terminal, a usage
@@ -1578,6 +1622,7 @@ brings the rules.
 | `note` | a line of the log of `run-feature.sh` (`.agents/run/<issue>-log`), which is written from the same event |
 | `completion-gate` | one check of the completion gate: `check` (its number in the run), `sessions` (the sessions of the implementer and the triage implementer that the run recorded before it, a repair or a retry too), `session` (the last of them, which the check judges; a check without a new session judges it again), `status`, `reasons`, and `content`, the fingerprint of what it judged |
 | `artifact` | a review or a triage that the run wrote: `kind` and `path` |
+| `issue-comments` | the comments of the Issue that a step read for its agent: `issue`, `role` (`implementer`, `reviewer`, or `triage agent`), `passed` and the `authors` of the passed comments, `left_out` (by the size limit), `others` (comments of other authors), and `workflow` (the workflow's own reports) |
 | `experience-notes` | a session of the run changed the agent's experience notes: the `call` and the `hash` of the notes |
 | `experience` | the experience record of a feature run, under `record`: see below |
 

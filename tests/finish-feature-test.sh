@@ -750,6 +750,7 @@ case "${1:-} ${2:-}" in
   "auth status") exit 0 ;;
   "issue view") printf 'Title: Marker\n\nBody.'; exit 0 ;;
   "issue comment") exit 0 ;;
+  "api repos/"*"/comments") exec "$(dirname "$0")/gh-comments" "$@" ;;
 esac
 echo "Unexpected gh invocation: $*" >&2
 exit 1

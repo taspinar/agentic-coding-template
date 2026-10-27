@@ -64,6 +64,9 @@ Test acceptance criteria.}"
     done
     exit 0
     ;;
+  "api repos/"*"/comments")
+    exec "$(dirname "$0")/gh-comments" "$@"
+    ;;
   "issue list")
     if [[ -n "${MOCK_EXISTING_ISSUE:-}" ]]; then
       echo "$MOCK_EXISTING_ISSUE"
@@ -656,5 +659,47 @@ done
 jq 'del(.owner_directed) | .triage = {agent: "claude", model: "model-t"}' "$artifact" >"$tmp/old.json"
 [[ -z "$(source "$source_root/scripts/lib/review-data.sh"; triage_artifact_errors "$tmp/old.json" "$repo/$review")" ]] ||
   fail "an artifact without the new fields is no longer valid"
+
+# The triage agent gets the owner's comments after the Issue body, as the
+# implementer and the reviewer do, and none of the others; the run record
+# says how many. A report that the triage publishes is never passed on.
+write_issue_comments "$tmp/comments.json"
+repo="$(setup_repo comments)"
+printf '.agents/run/\n' >"$repo/.gitignore"
+git -C "$repo" add .gitignore
+git -C "$repo" commit -qm "Keep run records"
+# A run is recorded for the Issue of a feature branch.
+git -C "$repo" switch -q -c feature/5-test
+record_reviewed_tree "$repo" "$repo/$review"
+MOCK_ISSUE_COMMENTS="$tmp/comments.json" run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a triage of an Issue with comments failed"
+}
+expect_owner_comments "$repo.log.stdin" "Test acceptance criteria." "the triage agent"
+expect_comments_recorded "$repo/.agents/run/records" "triage agent"
+published="$(sed -n '/^COMMENT ON #5$/,/^END COMMENT$/{/^COMMENT ON #5$/d;/^END COMMENT$/d;p;}' "$repo.gh.comments")"
+jq -n --arg body "$published" '[{user: {login: "owner-login"}, author_association: "OWNER",
+  created_at: "2026-02-01T10:00:00Z", updated_at: "2026-02-01T10:00:00Z", body: $body}]' >"$tmp/published.json"
+repo="$(setup_repo comments-published)"
+MOCK_ISSUE_COMMENTS="$tmp/published.json" run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a triage of an Issue with a published report failed"
+}
+if grep -Fq "## Fix now" "$repo.log.stdin"; then fail "a published triage report was passed on as a comment of the owner"; fi
+
+# An Issue without comments gives the context of before: the body is followed
+# by the findings.
+repo="$(setup_repo comments-none)"
+run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a triage of an Issue without comments failed"
+}
+[[ "$(sed -n '3,9p' "$repo.log.stdin")" == "$(printf '## Source feature Issue #5\n\nTitle: F02 — Test feature\n\nTest acceptance criteria.\n\n## Review findings (JSON)')" ]] ||
+  fail "an Issue without comments changed the context of the triage agent: $(sed -n '3,9p' "$repo.log.stdin")"
+
+# Comments that cannot be read stop the triage before the agent starts.
+repo="$(setup_repo comments-unreadable)"
+MOCK_GH_COMMENTS_FAIL=1 expect_no_triage "$repo" "the comments of the Issue cannot be read" "$review"
+[[ ! -e "$repo.log" ]] || fail "the triage agent started without the comments of the Issue"
 
 echo "triage-review tests passed"

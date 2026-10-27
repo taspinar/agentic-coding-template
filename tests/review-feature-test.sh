@@ -31,6 +31,9 @@ if [[ "${1:-} ${2:-}" == "issue view" ]]; then
   printf 'Title: Test feature\n\nThe marker file must exist.\n'
   exit 0
 fi
+if [[ "${1:-}" == "api" && "${2:-}" == repos/*/comments ]]; then
+  exec "$(dirname "$0")/gh-comments" "$@"
+fi
 echo "Unexpected gh invocation: $*" >&2
 exit 1
 GH
@@ -495,5 +498,44 @@ grep -Fq "Merge approval: required from the owner" "$repo.out" || fail "the need
 grep -Fq "## Merge approval gate" "$repo.log.stdin" || fail "the reviewer was not told about the gate"
 grep -Fq -- "- protected: docs/decisions/009-storage.md" "$repo.log.stdin" || fail "the reviewer was not told about the added ADR"
 grep -Fq -- "- sensitive: feature.txt" "$repo.log.stdin" || fail "the reviewer was not told about the sensitive path"
+
+# The comments of the owner, a member, and a collaborator follow the body, in
+# order, with their authors and times; the comments of others and the
+# workflow's own reports do not. The run record says how many were passed on.
+write_issue_comments "$tmp/comments.json"
+repo="$(setup_repo comments)"
+printf '.agents/run/\n' >>"$repo/.gitignore"
+git -C "$repo" add .gitignore
+git -C "$repo" commit -qm "Keep run records"
+MOCK_ISSUE_COMMENTS="$tmp/comments.json" run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review of an Issue with comments failed"
+}
+expect_owner_comments "$repo.log.stdin" "The marker file must exist." "the reviewer"
+expect_comments_recorded "$repo/.agents/run/records" reviewer
+
+# An Issue without comments, or with none that may be passed on, gives the
+# context of an Issue as it was before comments were read: the title and the
+# body, followed by the changed files.
+expected_issue="$(printf '## GitHub Issue #7\n\nTitle: Test feature\n\nThe marker file must exist.\n\n## Changed files')"
+for comments in none others; do
+  repo="$(setup_repo "no-comments-$comments")"
+  printf '[]\n' >"$tmp/comments-$comments.json"
+  if [[ "$comments" == "others" ]]; then
+    jq '[.[] | select(.author_association == "NONE" or .author_association == "CONTRIBUTOR" or (.body | test("WORKFLOW-TOKEN")))]' \
+      "$tmp/comments.json" >"$tmp/comments-$comments.json"
+  fi
+  MOCK_ISSUE_COMMENTS="$tmp/comments-$comments.json" run_review "$repo" 7 || {
+    cat "$repo.out" >&2
+    fail "a review of an Issue without comments ($comments) failed"
+  }
+  [[ "$(sed -n '3,9p' "$repo.log.stdin")" == "$expected_issue" ]] ||
+    fail "an Issue without comments to pass on ($comments) changed the context of the reviewer: $(sed -n '3,9p' "$repo.log.stdin")"
+done
+
+# Comments that cannot be read stop the review before the reviewer starts.
+repo="$(setup_repo comments-unreadable)"
+MOCK_GH_COMMENTS_FAIL=1 expect_no_review "$repo" "the comments of the Issue cannot be read" 7
+[[ ! -e "$repo.log" ]] || fail "the reviewer started without the comments of the Issue"
 
 echo "review-feature tests passed"
