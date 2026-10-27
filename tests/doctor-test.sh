@@ -60,6 +60,10 @@ echo "unexpected gh call: \$*" >&2
 exit 97
 FAKE
         ;;
+      jq)
+        # The real jq: doctor.sh reads a settings file with it.
+        printf '#!%s\nexec %q "$@"\n' "$bash_path" "$(command -v jq)" >"$bin/jq"
+        ;;
       *)
         printf '#!%s\nexit 0\n' "$bash_path" >"$bin/$tool"
         ;;
@@ -73,8 +77,15 @@ FAKE
 config="$tmp/agents.conf"
 printf 'implementer: codex model-a\nreviewer: claude model-b\n' >"$config"
 
+# And an explicit attribution preference, 'allowed' unless a test sets
+# another, so the result does not depend on the repository's own file.
+attribution="$tmp/attribution.conf"
+printf 'agent-attribution: allowed\n' >"$attribution"
+claude_settings="$tmp/claude-settings.json"
+
 run_doctor() {
-  PATH="$1" AGENT_CONFIG_FILE="$config" "$bash_path" "$script" >"$tmp/out.log" 2>&1
+  PATH="$1" AGENT_CONFIG_FILE="$config" ATTRIBUTION_CONFIG_FILE="$attribution" \
+    ATTRIBUTION_CLAUDE_SETTINGS_FILE="$claude_settings" "$bash_path" "$script" >"$tmp/out.log" 2>&1
 }
 
 # Requires a non-zero exit with exactly one FAILED line, matching the pattern,
@@ -164,5 +175,44 @@ grep -Eq '^WARNING +codex' "$tmp/out.log" || fail "unused missing agent was not 
 # Invalid agent configuration fails.
 printf 'implementer claude model-a\n' >"$config"
 expect_failure "$bin" "agent configuration is invalid"
+
+
+# Agent attribution: the preference is reported; an unconfigured project is
+# a warning; with 'disabled', Claude Code's project settings are checked and
+# what no setting can enforce is said as such; an unreadable preference fails.
+bin="$(make_bin attribution git gh jq codex claude)"
+printf 'implementer: codex model-a\nreviewer: claude model-b\n' >"$config"
+run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "an allowed attribution was reported as a failure"; }
+grep -Eq '^OK +agent attribution is allowed' "$tmp/out.log" || fail "the allowed preference was not reported"
+
+rm "$attribution"
+expect_warning "agent attribution is not configured"
+grep -Eq '^WARNING +Claude' "$tmp/out.log" && fail "an unconfigured project was checked for Claude Code's settings"
+
+printf 'agent-attribution: disabled\n' >"$attribution"
+expect_warning "Claude Code's attribution is not turned off"
+grep -Eq '^OK +agent attribution is disabled' "$tmp/out.log" || fail "the disabled preference was not reported"
+grep -Eq '^NOTE +codex has no attribution setting' "$tmp/out.log" || fail "the clients that no setting reaches were not named"
+
+printf '{"attribution": {"commit": "", "pr": ""}}\n' >"$claude_settings"
+run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a disabled attribution with matching Claude settings was reported as a failure"; }
+grep -Eq "^OK +Claude Code's attribution is turned off" "$tmp/out.log" || fail "matching Claude settings were not recognised"
+if grep -Eq '^WARNING' "$tmp/out.log"; then cat "$tmp/out.log" >&2; fail "matching Claude settings still warn"; fi
+
+printf '{"attribution": {"commit": "Co-Authored-By: Claude <noreply@anthropic.com>", "pr": ""}}\n' >"$claude_settings"
+expect_warning "Claude Code's attribution is not turned off"
+printf '{"includeCoAuthoredBy": false}\n' >"$claude_settings"
+run_doctor "$bin" || fail "the legacy Claude setting was reported as a failure"
+grep -Eq "^OK +Claude Code's attribution is turned off" "$tmp/out.log" || fail "the legacy Claude setting was not recognised"
+
+# Without jq the settings cannot be checked, and that is said.
+bin="$(make_bin attribution-no-jq git gh codex claude)"
+run_doctor "$bin" && fail "a missing jq passed"
+grep -Eq "^WARNING +Claude Code's attribution .* could not be checked without jq" "$tmp/out.log" || fail "an uncheckable settings file was not reported"
+bin="$(make_bin attribution git gh jq codex claude)"
+
+printf 'agent-attribution: maybe\n' >"$attribution"
+expect_failure "$bin" "attribution configuration is invalid"
+printf 'agent-attribution: allowed\n' >"$attribution"
 
 echo "doctor tests passed"

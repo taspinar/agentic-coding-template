@@ -10,6 +10,7 @@ script_dir="${BASH_SOURCE[0]%/*}"
 root="$script_dir/.."
 source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/github.sh"
+source "$script_dir/lib/attribution.sh"
 
 failed=0
 gh_ready=0
@@ -27,6 +28,12 @@ missing() {
   echo "FAILED   $1"
   echo "         $2"
   failed=1
+}
+
+# note: a fact to know that nothing here can change.
+note() {
+  echo "NOTE     $1"
+  echo "         $2"
 }
 
 have() {
@@ -110,6 +117,41 @@ if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
   fi
 else
   missing "agent configuration is invalid" "${config_error#Error: }"
+fi
+
+# The project's preference on agent attribution, and how far the clients
+# can be made to follow it. What a client cannot be configured to do is said
+# as such: the check of finish-feature.sh and publish-feature.sh is then the
+# only enforcement.
+if attribution="$( (attribution_preference "$root") 2>&1)"; then
+  case "$attribution" in
+    unconfigured)
+      warn "agent attribution is not configured" \
+        "Select it in $ATTRIBUTION_CONFIG: '$ATTRIBUTION_SETTING: allowed' or '$ATTRIBUTION_SETTING: disabled'. Until then agents attribute their work as their clients do, and nothing is checked."
+      ;;
+    allowed)
+      ok "agent attribution is allowed ($ATTRIBUTION_CONFIG)"
+      ;;
+    disabled)
+      ok "agent attribution is disabled ($ATTRIBUTION_CONFIG): finish-feature.sh and publish-feature.sh refuse a commit or a description that carries it"
+      claude_settings="${ATTRIBUTION_CLAUDE_SETTINGS_FILE:-$root/.claude/settings.json}"
+      claude_settings_relative=".claude/settings.json"
+      claude_settings_hint="Claude sessions that the scripts start get the setting on their command line. For a session you start yourself, add to $claude_settings_relative: {\"attribution\": {\"commit\": \"\", \"pr\": \"\"}}"
+      if [[ ! -f "$claude_settings" ]]; then
+        warn "Claude Code's attribution is not turned off: $claude_settings_relative does not exist" "$claude_settings_hint"
+      elif ! have jq; then
+        warn "Claude Code's attribution in $claude_settings_relative could not be checked without jq" "$claude_settings_hint"
+      elif jq -e '(.attribution == false) or (.attribution.commit == "" and .attribution.pr == "") or (.includeCoAuthoredBy == false and (.attribution | type) != "object")' "$claude_settings" >/dev/null 2>&1; then
+        ok "Claude Code's attribution is turned off in $claude_settings_relative"
+      else
+        warn "Claude Code's attribution is not turned off in $claude_settings_relative" "$claude_settings_hint"
+      fi
+      note "codex has no attribution setting, and Cursor's can be set only for the user, not in the project" \
+        "For them, AGENTS.md and the check of finish-feature.sh and publish-feature.sh are what applies."
+      ;;
+  esac
+else
+  missing "the attribution configuration is invalid" "${attribution#Error: }"
 fi
 
 for agent in codex claude; do

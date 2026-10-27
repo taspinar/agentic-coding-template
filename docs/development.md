@@ -187,12 +187,13 @@ model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
 `AGENT_CONFIG_FILE` selects another configuration file for a run, for the
-workflow scripts and `doctor.sh`. It does not reach the checks of
-`verify.sh`: `verify.sh` unsets it for every check, and the workflow
-self-tests that assume the repository's own `.agents/agents.conf` unset it
-themselves, so they give the same result when you start one by hand.
-`tests/agent-test.sh` and `tests/doctor-test.sh` set it on purpose. Other
-variables, such as `CLAUDE*`, are not changed.
+workflow scripts and `doctor.sh`; `ATTRIBUTION_CONFIG_FILE` does the same for
+the attribution preference (see "Configuring attribution"). Neither reaches
+the checks of `verify.sh`: `verify.sh` unsets both for every check, and the
+workflow self-tests that assume the repository's own `.agents/agents.conf`
+unset them themselves, so they give the same result when you start one by
+hand. `tests/agent-test.sh` and `tests/doctor-test.sh` set them on purpose.
+Other variables, such as `CLAUDE*`, are not changed.
 
 Agents run with one of three permission profiles. The profile follows from
 the role and from how the script is run, not from the provider or model: a
@@ -243,6 +244,58 @@ ten lines are shown. The ordinary answer of a failed session is not shown. A
 `write` session runs in your terminal, where the agent shows its own messages
 as it works: the script repeats nothing of them and says only that the
 session ended with its status.
+
+## Configuring attribution
+
+Coding agents name themselves in what they commit: Claude Code adds a
+`Co-Authored-By` trailer to a commit and a "Generated with Claude Code" line
+to a pull request description, Cursor a trailer of its own. Whether this
+project wants that is one setting in `.agents/attribution.conf`:
+
+```text
+agent-attribution: allowed
+```
+
+- `allowed`: agents attribute their work as their clients do, and nothing is
+  checked. The template ships this value, and a project without the file
+  behaves the same: it is what every project did before the setting existed,
+  so taking over the template changes nothing until you select `disabled`.
+- `disabled`: no commit of a feature and no pull request description may name
+  an agent. Three things follow it:
+  - **The instructions.** `AGENTS.md` tells every agent to add no agent
+    trailer and no "Generated with" line to a commit message, a pull request
+    description, or a summary the scripts copy into them.
+  - **The client settings, as far as a client has them.** A Claude session
+    that the scripts start in the `write` or `unattended` profile gets
+    `--settings '{"attribution": {"commit": "", "pr": "", "sessionUrl": false}}'`,
+    which turns off its trailer and its pull request line (Claude Code 2.0.62
+    or later). For a Claude session you start yourself in the project, put the
+    same `attribution` object into `.claude/settings.json`; `doctor.sh` tells
+    you whether that file agrees with the preference. Codex has no attribution
+    setting, and Cursor's can be set only for the user, not in a project file:
+    for them nothing is configured, and `doctor.sh` says so instead of
+    claiming otherwise.
+  - **The check.** `finish-feature.sh` refuses, before it commits, when a
+    commit of the feature carries an agent's `Co-authored-by` trailer, and
+    undoes its own commit, leaving the changes staged, when the message got
+    attribution in the editor or from a hook. `publish-feature.sh` refuses,
+    before it pushes, a commit of the branch with an agent trailer and a
+    description that would carry generated attribution text; the two are
+    reported apart, since a trailer is removed from its commit and the text
+    from the finish commit's message or the manual steps. An agent is known
+    by its address (`noreply@anthropic.com`, `@cursor.com`,
+    `noreply@openai.com`, the Copilot addresses) or by a GitHub App's
+    `[bot]`, never by a person's name: a co-author who is a person is never
+    rejected, also one whose first name is a product's. Only the commits of
+    the feature are checked, from where it left its base; the history of the
+    base is neither checked nor rewritten.
+
+A preference that cannot be read, because the file is malformed or the value
+is neither `allowed` nor `disabled`, stops the step instead of being guessed.
+`ATTRIBUTION_CONFIG_FILE` selects another file for a run, as
+`AGENT_CONFIG_FILE` does for the agents; `doctor.sh` also takes
+`ATTRIBUTION_CLAUDE_SETTINGS_FILE` for the Claude settings file it checks.
+Both exist for the tests of the scripts.
 
 ## Project bootstrap workflow
 
@@ -1124,6 +1177,11 @@ carries `Completion: partial` with the criteria and what remains, and
 `publish-feature.sh` opens a draft pull request that does not close the Issue.
 `run-feature.sh` never uses the option.
 
+When the project disables agent attribution (`.agents/attribution.conf`,
+see "Configuring attribution"), the script refuses a feature whose commits
+name an agent as a co-author, and undoes a commit whose message got
+attribution in the editor; a co-author who is a person passes.
+
 A change that `.agents/policies/autonomy.md` classifies as low risk may be
 finished without an independent review; the reason is recorded in the commit
 message:
@@ -1165,6 +1223,12 @@ message of a merged commit. For work that may not close the Issue the script
 therefore turns such a keyword in the text it takes over into `Refs`, and it
 refuses to publish, before pushing, while a commit of the branch carries one:
 reword that commit, or complete the feature.
+
+With agent attribution disabled (`.agents/attribution.conf`), the script also
+refuses to push while a commit of the branch carries an agent's
+`Co-authored-by` trailer, or while the description would carry generated
+attribution text such as "Generated with Claude Code"; each is reported
+on its own, with where to remove it. See "Configuring attribution".
 
 **Bringing a finished feature up to date with its base.** When the base
 branch moved on after `finish-feature.sh`, for example because a conflict has

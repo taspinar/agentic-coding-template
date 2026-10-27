@@ -442,20 +442,20 @@ grep -Fq "duplicate check name" "$project/out.log" || fail "the duplicate name w
 [[ ! -e "$project/tools.log" ]] || fail "a check ran although a check name is used twice"
 if run_with "$project" --groups; then fail "--groups accepted a duplicate check name"; fi
 
-# A check does not inherit the agent configuration chosen for the run that
-# verifies.
-project="$(setup_project agent-config 'config: test -z "${AGENT_CONFIG_FILE:-}"')"
-AGENT_CONFIG_FILE=/nonexistent.conf run_verify "$project" || {
+# A check does not inherit the agent or attribution configuration chosen for
+# the run that verifies.
+project="$(setup_project agent-config 'config: test -z "${AGENT_CONFIG_FILE:-}" -a -z "${ATTRIBUTION_CONFIG_FILE:-}"')"
+AGENT_CONFIG_FILE=/nonexistent.conf ATTRIBUTION_CONFIG_FILE=/nonexistent.conf run_verify "$project" || {
   cat "$project/out.log" >&2
-  fail "a check inherited AGENT_CONFIG_FILE"
+  fail "a check inherited AGENT_CONFIG_FILE or ATTRIBUTION_CONFIG_FILE"
 }
 
 # The workflow self-tests give their own result when started by hand with the
 # variable set.
 (
-  export AGENT_CONFIG_FILE=/nonexistent.conf
+  export AGENT_CONFIG_FILE=/nonexistent.conf ATTRIBUTION_CONFIG_FILE=/nonexistent.conf
   source "$source_root/tests/lib-fakes.sh"
-  [[ -z "${AGENT_CONFIG_FILE:-}" ]]
-) || fail "tests/lib-fakes.sh kept AGENT_CONFIG_FILE"
+  [[ -z "${AGENT_CONFIG_FILE:-}" && -z "${ATTRIBUTION_CONFIG_FILE:-}" ]]
+) || fail "tests/lib-fakes.sh kept AGENT_CONFIG_FILE or ATTRIBUTION_CONFIG_FILE"
 
 echo "verify tests passed"

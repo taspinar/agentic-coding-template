@@ -2,15 +2,16 @@
 
 # Shared fakes for the workflow tests. Source this file.
 #
-# Sourcing it also unsets AGENT_CONFIG_FILE: these tests assume the
-# repository's own .agents/agents.conf, also when started by hand.
+# Sourcing it also unsets AGENT_CONFIG_FILE and ATTRIBUTION_CONFIG_FILE: these
+# tests assume the repository's own .agents/agents.conf and the attribution
+# files of their fixtures, also when started by hand.
 #
 # make_fake_agents <bin-dir>
 # Creates fake 'codex' and 'claude' executables that log their arguments and
 # standard input and return MOCK_OUTPUT. With MOCK_OUTPUT_FIRST set, the first
 # call of a test returns that value instead. MOCK_AGENT_ACTION is evaluated in
 # the agent's working directory; MOCK_AGENT_EXIT sets the exit status.
-unset AGENT_CONFIG_FILE
+unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
 
 make_fake_agents() {
   local bin="$1"

@@ -31,6 +31,7 @@ the website describes the current template.
 |---|---|
 | `AGENTS.md` | Durable working rules for every agent: source precedence, Definition of Done, boundaries, branch policy |
 | `.agents/agents.conf` | Provider and model per workflow role |
+| `.agents/attribution.conf` | Whether commits and pull requests may name an agent as a co-author or as the tool that generated them: `allowed` (the previous behaviour) or `disabled`, which the instructions, the Claude sessions the scripts start, and a check in `finish-feature.sh` and `publish-feature.sh` follow |
 | `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
 | `scripts/verify.conf` | The required verification checks of the project |
@@ -61,7 +62,7 @@ the website describes the current template.
 
 | Script | Purpose |
 |---|---|
-| `scripts/doctor.sh` | Checks the local prerequisites |
+| `scripts/doctor.sh` | Checks the local prerequisites, and reports the attribution preference and whether the clients can be made to follow it |
 | `scripts/check-docs.sh` | Checks that the tracked Markdown files name files that exist: relative links, and paths in backticks into a tracked directory. `--later` names paths that come later. The template runs it in its verification; a project can add it to `scripts/verify.conf` |
 | `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; records a pass and skips a repeated run with `--reuse`; used by humans, agents, and CI. `--only <group>` runs the checks of named groups for a CI with parallel jobs; such a partial run records nothing |
 | `scripts/start-planning.sh` | Project Grill, requirements approval, and project planning in a planning worktree |
@@ -92,6 +93,7 @@ the website describes the current template.
 | Path | Purpose |
 |---|---|
 | `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write`, `unattended`, or `read-only` profile |
+| `scripts/lib/attribution.sh` | The attribution preference of `.agents/attribution.conf`, and the check of commits and texts for agent `Co-authored-by` trailers and generated attribution text |
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |

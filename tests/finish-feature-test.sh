@@ -797,4 +797,96 @@ printf 'changed after the latest review\n' >>"$repo/feature.txt"
 expect_no_commit "$repo" "all earlier rounds are triaged but the latest review is stale" 12 "Add the marker"
 grep -Fq "is stale" "$repo.out" || fail "a stale latest review was not reported"
 
+
+# Agent attribution. With 'disabled', a commit of the feature that names an
+# agent as a co-author is refused before anything is committed, and a commit
+# whose message was given attribution in the editor is undone. A human
+# co-author passes, the base is not checked, and 'allowed' or no setting
+# commits as before.
+set_attribution() {
+  printf 'agent-attribution: %s\n' "$2" >"$1/.agents/attribution.conf"
+  git -C "$1" add .agents/attribution.conf
+}
+
+repo="$(setup_repo attribution-trailer PASS "[]")"
+set_attribution "$repo" disabled
+git -C "$repo" commit -qm "Earlier work" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Co-authored-by: Jane Doe <jane@example.com>"
+record_reviewed_tree "$repo" "$repo/$review"
+if run_finish "$repo" 12 "Add the marker"; then fail "a feature commit with an agent trailer was committed although attribution is disabled"; fi
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 2 ]] || fail "a commit was created on top of an attributed one"
+grep -Fq "names an agent as a co-author" "$repo.out" || fail "the agent trailer was not reported"
+grep -Fq "Earlier work" "$repo.out" || fail "the attributed commit was not named"
+if grep -Fq "jane@example.com" "$repo.out"; then fail "the human co-author was reported"; fi
+
+repo="$(setup_repo attribution-human PASS "[]")"
+git -C "$repo" switch -q main
+printf 'base\n' >"$repo/base.txt"
+git -C "$repo" add base.txt
+git -C "$repo" commit -qm "On the base" -m "Co-authored-by: Claude <noreply@anthropic.com>"
+git -C "$repo" switch -q feature/12-marker
+set_attribution "$repo" disabled
+git -C "$repo" commit -qm "Earlier work" -m "Co-authored-by: Jane Doe <jane@example.com>"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a human co-author, or the base's trailer, was refused"
+}
+[[ "$(git -C "$repo" rev-list --count main..HEAD)" -eq 2 ]] || fail "the feature was not committed next to a human co-author"
+
+# Attribution added to the message in the editor undoes the commit and keeps
+# the changes staged.
+repo="$(setup_repo attribution-edited PASS "[]")"
+set_attribution "$repo" disabled
+record_reviewed_tree "$repo" "$repo/$review"
+cat >"$tmp/add-trailer.sh" <<'EDITOR'
+#!/usr/bin/env bash
+printf '\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' >>"$1"
+EDITOR
+chmod +x "$tmp/add-trailer.sh"
+if EDITOR_COMMAND="$tmp/add-trailer.sh" run_finish "$repo" 12 "Add the marker"; then
+  fail "a message with an agent trailer added in the editor was committed"
+fi
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 1 ]] || fail "the attributed commit was not undone"
+grep -Fq "commit message carries it" "$repo.out" || fail "the attribution in the message was not reported"
+git -C "$repo" diff --cached --quiet --exit-code -- feature.txt && fail "the changes are not staged after the undone commit"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "finishing again after the undone commit failed"
+}
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 2 ]] || fail "the feature was not committed after the undone commit"
+if message "$repo" | grep -Fq "noreply@anthropic.com"; then fail "the second commit carries the trailer"; fi
+
+# Generated attribution text in the message is refused as well: it would
+# become the pull request description.
+repo="$(setup_repo attribution-text PASS "[]")"
+set_attribution "$repo" disabled
+record_reviewed_tree "$repo" "$repo/$review"
+mkdir -p "$repo/.agents/summaries"
+printf -- '- The marker.\n- 🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' >"$repo/.agents/summaries/12.md"
+if run_finish "$repo" 12 "Add the marker"; then fail "a message with generated attribution text was committed"; fi
+[[ "$(git -C "$repo" rev-list --count HEAD)" -eq 1 ]] || fail "the commit with generated attribution text was not undone"
+grep -Fq "Generated with" "$repo.out" || fail "the generated text was not shown"
+
+# Allowed, and no setting, commit an attributed feature as before.
+for preference in allowed none; do
+  repo="$(setup_repo "attribution-$preference" PASS "[]")"
+  [[ "$preference" == "none" ]] || set_attribution "$repo" allowed
+  printf 'earlier\n' >"$repo/earlier.txt"
+  git -C "$repo" add earlier.txt
+  git -C "$repo" commit -qm "Earlier work" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+  record_reviewed_tree "$repo" "$repo/$review"
+  EDITOR_COMMAND="$tmp/add-trailer.sh" run_finish "$repo" 12 "Add the marker" || {
+    cat "$repo.out" >&2
+    fail "an attributed feature was refused although attribution is $preference"
+  }
+  [[ "$(git -C "$repo" rev-list --count HEAD)" -eq 3 ]] || fail "the attributed feature was not committed although attribution is $preference"
+done
+
+# A preference that cannot be read commits nothing.
+repo="$(setup_repo attribution-invalid PASS "[]")"
+set_attribution "$repo" maybe
+record_reviewed_tree "$repo" "$repo/$review"
+expect_no_commit "$repo" "the attribution preference cannot be read" 12 "Add the marker"
+grep -Fq "unknown value 'maybe'" "$repo.out" || fail "the unreadable preference was not explained"
+
 echo "finish-feature tests passed"

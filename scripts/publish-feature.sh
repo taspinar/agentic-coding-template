@@ -61,6 +61,7 @@ command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/github.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/completion.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/records.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/attribution.sh"
 records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 command -v jq >/dev/null 2>&1 || fail "jq is required."
 
@@ -169,9 +170,11 @@ fi
 # default branch, whatever the pull request says. Work that may not close the
 # Issue is therefore not published while a commit of the branch carries a
 # closing keyword for it: nothing here can take that back after a merge.
+# The commits of the branch: since its base, or the head when the base is
+# not known.
+commit_range="HEAD -1"
+[[ -z "$base_ref" ]] || commit_range="$base_ref..HEAD"
 if [[ "$closes" -eq 0 ]]; then
-  commit_range="HEAD -1"
-  [[ -z "$base_ref" ]] || commit_range="$base_ref..HEAD"
   # shellcheck disable=SC2086
   closing_commits="$(git -C "$root" log --format='%h%x09%s%x09%B%x00' $commit_range |
     tr '\n' ' ' | tr '\0' '\n' | sed 's/^ *//' |
@@ -184,13 +187,6 @@ if [[ "$closes" -eq 0 ]]; then
     exit 1
   fi
 fi
-
-echo "Pushing $branch..."
-git -C "$root" push -u origin "$branch" || fail "could not push $branch."
-echo
-
-url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')" ||
-  fail "could not ask GitHub for the pull request of $branch."
 
 # The description is generated from the finish commit and the current manual
 # steps, also for a pull request that is already open: a fix round can change
@@ -227,6 +223,41 @@ closing_allowed() {
     echo "Issue #$issue stays open after a merge of this pull request: $not_closing."
   fi
 } >"$body"
+
+# Agent attribution. When the project disables it (.agents/attribution.conf),
+# nothing is pushed while a commit of the branch names an agent as a co-author
+# or the description would carry generated attribution text. The two are
+# checked and reported apart: a trailer is removed from its commit, the text
+# from the finish commit's message or the manual steps. Only the commits of
+# the branch are checked, never the history of the base, and a co-author who
+# is a person passes.
+attribution="$(attribution_preference "$root")" || exit 1
+if [[ "$attribution" == "disabled" ]]; then
+  # shellcheck disable=SC2086
+  attributed_commits="$(attribution_commit_trailers "$root" $commit_range)"
+  attributed_text="$(attribution_generated_lines <"$body")"
+  if [[ -n "$attributed_commits" ]]; then
+    echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but a commit of this branch names an agent as a co-author:" >&2
+    printf '%s\n' "$attributed_commits" | attribution_format_commits >&2
+    echo "Remove the trailer from the commit (git commit --amend for the last one, an interactive rebase of the branch for an earlier one); co-authors who are people stay." >&2
+  fi
+  if [[ -n "$attributed_text" ]]; then
+    echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but the pull request description would carry it:" >&2
+    printf '%s\n' "$attributed_text" | sed 's/^/  /' >&2
+    echo "The description is the message of the finish commit and the manual steps (.agents/manual-steps/$issue.md): remove the text there." >&2
+  fi
+  if [[ -n "$attributed_commits" || -n "$attributed_text" ]]; then
+    echo "Nothing was pushed." >&2
+    exit 1
+  fi
+fi
+
+echo "Pushing $branch..."
+git -C "$root" push -u origin "$branch" || fail "could not push $branch."
+echo
+
+url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')" ||
+  fail "could not ask GitHub for the pull request of $branch."
 
 if [[ -n "$url" ]]; then
   echo "Pull request already open: $url"

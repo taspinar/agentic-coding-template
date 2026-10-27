@@ -241,7 +241,9 @@ its source finding.
 ## Reference
 
 Agent roles and models come from `.agents/agents.conf`; every agent script
-accepts `--agent` and `--model` to override them for one run. Profiles are
+accepts `--agent` and `--model` to override them for one run. Whether commits
+and pull requests may name an agent comes from `.agents/attribution.conf`
+(`docs/development.md`, "Configuring attribution"). Profiles are
 described in `docs/development.md`: `write` sessions may change files in their
 worktree, `read-only` sessions cannot and get no MCP servers or other remote
 tools. A third profile, `unattended`, has the reach of `write` without a
@@ -285,8 +287,8 @@ exits with status 3.
 | `review-feature.sh --changes` | Also: there is no previous round, nothing changed since it, the base of the branch changed, or the content of the previous round is no longer known |
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
 | `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
-| `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it, or the feature changes the roadmap, the requirements, the description, or a change request, which only a planning cycle may change |
-| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. With `--wait` it exits non-zero when a check fails |
+| `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it, or the feature changes the roadmap, the requirements, the description, or a change request, which only a planning cycle may change. With agent attribution disabled in `.agents/attribution.conf`: a commit of the feature names an agent as a co-author, or the commit message got agent attribution in the editor (that commit is undone, the changes stay staged) |
+| `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. With agent attribution disabled: a commit of the branch names an agent as a co-author, or the description would carry generated attribution text; nothing is pushed. With `--wait` it exits non-zero when a check fails |
 | `run-feature.sh` | A step fails or is refused as described above, an agent needs your decision (status 3), five review rounds are used while a finding must still be fixed, or the fixes changed nothing |
 | `check-guardrails.sh` | Nothing stops: it reports `protected` when the feature changes an ADR, a file of the workflow, a changed or removed check, or a path the project protects. `finish-feature.sh` then records that only you may merge |
 
