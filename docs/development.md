@@ -85,12 +85,75 @@ verification. A failing partial run removes an
 existing record, like any failing run. The workflow self-tests keep their own
 rule with `--only`: they run when a workflow file changed, or with `--all`.
 
+### Budgets
+
+A check may be a budget: it measures something against a target (the time of
+a test suite, the size of a bundle, the number of warnings) and exits non-zero
+over the target. The word `budget` stands before the colon, after the name or
+the group:
+
+```text
+suite-time [code] budget: ./scripts/measure-suite.sh --max-seconds 300
+bundle-size budget: ./scripts/bundle-size.sh --max 250k
+```
+
+A budget is a measurement, never a failure and never a repair order:
+
+- `verify.sh` runs it like any check and keeps its output. Over the target
+  the summary shows `BUDGET <name> (exit <status>)` with the output of the
+  check under it, not `FAIL`, and the verification passes when every other
+  check passed: the exit status is 0. Within the target the summary shows
+  `PASS <name> (budget within its target)`.
+- A budget check that does not finish or cannot run measured nothing: a death
+  by a signal, the exit status 124 of `timeout`, and the statuses 125 to 127
+  (an error of `timeout` itself, a command that is not executable or not
+  found) are a `FAIL` as for any check, and so is a missing tool. The exit
+  statuses 1 to 123 and 128 mean "over the target": 128 is not reserved by
+  `timeout` or the shell, so a measurement may use it. Wrap a measurement
+  that may hang in `timeout`.
+- The results are recorded with the pass, in `.agents/verification/budgets`
+  next to the record (see "Recorded verification"), and in the run record
+  (the `verification` event, `budgets`), so the scripts that reuse the pass
+  show the measurement where a decision is made: `review-feature.sh` gives it
+  to the reviewer ("Budget results of the verification") with the whole
+  output of each check, `finish-feature.sh` lists it under `Verification:`
+  in the commit message, which `publish-feature.sh` copies into the pull
+  request, with the last 20 lines of the output and, when lines were left
+  out, where the whole output is (the budget record, the handoff note, the
+  run record), and `run-feature.sh` writes an exceeded budget with its whole
+  output to the handoff note and its first line to the log of the feature
+  (see "Running a feature with one command").
+- Nothing repairs it. `run-feature.sh` starts no repair session for a budget
+  result; the result changes neither the scope of the feature nor the
+  architecture, needs no ADR, and opens no Issue by itself. The reviewer may
+  raise it as a finding, which is triaged like any finding. The completion
+  record may not cite a budget check as evidence of a met criterion: the
+  completion gate refuses such a record.
+- Changing a budget stays cheap and visible. The target lives in the line of
+  the check in `scripts/verify.conf`, or in a file that line reads. Changing
+  the line is a change of the verification configuration, protected by the
+  merge approval gate like every changed line there, and so is making a check
+  a budget or a budget a check; adding a budget check is sensitive, like
+  adding any check. Record the measurement and the decision in the commit
+  message of that change, and in a comment of the configuration when the
+  reason is not obvious; budgets add no approval step of their own.
+- The execution limits that the project approved
+  (`.agents/policies/execution-limits.md`) are not budgets and stay
+  enforceable as they are.
+
+The template ships no budget check. A partial run (`--only`) runs the budget
+checks of its groups and shows them the same way; it records nothing, as
+before.
+
 ### Recorded verification
 
 A run in which every check passed is recorded in `.agents/verification/passed`,
 a working file that Git ignores, together with the fingerprint of the content
 it verified. Any change to a file that Git does not ignore makes the record
-stale, and a failing run removes it.
+stale, and a failing run removes it. The results of the budget checks of that
+run, with the output of each, are kept next to it in
+`.agents/verification/budgets`, and go with the record: a reused pass shows
+them, and a failing run removes them.
 
 `./scripts/verify.sh --reuse` skips the run when the record matches the current
 content exactly, and says so. `review-feature.sh`, `apply-triage.sh`, and
@@ -850,7 +913,12 @@ GitHub with a separate identity (#99).
 The gate passes when the record is valid and says `complete` or
 `awaiting_evidence`, and the handoff note lists nothing under "Remaining".
 The note outweighs the record: remaining work listed there means not complete,
-whatever the record says.
+whatever the record says. Two things are never evidence: a partial run of the
+checks (`verify.sh --only`), which is not a verification, and a budget check
+of `scripts/verify.conf` or `scripts/verify-workflow.conf` (see "Budgets"),
+which is a measurement that never fails the verification. A record whose
+evidence for a met criterion names such a run, or names a budget check as a
+word, is invalid.
 
 | Script | What the gate decides there |
 |---|---|
@@ -1460,6 +1528,7 @@ only together with what it recorded:
 | Temporary | An agent or a connection fails: a usage limit, a timeout, the network | Tries the step again, three times, with a wait that doubles from two minutes. A fix session that had already changed the content is taken up with `apply-triage.sh <triage-json> --continue`: the same findings, contract, and protections, for the session of this triage that was left unfinished, and for nothing else |
 | Unstable check | The verification is repeated once, and no check failed in both runs | Records the checks and goes on, at most three times in a run |
 | Failed verification | A check failed in both runs | Resumes the implementer with those checks in the handoff note, at most three times (`AGENTS.md`); a review follows. A repair session is retried like any other |
+| Budget exceeded | The verification passed, and a budget check (`<name> [<group>] budget: <command>`, see "Budgets") exceeded its target | Goes on: no repair session, whatever the measurement. Writes the measurement to the handoff note, with the note that it is not a repair order, and to the log and the run record, once per result and only where a note cannot make a review stale (before a review round, after the verification of an unreviewed `low` feature, after the commit). The reviewer's context, the commit message, and the pull request get it from the verification record |
 | Blocked | An agent ends with `BLOCKED:` and the handoff note holds a question under "Open questions", or the completion record says `blocked` | Stops with status 3. Without such a question there is nothing to answer: the line is ignored and the run goes on |
 | Not complete | The implementer ended normally, but the completion gate does not pass: no record, an invalid one, `partial`, remaining work in the handoff note, or no summary of the changes | Resumes the implementer with the reasons in the handoff note, at most four sessions in a run. Nothing is reviewed or committed before the gate passes |
 
@@ -1546,7 +1615,8 @@ finished with `--no-review`.
 - the CI workflows, and the configuration, scripts, prompts, and schemas that
   carry out the gate;
 - in `scripts/verify.conf` and `scripts/verify-workflow.conf`: a changed or
-  removed line. An added check is sensitive.
+  removed line, which includes a check made a budget, a budget made a check,
+  and a changed target (see "Budgets"). An added check is sensitive.
 
 What is fundamental in your project you list in
 `.agents/policies/guardrails.conf`, as Git pathspecs:
@@ -1869,7 +1939,7 @@ brings the rules.
 | `run-start` | `kind` (`feature` or `planning`), `subject` (the Issue or the name of the planning), `command`, `seq` (the number of the run within its subject, which orders runs that start in the same second; claimed with a link in `.agents/run/records/.sequence/`, `null` when it could not be claimed), `previous` (the run before it of the same subject), `repository` (owner/name), `versions` (the template commit, a hash of the prompts and of `agents.conf`) |
 | `run-end` | `status`: the exit status; 130 when the run was interrupted. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
 | `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`) and ends (the same, with `status`, `seconds`, `usage`) |
-| `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, and `reused`: a recorded pass stood in for the run) |
+| `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, `reused`: a recorded pass stood in for the run, and `budgets`: the budget checks of the run, each with `name`, `status` `exceeded` or `within`, `exit`, and `output`; an empty list without one, and the recorded results for a reused pass) |
 | `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
 | `wait-start`, `wait` | the pause before a step is tried again: the `planned` seconds, and the `seconds` it really took |
 | `intervention` | `what` you did that a script saw: an approval, a resume by hand, `--implemented`, `--partial` |

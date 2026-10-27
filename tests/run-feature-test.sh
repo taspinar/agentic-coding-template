@@ -1257,4 +1257,66 @@ run_feature "$repo" 2 other
 [[ "$status" -ne 0 ]] || fail "a slug was accepted for a feature that already has a worktree"
 expect_sessions "$repo" 0 0 0 0
 
+# A budget check ('<name> [<group>] budget: <command>' in verify.conf) over
+# its target is a measurement, never a repair order: the verification passes,
+# no repair session starts, and the result goes to the handoff note, the log
+# and the run record, the reviewer's context, the commit message, and the
+# pull request. Here the implementer does not verify itself, so the budget is
+# first measured by the verification of the review, and the handoff note gets
+# it after the commit, when no review has to stay current.
+budget_conf=$'sound: test ! -e broken.txt\nperf budget: echo "1.4 s, target 1.0 s"; false'
+repo="$(VERIFY_CONF="$budget_conf" setup_repo budget)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+if grep -Fq "Repair attempt" <<<"$(log_of "$repo")"; then fail "a repair was started for a budget over its target"; fi
+if grep -Fq "## Verification failed" "$repo-2-thing/.agents/handoffs/2.md"; then fail "a budget was recorded as a failed verification"; fi
+grep -Fq "| commit | budget | budget perf exceeded: 1.4 s, target 1.0 s |" <<<"$(log_of "$repo")" ||
+  fail "the budget is not in the log of the feature: $(log_of "$repo")"
+grep -Fq "## Budget exceeded" "$repo-2-thing/.agents/handoffs/2.md" || fail "the budget was not recorded in the handoff note"
+grep -Fqx -- "- budget perf exceeded: 1.4 s, target 1.0 s" "$repo-2-thing/.agents/handoffs/2.md" ||
+  fail "the handoff note lacks the measurement: $(cat "$repo-2-thing/.agents/handoffs/2.md")"
+grep -Fq "not a repair order" "$repo-2-thing/.agents/handoffs/2.md" || fail "the handoff note does not say that a budget is not a repair order"
+grep -Fq "## Budget results of the verification" "$repo.control/reviewer-1.context" || fail "the reviewer was not told the budget results"
+grep -Fqx -- "- budget perf exceeded: 1.4 s, target 1.0 s" "$repo.control/reviewer-1.context" || fail "the reviewer's context lacks the measurement"
+grep -Fqx -- "- budget perf exceeded: 1.4 s, target 1.0 s" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit message lacks the budget: $(git -C "$repo-2-thing" log -1 --format=%B)"
+grep -Fqx -- "- ./scripts/verify.sh passed" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit message lacks the passed verification"
+grep -Fqx -- "- budget perf exceeded: 1.4 s, target 1.0 s" "$repo.control/pr-body" || fail "the pull request description lacks the budget"
+grep -Fqx "Closes #2" "$repo.control/pr-body" || fail "a budget over its target kept the pull request from closing the Issue"
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "verification" and .status == 0
+  and (.budgets | any(.name == "perf" and .status == "exceeded" and .output == "1.4 s, target 1.0 s")))' >/dev/null ||
+  fail "the budget is not in the verification events of the run record"
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "note" and .outcome == "budget" and (.reason | startswith("budget perf exceeded")))' >/dev/null ||
+  fail "the budget is not noted in the run record"
+[[ "$(grep -c "## Budget exceeded" "$repo-2-thing/.agents/handoffs/2.md")" -eq 1 ]] || fail "the budget was recorded more than once"
+
+# When the implementer verifies its own result, as the contract asks, the
+# budget is recorded before the review, which then covers the handoff note
+# and stays current; the same measurement is not recorded again.
+repo="$(VERIFY_CONF="$budget_conf" setup_repo budget-measured)"
+printf '%s\n' 'eval "$default"; ./scripts/verify.sh >/dev/null 2>&1 || reply="The verification failed."' >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -Fq "| review, round 1 | budget | budget perf exceeded: 1.4 s, target 1.0 s |" <<<"$(log_of "$repo")" ||
+  fail "the budget measured by the implementer is not in the log before the review: $(log_of "$repo")"
+[[ "$(grep -c "## Budget exceeded" "$repo-2-thing/.agents/handoffs/2.md")" -eq 1 ]] ||
+  fail "the budget was recorded $(grep -c "## Budget exceeded" "$repo-2-thing/.agents/handoffs/2.md") times instead of once"
+grep -Fqx -- "- budget perf exceeded: 1.4 s, target 1.0 s" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit message lacks the budget measured by the implementer"
+
+# A completion record that cites the budget check as evidence of a met
+# criterion does not pass the gate: the implementer is resumed with the
+# reason, like for any invalid record.
+repo="$(VERIFY_CONF="$budget_conf" setup_repo budget-as-evidence)"
+printf '%s\n' 'eval "$default"
+printf "{\"schema\": \"completion/v1\", \"status\": \"complete\", \"criteria\": [{\"criterion\": \"The feature is fast\", \"status\": \"met\", \"evidence\": \"the perf check of verify.sh\"}], \"remaining\": []}\n" >".agents/completion/$RUN_ISSUE.json"' \
+  >"$repo.control/implementer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+grep -Fq "cites the budget check 'perf' as evidence of a met criterion" <<<"$(log_of "$repo")" ||
+  fail "the record that cites the budget check was not refused: $(log_of "$repo")"
+
 echo "run-feature tests passed"

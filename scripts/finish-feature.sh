@@ -12,6 +12,7 @@ source "$script_dir/lib/planning.sh"
 source "$script_dir/lib/guardrails.sh"
 source "$script_dir/lib/risk.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/records.sh"
 source "$script_dir/lib/attribution.sh"
 
@@ -197,6 +198,24 @@ fi
 echo "Checking repository verification..."
 (cd "$root" && ./scripts/verify.sh --reuse) || fail "verification failed; nothing was committed."
 echo
+# The budget results of that verification (lib/verification.sh): a budget
+# over its target passed the verification as a measurement, and the commit
+# and the pull request list it, so that the owner decides with it in view. A
+# commit message carries the last lines of a long output and says where the
+# whole output is: next to the recorded pass, in the handoff note that
+# run-feature.sh writes, and in the run record.
+budget_lines=20
+budget_full="$VERIFICATION_BUDGETS of the working tree, the handoff note of the Issue, and the run record of run-feature.sh"
+verification_lines="- ./scripts/verify.sh passed"
+budget_results="$(verification_budgets "$root")"
+if [[ -n "$budget_results" ]]; then
+  verification_lines+=$'\n'"$(printf '%s\n' "$budget_results" | verification_budget_report "$budget_lines" "$budget_full" | sed 's/^budget /- budget /')"
+  if verification_budgets_exceeded "$budget_results"; then
+    echo "A budget check exceeded its target; the commit message lists the measurement:"
+    printf '%s\n' "$budget_results" | verification_budget_report "$budget_lines" "$budget_full" | sed 's/^/  /'
+    echo
+  fi
+fi
 
 # 2. The latest review is current and resolved, unless explicitly skipped.
 slug="${branch//\//-}"
@@ -401,7 +420,7 @@ $changes
 $completion_lines
 
 Verification:
-- ./scripts/verify.sh passed
+$verification_lines
 
 Manual steps:
 $manual_steps

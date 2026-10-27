@@ -498,6 +498,197 @@ inside_run "$project" || fail "verify.sh failed inside a recorded run"
 jq -e -s 'any(.type == "verification" and .groups == "all")' "$tmp/partial-run.jsonl" >/dev/null ||
   fail "a complete run inside a recorded run was not recorded"
 
+# Budgets: a check declared as '<name> [<group>] budget: <command>' measures
+# something against a target. Over the target it is BUDGET, not FAIL: the
+# summary shows it with the output of the check, and the verification passes
+# when every other check passed.
+over='perf [code] budget: sh -c '"'"'echo "1.4 s, target 1.0 s"; exit 2'"'"
+project="$(setup_project budget "lint: ruff check ." "$over" "size budget: echo 12kB")"
+run_with "$project" || {
+  cat "$project/out.log" >&2
+  fail "a budget over its target failed the verification"
+}
+grep -Fq "ruff" "$project/tools.log" || fail "the other checks did not run with a budget"
+grep -Fqx "BUDGET  perf (exit 2)" "$project/out.log" || fail "the exceeded budget is not BUDGET in the summary: $(cat "$project/out.log")"
+grep -Fqx "        1.4 s, target 1.0 s" "$project/out.log" || fail "the summary lacks the output of the budget check"
+grep -Fqx "PASS  size (budget within its target)" "$project/out.log" || fail "a budget within its target is not PASS"
+grep -Fq "Verification passed." "$project/out.log" || fail "the verification with an exceeded budget did not pass"
+grep -Fq "1 budget check(s) exceeded their target" "$project/out.log" || fail "the summary does not say that a budget was exceeded"
+if grep -Fq "FAIL" "$project/out.log"; then fail "an exceeded budget was reported as a failure"; fi
+grep -Fq -- "-- perf (budget):" "$project/out.log" || fail "a budget check is not marked as one when it runs"
+
+# Every other check still has to pass: a failed check fails the verification
+# as before, and the budget is still shown as BUDGET.
+if MOCK_RUFF_EXIT=1 run_with "$project"; then fail "a failed check passed next to a budget"; fi
+grep -Fqx "FAIL  lint (exit 1)" "$project/out.log" || fail "the failed check next to a budget was not identified"
+grep -Fqx "BUDGET  perf (exit 2)" "$project/out.log" || fail "the budget is not BUDGET when another check fails"
+
+# A budget check that does not finish measured nothing: the status 124 of
+# 'timeout' and a death by a signal are FAIL, as for any check; so is a
+# missing tool.
+project="$(setup_project budget-timeout "slow budget: timeout 0.2 sleep 5")"
+expect_failure "$project" "a budget check that does not finish must fail"
+grep -Fqx "FAIL  slow (exit 124, the budget check did not finish)" "$project/out.log" ||
+  fail "a budget check that did not finish is not FAIL: $(cat "$project/out.log")"
+project="$(setup_project budget-signal 'killed budget: sh -c '"'"'kill -TERM $$'"'"'')"
+expect_failure "$project" "a budget check killed by a signal must fail"
+grep -Eq "^FAIL  killed \(exit 1[0-9][0-9], the budget check did not finish\)" "$project/out.log" ||
+  fail "a budget check killed by a signal is not FAIL: $(cat "$project/out.log")"
+project="$(setup_project budget-no-tool "perf budget: mypy --bench")"
+expect_failure "$project" "a budget check without its tool must fail"
+grep -Fq "FAIL  perf (missing tool: mypy)" "$project/out.log" || fail "a budget check without its tool is not FAIL"
+
+# So are the statuses 125 to 127, which 'timeout' and the shell use for a check
+# that could not run: an error of 'timeout' itself (125), and a command that is
+# not executable (126) or not found (127) behind 'timeout' or anywhere in the
+# command. Nothing was measured: FAIL, not BUDGET.
+project="$(setup_project budget-timeout-error "perf budget: timeout --bogus 1 true")"
+expect_failure "$project" "a budget check whose 'timeout' fails must fail"
+grep -Fqx "FAIL  perf (exit 125, the budget check could not run)" "$project/out.log" ||
+  fail "a budget check with a failing 'timeout' is not FAIL: $(cat "$project/out.log")"
+project="$(setup_project budget-not-executable "perf budget: timeout 5 ./scripts/verify.conf")"
+expect_failure "$project" "a budget check whose command is not executable must fail"
+grep -Fqx "FAIL  perf (exit 126, the budget check could not run)" "$project/out.log" ||
+  fail "a budget check with a command that is not executable is not FAIL: $(cat "$project/out.log")"
+project="$(setup_project budget-not-found "perf budget: timeout 5 ./no-such-measurement")"
+expect_failure "$project" "a budget check whose command is not found must fail"
+grep -Fqx "FAIL  perf (exit 127, the budget check could not run)" "$project/out.log" ||
+  fail "a budget check with a command that is not found is not FAIL: $(cat "$project/out.log")"
+project="$(setup_project budget-not-found-later "perf budget: true && ./no-such-measurement")"
+expect_failure "$project" "a budget check whose later command is not found must fail"
+grep -Fqx "FAIL  perf (exit 127, the budget check could not run)" "$project/out.log" ||
+  fail "a budget check with a later command that is not found is not FAIL: $(cat "$project/out.log")"
+# The ordinary statuses up to 123 stay BUDGET, and so does 128: no utility
+# returns it for a command that was not invoked, so a measurement may use it
+# like any other status (review 02 M1).
+project="$(setup_project budget-exit-128 "perf budget: sh -c 'echo over; exit 128'")"
+run_with "$project" || fail "a budget check that exits 128 failed the verification"
+grep -Fqx "BUDGET  perf (exit 128)" "$project/out.log" || fail "a budget check that exits 128 is not BUDGET: $(cat "$project/out.log")"
+project="$(setup_project budget-exit-123 "perf budget: sh -c 'echo over; exit 123'")"
+run_with "$project" || fail "a budget check that exits 123 failed the verification"
+grep -Fqx "BUDGET  perf (exit 123)" "$project/out.log" || fail "a budget check that exits 123 is not BUDGET: $(cat "$project/out.log")"
+
+# A budget with an empty output says so, and the exit status is kept.
+project="$(setup_project budget-silent "perf budget: sh -c 'exit 3'")"
+run_with "$project" || fail "a silent budget over its target failed the verification"
+grep -Fqx "BUDGET  perf (exit 3)" "$project/out.log" || fail "the silent budget is not BUDGET"
+grep -Fqx "        (no output)" "$project/out.log" || fail "the summary does not say that the budget check had no output"
+
+# A budget belongs to its group like any check: --only runs it there, and a
+# partial run passes with BUDGET too.
+project="$(setup_project budget-groups "lint: ruff check ." "$over")"
+run_with "$project" --only code || fail "--only with an exceeded budget failed"
+grep -Fqx "BUDGET  perf (exit 2)" "$project/out.log" || fail "--only did not show the budget as BUDGET"
+[[ ! -e "$project/tools.log" ]] || fail "--only code ran a check of another group"
+run_with "$project" --only default || fail "--only default failed"
+if grep -Fq "BUDGET" "$project/out.log"; then fail "--only default ran the budget of another group"; fi
+run_with "$project" --groups || fail "--groups failed with a budget"
+[[ "$(tr '\n' ',' <"$project/out.log")" == "default,code," ]] || fail "--groups lacks the group of a budget: $(cat "$project/out.log")"
+
+# The syntax is exact: 'budget' stands before the colon, after the name or
+# the group, separated by a space. Anything else is a name or malformed, and
+# 'paths' is not a check.
+project="$(setup_project budget-is-a-name "perfbudget: ruff check .")"
+run_with "$project" || fail "a name that ends in 'budget' failed"
+grep -Fqx "PASS  perfbudget" "$project/out.log" || fail "a name that ends in 'budget' is not an ordinary check"
+project="$(setup_project budget-no-space "perf [code]budget: ruff check .")"
+expect_failure "$project" "'budget' glued to the group must be malformed"
+project="$(setup_project budget-space-before-colon "perf budget : ruff check .")"
+expect_failure "$project" "a space before the colon must be malformed"
+project="$(setup_project budget-no-group-space "perf[code] budget: ruff check .")"
+run_with "$project" || fail "a group without a space before it failed with a budget"
+project="$(setup_workflow_project budget-paths)"
+printf 'paths budget: tools\nself-test: pytest\n' >"$project/scripts/verify-workflow.conf"
+expect_failure "$project" "'paths' as a budget must be refused"
+grep -Fq "'paths' is not a check and cannot be a budget" "$project/out.log" || fail "the refusal of 'paths budget:' did not say why"
+
+# The budget results are recorded with the pass, next to the record, so the
+# scripts that reuse the pass can show the measurement. A run without a
+# budget check keeps no budget record, and a failing run removes both.
+budgets="/.agents/verification/budgets"
+project="$(setup_recorded_project recorded-budgets)"
+printf '%s\n' "lint: ruff check ." "$over" "size budget: echo 12kB" >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "Declare budgets"
+expect_checks_ran "$project" "nothing was recorded yet" --reuse
+[[ -f "$project$record" ]] || fail "a passed run with an exceeded budget was not recorded"
+[[ -f "$project$budgets" ]] || fail "the budget results were not recorded with the pass"
+grep -Fqx "budget: perf" "$project$budgets" && grep -Fqx "status: exceeded" "$project$budgets" &&
+  grep -Fqx "exit: 2" "$project$budgets" && grep -Fqx "  1.4 s, target 1.0 s" "$project$budgets" ||
+  fail "the budget record lacks the result of the exceeded budget: $(cat "$project$budgets")"
+grep -Fqx "budget: size" "$project$budgets" && grep -Fqx "status: within" "$project$budgets" ||
+  fail "the budget record lacks the budget within its target: $(cat "$project$budgets")"
+[[ -z "$(git -C "$project" status --porcelain)" ]] || fail "the budget record changed the working tree"
+expect_reused "$project" "the content is unchanged" --reuse
+grep -Fqx "  budget perf exceeded: 1.4 s, target 1.0 s" "$project/out.log" || fail "a reused pass does not show its budget results: $(cat "$project/out.log")"
+grep -Fqx "  budget size within its target" "$project/out.log" || fail "a reused pass does not show the budget within its target"
+[[ -f "$project$budgets" ]] || fail "a reused pass lost the budget record"
+run_with "$project" --only code || fail "a partial run with a budget failed"
+[[ -f "$project$budgets" ]] || fail "a partial run removed the budget record of a complete run"
+if MOCK_RUFF_EXIT=1 run_with "$project"; then fail "a failing run with a budget returned success"; fi
+[[ ! -e "$project$record" && ! -e "$project$budgets" ]] || fail "a failing run left the record or the budget record"
+printf '%s\n' "lint: ruff check ." >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "Drop the budgets"
+run_with "$project" || fail "a run without budgets failed"
+[[ -f "$project$record" && ! -e "$project$budgets" ]] || fail "a run without a budget check kept a budget record"
+
+# The library reads the record and reports it; the report is for a person:
+# one line per budget, the whole output of an exceeded one, or the last lines
+# with a pointer to the whole output when the caller asks for a limit.
+(
+  source "$source_root/scripts/lib/fingerprint.sh"
+  source "$source_root/scripts/lib/verification.sh"
+  file="$tmp/budgets.txt"
+  : >"$file"
+  printf 'a\nb\nc\n' >"$tmp/out3"
+  : >"$tmp/out0"
+  printf 'one\n' >"$tmp/out1"
+  verification_budget_add "$file" long exceeded 1 "$tmp/out3"
+  verification_budget_add "$file" silent exceeded 7 "$tmp/out0"
+  verification_budget_add "$file" fine within 0 "$tmp/out1"
+  report="$(verification_budget_report <"$file")"
+  [[ "$report" == "$(printf 'budget long exceeded:\n  a\n  b\n  c\nbudget silent exceeded (exit 7, no output)\nbudget fine within its target')" ]] ||
+    { echo "the budget report is wrong: $report" >&2; exit 1; }
+  report="$(verification_budget_report 2 <"$file")"
+  [[ "$report" == "$(printf 'budget long exceeded:\n  (1 earlier lines of the output left out)\n  b\n  c\nbudget silent exceeded (exit 7, no output)\nbudget fine within its target')" ]] ||
+    { echo "the limited budget report is wrong: $report" >&2; exit 1; }
+  report="$(verification_budget_report 2 "the record" <"$file")"
+  [[ "$report" == "$(printf 'budget long exceeded:\n  (1 earlier lines of the output left out; the full output is in the record)\n  b\n  c\nbudget silent exceeded (exit 7, no output)\nbudget fine within its target')" ]] ||
+    { echo "the limited budget report does not say where the full output is: $report" >&2; exit 1; }
+  [[ "$(verification_budget_report 3 "the record" <"$file" | head -1)" == "budget long exceeded:" && "$(verification_budget_report 3 <"$file" | sed -n 2p)" == "  a" ]] ||
+    { echo "a limit that the output does not reach left lines out" >&2; exit 1; }
+  verification_budgets_exceeded "$(cat "$file")" || { echo "an exceeded budget was not seen" >&2; exit 1; }
+  if verification_budgets_exceeded "budget: fine"$'\n'"status: within"; then echo "a budget within its target counted as exceeded" >&2; exit 1; fi
+  [[ "$(verification_budgets_json "$file" | jq -c 'map([.name, .status, .exit, .output])')" == '[["long","exceeded",1,"a\nb\nc"],["silent","exceeded",7,""],["fine","within",0,"one"]]' ]] ||
+    { echo "the budget results as JSON are wrong: $(verification_budgets_json "$file")" >&2; exit 1; }
+  [[ "$(verification_budgets_json "$tmp/none")" == "[]" ]] || { echo "a missing budget file is not an empty list" >&2; exit 1; }
+) || fail "the budget functions of lib/verification.sh"
+
+# Inside a recorded run, the verification event carries the budget results,
+# also for a reused pass; a partial run records nothing, as before.
+project="$(setup_recorded_project budgets-inside-run)"
+cp "$source_root/scripts/lib/records.sh" "$project/scripts/lib/records.sh"
+printf '%s\n' "lint [code]: ruff check ." "$over" >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "Declare a budget"
+: >"$tmp/budget-run.jsonl"
+budget_run() {
+  RECORDS_RUN_ID=parent-run RECORDS_FILE="$tmp/budget-run.jsonl" RECORDS_COMMAND=scripts/run-feature.sh \
+    RECORDS_KIND=feature RECORDS_SUBJECT=1 run_with "$@"
+}
+budget_run "$project" --only code || fail "a partial run with a budget failed inside a run"
+[[ ! -s "$tmp/budget-run.jsonl" ]] || fail "a partial run with a budget wrote into the record of its run"
+budget_run "$project" || fail "verify.sh with a budget failed inside a recorded run"
+jq -e -s 'any(.type == "verification" and .status == 0 and .reused == false
+  and (.budgets | length) == 1 and .budgets[0].name == "perf" and .budgets[0].status == "exceeded"
+  and .budgets[0].exit == 2 and .budgets[0].output == "1.4 s, target 1.0 s")' "$tmp/budget-run.jsonl" >/dev/null ||
+  fail "the verification event lacks the budget results: $(cat "$tmp/budget-run.jsonl")"
+budget_run "$project" --reuse || fail "a reused pass with a budget failed inside a recorded run"
+jq -e -s 'any(.type == "verification" and .reused == true and (.budgets | length) == 1 and .budgets[0].name == "perf")' "$tmp/budget-run.jsonl" >/dev/null ||
+  fail "the verification event of a reused pass lacks the budget results: $(cat "$tmp/budget-run.jsonl")"
+printf '%s\n' "lint [code]: ruff check ." >"$project/scripts/verify.conf"
+budget_run "$project" || fail "verify.sh without a budget failed inside a recorded run"
+jq -e -s 'any(.type == "verification" and .reused == false and .budgets == [])' "$tmp/budget-run.jsonl" >/dev/null ||
+  fail "a verification without a budget check does not record an empty list"
+
 # Every self-test passes through tests/lib-fakes.sh before it starts anything.
 for test in "$source_root"/tests/*-test.sh; do
   grep -Eq '^source "\$(source_)?root/tests/lib-fakes\.sh"$' "$test" ||

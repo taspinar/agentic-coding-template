@@ -86,6 +86,11 @@ Do not try fixes at random. For a failing check or unexpected behaviour:
 3. Make one change that follows from the confirmed cause.
 4. Verify that the failure is gone and that nothing else broke.
 
+A `BUDGET` line in the summary of `./scripts/verify.sh` is not a failure: a
+budget check measured something over its target, and the verification passed.
+Do not optimize for it and do not change the budget unless the Issue asks for
+it; the measurement reaches the reviewer and the owner by itself.
+
 If the evidence refutes the hypothesis, undo what you changed for it before
 forming the next one. After three materially different failed repair attempts,
 stop: record the attempts, the evidence, the current state, and the next
@@ -127,7 +132,11 @@ stop partway, run out of time, or are blocked:
   result. For `not_met` say where the work stands; for `not_applicable` say
   why. A partial run of the checks (`./scripts/verify.sh --only <group>`),
   which a repair round of a high-risk feature may use, is not a
-  verification and is no evidence: the record cannot cite it.
+  verification and is no evidence: the record cannot cite it. Nor can it
+  cite a budget check (`<name> [<group>] budget: <command>` in
+  `scripts/verify.conf`): a budget is a measurement that never fails the
+  verification, and the gate refuses a record that names one as evidence of
+  a met criterion.
 - `gate` (optional, `implementation` by default): where the evidence of a
   criterion can exist. `implementation`: before you finish, which is almost
   always. `pr_ci`: the CI result of the pull request, which exists after it is

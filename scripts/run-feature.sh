@@ -9,6 +9,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/completion.sh"
+source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/records.sh"
 
 MAX_ROUNDS=5
@@ -166,9 +167,63 @@ open_question() {
 
 # failing_checks <verification-output>
 # Prints the names of the checks that a verification run reports as failed.
+# A budget check over its target is BUDGET, not FAIL: it is a measurement
+# that the verification passes with, and nothing here repairs it. The output
+# of such a check, shown indented under its line, is never a check name.
 failing_checks() {
   [[ -f "$1" ]] || return 0
-  awk '$1 == "FAIL" { print $2 }' "$1" | sort -u
+  awk '/^FAIL  / { print $2 }' "$1" | sort -u
+}
+
+# report_budgets <step-title>
+# A budget check that exceeded its target in the last passed verification of
+# the worktree (lib/verification.sh) is a measurement for the owner, never a
+# repair order: it is written to the handoff note, so that the implementer
+# and the human find it, and noted in the log and the run record. The
+# reviewer's context, the commit message, and the pull request get it from
+# the same record. Each result is reported once in a run, and only when the
+# record is current for the content, so that a stale measurement is not
+# shown as the measurement of this content. The handoff note is part of the
+# fingerprint of a review, so this is called only where a note cannot make a
+# review stale: before a review round, after the verification of an
+# unreviewed low-risk feature, and after the commit.
+budgets_reported=""
+report_budgets() {
+  local recorded
+  local scratch
+  local tree=""
+  local report
+  local first
+
+  recorded="$(verification_budgets "$worktree")"
+  [[ -n "$recorded" ]] && verification_budgets_exceeded "$recorded" || return 0
+  [[ "$recorded" != "$budgets_reported" ]] || return 0
+  if scratch="$(mktemp -d "${TMPDIR:-/tmp}/run-feature-budgets.XXXXXX" 2>/dev/null)"; then
+    tree="$(fingerprint_worktree "$worktree" "$scratch" 2>/dev/null)" || tree=""
+    rm -rf "$scratch"
+  fi
+  [[ -n "$tree" && "$tree" == "$(verification_field "$worktree" tree)" ]] || return 0
+  budgets_reported="$recorded"
+  # The whole output of each check goes to the handoff note: the owner
+  # decides with it; the log gets the first line of each exceeded budget.
+  report="$(printf '%s\n' "$recorded" | verification_budget_report)"
+  first="$(printf '%s\n' "$report" | grep '^budget .* exceeded' | sed 's/:$//' | paste -sd ';' - | sed 's/;/; /g')"
+  note "$1" "budget" "$first" "Going on; a budget is a measurement, not a repair order: the owner decides, with it in the handoff note, the review, the commit, and the pull request"
+  mkdir -p "$worktree/.agents/handoffs"
+  {
+    echo
+    echo "## Budget exceeded ($(date -u +'%Y-%m-%dT%H:%M:%SZ'), recorded by run-feature.sh)"
+    echo
+    echo "The verification passed, and a budget check of scripts/verify.conf exceeded its"
+    echo "target. A budget is a measurement, not a failure and not a repair order: do not"
+    echo "optimize for it in this feature unless the Issue asks for it, do not change the"
+    echo "budget, and do not cite the check as evidence in the completion record. The"
+    echo "measurement goes to the reviewer, the commit message, and the pull request;"
+    echo "the owner decides whether to change the budget (a line in scripts/verify.conf,"
+    echo "a change of its own) or to open an Issue for the optimization."
+    echo
+    printf '%s\n' "$report" | sed 's/^budget /- budget /'
+  } >>"$worktree/.agents/handoffs/$issue.md"
 }
 
 # retrying <title> <command>...
@@ -760,6 +815,7 @@ if uncommitted; then
           stop 1 "the verification did not complete (status $step_status)." \
             "resolve what the output above reports"
         fi
+        report_budgets "verification of the low-risk feature"
         [[ "$repairs/$unstable" != "$attempts_before" ]] || break
         continue
       fi
@@ -799,6 +855,9 @@ if uncommitted; then
         fi
       fi
       complete_review=0
+      # A budget that the implementer's own verification measured, before
+      # the review covers the handoff note.
+      report_budgets "review, round $((round + 1))"
       STEP_CHECKS="$checks"
       step "$review_title, round $((round + 1)) of at most $MAX_ROUNDS" \
         ./scripts/review-feature.sh "$issue" "$base" ${review_options[@]+"${review_options[@]}"}
@@ -921,6 +980,10 @@ if uncommitted; then
   [[ "$step_status" -eq 0 ]] ||
     stop 1 "the feature could not be committed (finish-feature.sh exited with status $step_status)." \
       "cd \"$worktree\"" "./scripts/finish-feature.sh $issue \"$title\""
+  # A budget first measured by the verification of a review round, which no
+  # later round followed: the commit carries it; the note gets it now, when
+  # no review has to stay current.
+  report_budgets "commit"
 else
   base_ref="$base"
   git -C "$worktree" rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null || base_ref="origin/$base"
