@@ -10,6 +10,7 @@ source "$script_dir/lib/review-data.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/planning.sh"
 source "$script_dir/lib/guardrails.sh"
+source "$script_dir/lib/risk.sh"
 source "$script_dir/lib/completion.sh"
 source "$script_dir/lib/records.sh"
 source "$script_dir/lib/attribution.sh"
@@ -151,6 +152,22 @@ if feature_base_lines="$(feature_base "$root" "${feature_base_branch:-main}")"; 
   fi
 elif [[ -f "$root/$PLANNING_APPROVAL_FILE" ]] || git -C "$root" cat-file -e "HEAD:$PLANNING_APPROVAL_FILE" 2>/dev/null; then
   fail "could not determine the base of $branch, so it cannot be checked that the feature leaves the approved planning as it is. Nothing was committed."
+fi
+
+# The risk level of the feature (lib/risk.sh), computed from the diff by the
+# rules of the base. The implementer's record can raise it, never lower it:
+# a record that claims less is refused here, before the checks run. The
+# effective level, with the reviewer's classification, is decided below.
+if [[ -n "$feature_merge_base" ]]; then
+  risk_computed_lines="$(risk_computed "$root" "$feature_base_ref" "$feature_merge_base")"
+else
+  risk_computed_lines="$(risk_undetermined "the base of the feature could not be determined")"
+fi
+if risk_claim_below "$risk_computed_lines" "$completion_file"; then
+  echo "Error: the completion record claims risk: $(risk_recorded "$completion_file"), but the feature is $(printf '%s\n' "$risk_computed_lines" | sed -n 1p) by the rules of its base:" >&2
+  printf '%s\n' "$risk_computed_lines" | sed '1d; s/^/  - /' >&2
+  echo "A recorded level can raise the computed one, never lower it. Correct or remove 'risk' in $COMPLETION_DIR/$issue.json. Nothing was committed." >&2
+  exit 1
 fi
 
 # Agent attribution. When the project disables it (.agents/attribution.conf),
@@ -305,6 +322,15 @@ if [[ -n "$latest" ]]; then
   merge_approval+=$'\n'"- decided for the reviewed content $(jq -r '.reviewed_tree' "$latest")"
 fi
 
+# The effective risk level: the computed one, raised by the implementer's
+# record and by the reviewer's classification of the impact, never lowered.
+risk_lines="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest")"
+risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
+risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
+echo "Risk level: $risk_level"
+printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'
+echo
+
 # 4. Stage everything and commit with an editable, structured message.
 git -C "$root" add -A
 echo "Changes to commit:"
@@ -333,6 +359,8 @@ $review_line
 
 Merge approval:
 $merge_approval
+
+$risk_block
 
 Refs #$issue
 EOF

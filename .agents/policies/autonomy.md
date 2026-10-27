@@ -1,5 +1,10 @@
 # Risk-Based Autonomy
 
+The rules that classify a feature are in `.agents/policies/risk.conf`, the one
+source of the path classes, the default, the test files, and the manifests;
+`scripts/check-risk.sh` computes the level from them. This file describes what
+the levels mean.
+
 ## Low risk
 Examples: docs, formatting, isolated cosmetic UI, tests with no behavior change. Self-check + CI may be sufficient.
 

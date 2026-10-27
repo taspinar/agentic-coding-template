@@ -38,6 +38,8 @@
 #   issue-comments issue, role, passed, authors, left_out, others,
 #                workflow: the Issue comments a step passed on to its agent
 #                and what it left out (lib/issue-comments.sh)
+#   risk         when, level, reasons: the risk level of the feature
+#                (lib/risk.sh) as run-feature.sh printed it
 # A run without a run-end was interrupted and is incomplete.
 #
 # usage holds what the provider reported, with its own field names, and
@@ -631,6 +633,13 @@ records_gate() {
 # run produced and nothing of another run.
 records_artifact() {
   records_emit artifact --arg kind "$1" --arg path "$2" '{kind: $kind, path: $path}'
+}
+
+# records_risk <when> <level> <reasons>: the risk level of the feature and
+# its reasons, one per line, at a moment of the run.
+records_risk() {
+  records_emit risk --arg when "$1" --arg level "$2" --arg reasons "$3" \
+    '{when: $when, level: $level, reasons: ($reasons | split("\n") | map(select(length > 0)))}'
 }
 
 records_note() {

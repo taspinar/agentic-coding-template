@@ -21,8 +21,13 @@
 #                     not_applicable the reason, for pending the gate at
 #                     which the evidence appears>"}
 #     ],
-#     "remaining": ["<what is left>", ...]
+#     "remaining": ["<what is left>", ...],
+#     "risk": "low" | "medium" | "high"   (optional)
 #   }
+#
+# 'risk' is the implementer's own classification of the feature (lib/risk.sh).
+# It can raise the level that the scripts compute from the diff, never lower
+# it: finish-feature.sh refuses a record that claims less.
 #
 # 'complete' needs every criterion met or not applicable and nothing
 # remaining. 'partial' and 'blocked' need something that remains.
@@ -88,6 +93,8 @@ completion_errors() {
        end),
       (if (.remaining | type) != "array" or ([.remaining[]? | text] | all | not)
        then "remaining must be a list of texts; an empty list when nothing remains" else empty end),
+      (if has("risk") and ((.risk | IN("low", "medium", "high")) | not)
+       then "risk, when given, must be low, medium, or high" else empty end),
       (if (.status == "complete" or .status == "awaiting_evidence") and (.criteria | type) == "array"
           and ([.criteria[]? | objects | .status] | index("not_met")) != null
        then "status is \(.status), but a criterion is not met" else empty end),

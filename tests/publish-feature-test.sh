@@ -538,6 +538,15 @@ grep -Fqx -- "- required from the project owner, for exactly this commit" "$repo
 grep -Fqx "The merge approval above was decided for commit \`$(git -C "$repo" rev-parse HEAD)\`." "$repo.gh.body" ||
   fail "the pull request does not name the commit the decision was made for"
 
+# The risk level and its reasons are part of the finish commit's message, so
+# the pull request shows them.
+repo="$(setup_repo risk)"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Risk: high" -m "- scripts/finish-feature.sh: listed as high in .agents/policies/risk.conf"
+run_publish "$repo" 12 || fail "publishing a feature with a risk level failed"
+grep -Fqx "Risk: high" "$repo.gh.body" || fail "the pull request does not show the risk level"
+grep -Fqx -- "- scripts/finish-feature.sh: listed as high in .agents/policies/risk.conf" "$repo.gh.body" ||
+  fail "the pull request does not show the reasons for the level"
+
 # The run summary on the Issue is off by default. With --summary it is one
 # comment with numbers only, replaced on a later publication; a failure to
 # post it warns and the publication succeeds.

@@ -1198,7 +1198,8 @@ publication can be repeated with `./scripts/triage-review.sh --publish
 It then stages all changes (review and triage files are ignored) and opens a
 structured commit message in your editor: the summary, the Issue, the list of
 changes, the completion statement with the evidence per criterion, the
-verification, the review round and verdict, and `Refs #12`.
+verification, the review round and verdict, the merge approval, the risk
+level with its reasons (see "The risk level of a feature"), and `Refs #12`.
 Emptying the message aborts the commit and leaves the changes staged. The
 script never pushes, opens a PR, or merges.
 
@@ -1229,7 +1230,8 @@ attribution in the editor; a co-author who is a person passes.
 
 A change that `.agents/policies/autonomy.md` classifies as low risk may be
 finished without an independent review; the reason is recorded in the commit
-message:
+message. `./scripts/check-risk.sh` tells you the level of the feature by the
+rules of `.agents/policies/risk.conf` (see "The risk level of a feature"):
 
 ```bash
 ./scripts/finish-feature.sh 12 "Fix a typo in the README" --no-review "documentation only"
@@ -1578,6 +1580,95 @@ agreement that the scripts and agents keep, not a lock: the agent works with
 your GitHub account and could do what you can do. A lock needs a separate
 identity for the agent, with code owners and required reviews on GitHub.
 
+### The risk level of a feature
+
+Every feature has a risk level, `low`, `medium`, or `high`, computed from one
+policy: `.agents/policies/risk.conf`. `.agents/policies/autonomy.md` says in
+prose what the levels mean and refers to the file as the one source of the
+rules. The level is computed, recorded with the feature, and read by the
+workflow; what each level then requires in verification and review is not
+configured yet, so today every level gets the same workflow, and the shipped
+policy changes nothing for a project until it adds its own classes.
+
+**The policy.** One `<key>: <value> [<value>...]` per line, with Git pathspecs:
+
+```text
+default: medium
+high: docs/decisions .github/workflows .agents/policies .agents/prompts/reviewer.md ...
+tests: tests test
+```
+
+| Key | Meaning |
+|---|---|
+| `low`, `medium`, `high` | The path classes. The highest class of any path the feature changed is its path-based minimum; a path in two classes gets the higher one |
+| `default` | The level of a path that no class names |
+| `tests` | The test files. A change to an existing one escalates to `high`; without the key, `tests test` |
+| `manifests` | The dependency and toolchain manifests. A change to one escalates to `high` |
+
+The template ships the file with `default: medium`, the paths that the merge
+approval gate protects as the `high` class (the ADRs, the CI workflows, the
+scripts, prompts, schemas, and configuration of the gate, and the two
+verification configurations), and no `low` class: with it, every feature is
+`medium` or `high`, which is the behaviour of today, and of a project whose
+base has no file at all. A project adds its classes. For a web application,
+for example:
+
+```text
+default: medium
+low: docs :(glob)**/*.md
+high: src/auth src/permissions db/migrations infra deploy
+manifests: package.json package-lock.json pyproject.toml uv.lock Dockerfile
+```
+
+Then a documentation-only feature is `low`, a feature that also changes a
+module under `src/` is `medium`, and one that touches authentication,
+authorization, a migration, the infrastructure, or a dependency file is
+`high`.
+
+**The computation.** The effective level is the highest of three sources:
+
+1. the path-based minimum, by the classes and the default of the policy on
+   the diff of the feature: from where it left its base, with uncommitted and
+   untracked files, as the merge approval gate computes it;
+2. the fixed escalations to `high`, which no policy turns off: a changed or
+   removed line in `scripts/verify.conf` or `scripts/verify-workflow.conf`;
+   a change to an existing test file, which is where shared fixtures, test
+   collection, skips, and acceptance thresholds live (a new, standalone test
+   file does not escalate by itself); a change under `.agents/policies/`,
+   `.agents/prompts/`, or `.agents/schemas/`, the policy itself among them;
+   and a change to a manifest the policy names;
+3. what the agents recorded: `"risk": "<level>"` in the implementer's
+   completion record, and the reviewer's `architecture_impact`, of which
+   `major` and `breaking` count as `high`.
+
+An agent can raise the level, never lower it: a recorded level below the
+computed one is ignored and reported, and `finish-feature.sh` refuses a
+completion record that claims less than the diff shows. The rules are read
+from the base branch as it is now, like those of the gate, so a feature that
+adds its own paths to `low` is still classified by the base's file, and is
+`high` because it changed the policy. When the base of the feature cannot be
+determined, the level is `high`.
+
+**Where it appears.** `review-feature.sh` tells the reviewer the level and
+its reasons and stores them in the review artifact (`risk`).
+`finish-feature.sh` records them in the commit message, under `Risk:`, and
+`publish-feature.sh` copies that message into the pull request.
+`run-feature.sh` prints the level once the worktree exists and before each
+review round, and the run record notes it (`risk` events). The merge approval
+gate is unchanged: a `high` level grants nothing, and a protected path keeps
+needing your approval.
+
+To ask, in a feature worktree or in CI:
+
+```bash
+./scripts/check-risk.sh            # against main
+./scripts/check-risk.sh develop    # against another base
+```
+
+The first line is `risk: <level>`, then one reason per line. It exits 0 for
+`low`, 1 for `medium`, 2 for `high`, and 3 on a usage error, so a CI step can
+branch on it.
+
 ## Run records
 
 The workflow records how long every step of a feature or a planning took and
@@ -1623,6 +1714,7 @@ brings the rules.
 | `note` | a line of the log of `run-feature.sh` (`.agents/run/<issue>-log`), which is written from the same event |
 | `completion-gate` | one check of the completion gate: `check` (its number in the run), `sessions` (the sessions of the implementer and the triage implementer that the run recorded before it, a repair or a retry too), `session` (the last of them, which the check judges; a check without a new session judges it again), `status`, `reasons`, and `content`, the fingerprint of what it judged |
 | `artifact` | a review or a triage that the run wrote: `kind` and `path` |
+| `risk` | the risk level of the feature as `run-feature.sh` printed it: `when` (at the start, or before a review round), `level`, and `reasons` |
 | `issue-comments` | the comments of the Issue that a step read for its agent: `issue`, `role` (`implementer`, `reviewer`, or `triage agent`), `passed` and the `authors` of the passed comments, `left_out` (by the size limit), `others` (comments of other authors), and `workflow` (the workflow's own reports) |
 | `experience-notes` | a session of the run changed the agent's experience notes: the `call` and the `hash` of the notes |
 | `experience` | the experience record of a feature run, under `record`: see below |

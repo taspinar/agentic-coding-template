@@ -34,6 +34,8 @@ the website describes the current template.
 | `.agents/attribution.conf` | Whether commits and pull requests may name an agent as a co-author or as the tool that generated them: `allowed` (the previous behaviour) or `disabled`, which the instructions, the Claude sessions the scripts start, and a check in `finish-feature.sh` and `publish-feature.sh` follow |
 | `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
+| `.agents/policies/guardrails.conf` | The paths of the project that the merge approval gate protects or names to the reviewer |
+| `.agents/policies/risk.conf` | The risk policy: the path classes `low`, `medium`, `high`, the `default`, the test files, and the manifests, from which the risk level of a feature is computed |
 | `scripts/verify.conf` | The required verification checks of the project |
 | `scripts/verify-workflow.conf` | The self-tests of the workflow scripts and the workflow files they guard |
 | `.github/` | CI workflow, Issue templates, PR template, and code owners |
@@ -82,6 +84,7 @@ the website describes the current template.
 | `scripts/analyze-runs.sh` | Analyses several feature runs with a read-only agent and proposes improvements, each with its place; changes nothing |
 | `scripts/report-runs.sh` | Reports on the run records of features and planning cycles, in Markdown or JSON, without the network |
 | `scripts/check-guardrails.sh` | The merge approval gate: reports which changes of a feature need the owner's approval, by the rules of its base |
+| `scripts/check-risk.sh` | The risk level of a feature, `low`, `medium`, or `high`, with every reason, by the risk policy of its base; exits 0, 1, or 2 for the level |
 | `scripts/check-review.sh` | Reports whether a review still matches what it covers |
 | `scripts/update-issue-with-plan.sh` | Links an optional feature plan to its Issue |
 | `scripts/cleanup-worktree.sh` | Removes a merged worktree and its branch and updates `main` |
@@ -104,6 +107,8 @@ the website describes the current template.
 | `scripts/lib/experience.sh` | The experience record of a feature run: what a script derives from the run, and the agent's optional notes once they are valid |
 | `scripts/lib/report.jq` | The report of `report-runs.sh`: totals, comparisons, and the summary for GitHub, from numeric fields only |
 | `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
+| `scripts/lib/guardrails.sh` | The merge approval gate: the protected and sensitive paths on the diff, by the rules of the base, and the decision with the reviewer's classification |
+| `scripts/lib/risk.sh` | The risk level of a feature: the path classes of `.agents/policies/risk.conf` on the diff, the fixed escalations, and what the agents recorded, of which the highest counts |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions: a snapshot of the worktree before and after, which leaves out the directories Git ignores as a whole |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
 

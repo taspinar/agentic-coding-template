@@ -138,6 +138,7 @@ grep -Fq ".agents/policies/guardrails.conf" "$repo.out" || fail "the changed gat
 for file in scripts/check-guardrails.sh scripts/lib/guardrails.sh scripts/finish-feature.sh \
   scripts/lib/review-run.sh scripts/lib/review-data.sh scripts/lib/agent.sh scripts/review-feature.sh \
   scripts/publish-feature.sh scripts/run-feature.sh scripts/lib/fingerprint.sh \
+  scripts/check-risk.sh scripts/lib/risk.sh \
   .agents/prompts/reviewer.md .agents/schemas/review.schema.json; do
   repo="$(setup_repo "gate-$(basename "$file")")"
   printf '\n# changed\n' >>"$repo/$file"

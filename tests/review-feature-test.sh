@@ -127,6 +127,12 @@ grep -Fq "The marker file must exist." "$repo.log.stdin" || fail "Issue was not 
 for change in "+committed change" "+uncommitted change" "+untracked marker"; do
   grep -Fqx -- "$change" "$repo.log.stdin" || fail "diff supplied to the reviewer lacks: $change"
 done
+# The risk level of the feature, with its reasons, is told to the reviewer
+# and stored in the review.
+grep -Fq "## Risk level" "$repo.log.stdin" || fail "the reviewer was not told the risk level"
+grep -Fq "The effective risk level of this feature is medium" "$repo.log.stdin" || fail "the reviewer was not given the level"
+[[ "$(jq -r '.risk.level' "$artifact.json")" == "medium" ]] || fail "the risk level was not stored in the review"
+[[ "$(jq '.risk.reasons | length' "$artifact.json")" -ge 1 ]] || fail "the stored risk level lacks its reasons"
 
 # A second round is numbered and points the reviewer at the previous review,
 # which is not part of the reviewed diff.
@@ -141,6 +147,22 @@ grep -Fq -- "--output-schema" "$repo.log" || fail "Codex reviewer was not given 
 if grep -Fq "Marker content is unchecked" "$repo.log.stdin"; then
   fail "previous review artifact was included in the reviewed diff"
 fi
+
+# The implementer's record raises the level the reviewer is told, and the
+# reviewer sees why.
+repo="$(setup_repo risk-claim)"
+mkdir -p "$repo/.agents/completion"
+printf '.agents/completion/\n' >>"$repo/.gitignore"
+jq -n '{schema: "completion/v1", status: "complete", criteria: [{criterion: "x", status: "met", evidence: "y"}], remaining: [], risk: "high"}' \
+  >"$repo/.agents/completion/7.json"
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review with a risk claim failed"
+}
+[[ "$(jq -r '.risk.level' "$repo/.agents/reviews/feature-7-marker-review-01.json")" == "high" ]] ||
+  fail "the implementer's claim did not raise the level"
+grep -Fq "recorded risk: high in the completion record" "$repo.log.stdin" ||
+  fail "the reviewer was not told that the implementer raised the level"
 
 # A review without findings is valid.
 repo="$(setup_repo no-findings)"

@@ -353,6 +353,28 @@ step_once() {
   [[ "$step_status" -eq 0 ]] || note "$title" "failed" "the step exited with status $step_status" "Stopping"
 }
 
+# report_risk <when>
+# Prints the risk level of the feature and its reasons, as check-risk.sh of
+# the worktree computes them, and notes them in the run record. It decides
+# nothing here: the level is information for you and for the record;
+# finish-feature.sh enforces it.
+report_risk() {
+  local output
+  local status=0
+  local level
+
+  output="$( (cd "$worktree" && ./scripts/check-risk.sh "$base" </dev/null) 2>&1)" || status=$?
+  if [[ "$status" -gt 2 ]]; then
+    echo "run-feature.sh: the risk level could not be determined $1 (check-risk.sh exited with status $status)."
+    return 0
+  fi
+  level="$(printf '%s\n' "$output" | sed -n '1s/^risk: //p')"
+  echo
+  echo "run-feature.sh: risk level $1: $level"
+  printf '%s\n' "$output" | sed '1d; s/^/  /'
+  records_risk "$1" "$level" "$(printf '%s\n' "$output" | sed '1d; s/^- //')" 2>/dev/null || true
+}
+
 # ---------------------------------------------------------------- implement
 worktree="$(find_worktree)"
 [[ "$(printf '%s\n' "$worktree" | grep -c .)" -le 1 ]] ||
@@ -417,6 +439,7 @@ state_file="$worktree/.agents/run/$issue-state"
 git -C "$worktree" check-ignore -q ".agents/run/$issue-state" ||
   fail "Git does not ignore .agents/run/ in $worktree. Add '.agents/run/' to .gitignore, or take over the template's .gitignore with ./scripts/sync-template.sh."
 mkdir -p "$(dirname "$state_file")"
+report_risk "at the start"
 
 # The completion gate. The state 'implemented' is written only when it
 # passes; an implementer that stopped partway is resumed with the reasons in
@@ -595,6 +618,7 @@ if uncommitted; then
         review_options=(--changes)
       fi
       complete_review=0
+      report_risk "before round $((round + 1))"
       step "$review_title, round $((round + 1)) of at most $MAX_ROUNDS" \
         ./scripts/review-feature.sh "$issue" "$base" ${review_options[@]+"${review_options[@]}"}
       if [[ "$step_status" -eq 3 ]]; then
