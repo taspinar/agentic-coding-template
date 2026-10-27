@@ -248,8 +248,11 @@ review_artifact_errors() {
        else "scope must be full, or changes since an earlier round with its reviewed tree" end),
       (if .verification == null
           or (.verification.status == "passed" and (.verification.verified_at | nonempty))
+          or (.verification.status == "partial" and (.verification.verified_at | nonempty)
+              and (.verification.groups | type) == "array" and (.verification.groups | length) > 0
+              and (.verification.groups | all(nonempty)))
           or (.verification.status == "not-verified" and (.verification.reason | nonempty)) then empty
-       else "verification must be a passed run with its time or a not-verified reason" end),
+       else "verification must be a passed run with its time, a partial run with its groups and time, or a not-verified reason" end),
       (if .reviewed_paths == null
           or ((.reviewed_paths | type) == "array" and (.reviewed_paths | length) > 0 and (.reviewed_paths | all(nonempty))) then empty
        else "reviewed_paths must be null or a non-empty list of paths" end),
@@ -311,6 +314,7 @@ review_render_markdown() {
     "Reviewed tree: \(.reviewed_tree)\n\n" +
     (if .verification == null then ""
      elif .verification.status == "passed" then "Verification: passed for the reviewed tree at \(.verification.verified_at)\n\n"
+     elif .verification.status == "partial" then "Verification: PARTIAL, not a verification: only the groups \(.verification.groups | join(", ")) of verify.sh passed for the reviewed tree at \(.verification.verified_at)\n\n"
      else "Verification: NOT verified (\(.verification.reason))\n\n" end) +
     "Reviewer: \(.reviewer.agent) (\(.reviewer.model)), read-only\n\n" +
     section("critical"; "Critical") + "\n" +

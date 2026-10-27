@@ -292,6 +292,61 @@ run_review "$repo" 7 || {
 }
 [[ "$(verification_runs "$repo")" -eq 2 ]] || fail "the review took a partial run for a verification"
 
+# --checks runs only the named groups before the review: a partial check,
+# not a verification. The review records it, the reviewer is told, no pass
+# is recorded, and a later review runs the full verification.
+repo="$(setup_repo partial-checks)"
+printf 'count: echo run >>verify-count.log\nfast [fast]: echo fast >>verify-fast.log\n' >"$repo/scripts/verify.conf"
+run_review "$repo" 7 --checks fast || {
+  cat "$repo.out" >&2
+  fail "a review on a partial check failed"
+}
+[[ "$(verification_runs "$repo")" -eq 0 ]] || fail "a partial check ran a check outside its groups"
+[[ "$(grep -c . "$repo/verify-fast.log")" -eq 1 ]] || fail "the partial check did not run its group"
+[[ ! -e "$repo/.agents/verification/passed" ]] || fail "a partial check recorded a passed verification"
+review="$repo/.agents/reviews/feature-7-marker-review-01.json"
+[[ "$(jq -c '[.verification.status, .verification.groups]' "$review")" == '["partial",["fast"]]' ]] ||
+  fail "the review does not record the partial check and its groups"
+grep -Fq "Verification: PARTIAL, not a verification" "${review%.json}.md" || fail "the report does not show the partial check"
+grep -Fq "## Verification of the content under review" "$repo.log.stdin" || fail "the reviewer was not told about the partial check"
+grep -Fq "PARTIALLY CHECKED" "$repo.log.stdin" || fail "the reviewer was not told that the content is partially checked"
+grep -Fq "only the groups fast ran" "$repo.log.stdin" || fail "the reviewer was not told which groups ran"
+grep -Fq "partially checked" "$repo.log" || fail "the reviewer's prompt does not say that the content is partially checked"
+run_review "$repo" 7 || fail "a review after a partial check failed"
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "the review after a partial check did not run the full verification"
+[[ "$(jq -r '.verification.status' "$repo/.agents/reviews/feature-7-marker-review-02.json")" == "passed" ]] ||
+  fail "the review after a partial check does not record the passed verification"
+# A failing check of the groups is a failed verification (status 4), an
+# unknown group too, and --checks does not go with --unverified.
+printf 'count: echo run >>verify-count.log\nfast [fast]: false\n' >"$repo/scripts/verify.conf"
+status=0
+run_review "$repo" 7 --checks fast || status=$?
+[[ "$status" -eq 4 ]] || fail "a failing partial check did not exit with the status of a failed verification ($status)"
+[[ ! -e "$repo/.agents/reviews/feature-7-marker-review-03.json" ]] || fail "a review was stored although the partial check failed"
+status=0
+run_review "$repo" 7 --checks nope || status=$?
+[[ "$status" -eq 4 ]] || fail "an unknown group did not exit with the status of a failed verification ($status)"
+if run_review "$repo" 7 --checks fast --unverified "no"; then fail "--checks with --unverified was accepted"; fi
+if run_review "$repo" 7 --checks "Fast"; then fail "a group name with a capital was accepted"; fi
+if run_review "$repo" 7 --checks; then fail "--checks without a group was accepted"; fi
+
+# The reviewed content includes the implementer's claims about the Issue:
+# a completion record written after the review makes it stale, while the
+# verification pass, which does not cover the claims, is still reused.
+repo="$(setup_repo claims)"
+printf '.agents/completion/\n' >>"$repo/.gitignore"
+git -C "$repo" commit -qam "Ignore the completion records"
+run_review "$repo" 7 || fail "the review before the claims failed"
+review="$repo/.agents/reviews/feature-7-marker-review-01.json"
+(cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null) || fail "a fresh review is stale"
+mkdir -p "$repo/.agents/completion"
+printf '{"schema": "completion/v1", "status": "complete", "criteria": [{"criterion": "x", "status": "met", "evidence": "y"}], "remaining": []}\n' >"$repo/.agents/completion/7.json"
+if (cd "$repo" && ./scripts/check-review.sh "$review" >/dev/null 2>&1); then fail "a completion record written after the review did not make it stale"; fi
+run_review "$repo" 7 || fail "the review after the claims failed"
+[[ "$(verification_runs "$repo")" -eq 1 ]] || fail "the verification ran again although only the claims changed"
+if grep -Fq "+++ b/.agents/completion/7.json" "$repo.log.stdin"; then fail "the completion record was shown as a file of the feature"; fi
+grep -Fq '"status": "complete"' "$repo.log.stdin" || fail "the completion record was not given to the reviewer as a section"
+
 repo="$(setup_repo verification-fails)"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"
 expect_no_review "$repo" "verification fails" 7

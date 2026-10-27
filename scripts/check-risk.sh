@@ -20,6 +20,12 @@ usage() {
   echo "uncommitted and untracked files. An agent can raise the level, never lower"
   echo "it; a base that cannot be determined gives high."
   echo
+  echo "After the reasons it prints what the level requires of the workflow by the"
+  echo "same policy: 'verification: full' or 'verification: groups <group>...' for"
+  echo "the intermediate review rounds, and 'review: full', 'review: delta', or"
+  echo "'review: none' for the later rounds; a value of the policy that is not"
+  echo "accepted is printed as 'refused: ...' and the strictest requirement applies."
+  echo
   echo "Exits 0 for low, 1 for medium, 2 for high, and 3 on a usage error."
   exit 3
 }
@@ -44,9 +50,9 @@ if [[ "$branch" =~ ^feature/([0-9]+)- ]]; then
   [[ "${#reviews[@]}" -eq 0 ]] || review="${reviews[${#reviews[@]}-1]}"
 fi
 
+rules="$(guardrails_rules_refs "$root" "$base")"
 if lines="$(feature_base "$root" "$base")"; then
   from="$(printf '%s\n' "$lines" | sed -n 2p)"
-  rules="$(guardrails_rules_refs "$root" "$base")"
   computed="$(risk_computed "$root" "$rules" "$from" "")"
 else
   computed="$(risk_undetermined "the base of this worktree could not be determined ($base)")"
@@ -56,6 +62,7 @@ level="$(printf '%s\n' "$decision" | sed -n 1p)"
 
 echo "risk: $level"
 printf '%s\n' "$decision" | sed '1d; s/^/- /'
+risk_requirements "$root" "$rules" "$level"
 case "$level" in
   low) exit 0 ;;
   medium) exit 1 ;;

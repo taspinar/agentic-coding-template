@@ -32,7 +32,10 @@ usage() {
   echo "not close the Issue."
   echo
   echo "--no-review is only for changes that .agents/policies/autonomy.md classifies"
-  echo "as low risk; the reason is recorded in the commit message."
+  echo "as low risk; the reason is recorded in the commit message. Without it, a"
+  echo "feature without a review is committed only when it is low risk and the risk"
+  echo "policy of the base (.agents/policies/risk.conf) says 'low: review: none'; the"
+  echo "commit message then says 'not reviewed: Low risk by project policy'."
   echo
   echo "The list of changes in the message comes from .agents/summaries/<issue>.md,"
   echo "which the implementer writes. --unattended commits that message as it is,"
@@ -196,15 +199,39 @@ echo "Checking repository verification..."
 echo
 
 # 2. The latest review is current and resolved, unless explicitly skipped.
+slug="${branch//\//-}"
+shopt -s nullglob
+reviews=("$root/.agents/reviews/${slug}-review-"[0-9][0-9].json)
+shopt -u nullglob
 if [[ -n "$no_review_reason" ]]; then
   review_line="Review: no independent review (low risk: $no_review_reason)"
+elif [[ "${#reviews[@]}" -eq 0 ]]; then
+  # Without a review, a feature is committed only when the risk policy of
+  # the base says 'low: review: none' and the feature is low: by the diff
+  # and the implementer's record, since no reviewer classified it. The merge
+  # approval gate then has no classification of the impact, so the owner
+  # must approve the merge, as for any feature without one.
+  unreviewed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "" | sed -n 1p)"
+  review_requirement="$(risk_requirement "$root" "$feature_base_ref" "$unreviewed_level" review)"
+  if [[ "$unreviewed_level" == "low" && "$(printf '%s\n' "$review_requirement" | sed -n 1p)" == "none" ]]; then
+    echo "No review of this feature exists; it is low risk, and $RISK_CONFIG of the base says 'low: review: none'."
+    echo
+    review_line="Review: not reviewed: Low risk by project policy ($RISK_CONFIG of the base: low: review: none)"
+  else
+    {
+      echo "Error: no review of this feature exists, and it is $unreviewed_level risk:"
+      printf '%s\n' "$risk_computed_lines" | sed '1d; s/^/  - /'
+      printf '%s\n' "$review_requirement" | sed '1d; s/^/  - /'
+      if [[ "$unreviewed_level" == "low" ]]; then
+        echo "Only a low-risk feature in a project whose $RISK_CONFIG says 'low: review: none' is committed without a review."
+      else
+        echo "Only a low-risk feature may be committed without a review, in a project whose $RISK_CONFIG says 'low: review: none'."
+      fi
+      echo "Run ./scripts/review-feature.sh $issue, or use --no-review for a low-risk change. Nothing was committed."
+    } >&2
+    exit 1
+  fi
 else
-  slug="${branch//\//-}"
-  shopt -s nullglob
-  reviews=("$root/.agents/reviews/${slug}-review-"[0-9][0-9].json)
-  shopt -u nullglob
-  [[ "${#reviews[@]}" -gt 0 ]] ||
-    fail "no review of this feature exists. Run ./scripts/review-feature.sh $issue, or use --no-review for a low-risk change."
   latest="${reviews[${#reviews[@]}-1]}"
   latest_relative="${latest#"$root"/}"
 
@@ -212,6 +239,11 @@ else
   [[ -z "$errors" ]] || fail "the latest review is invalid: ${errors//$'\n'/; }"
   [[ "$(jq -r '.kind // "feature"' "$latest")" == "feature" && "$(jq -r '.issue' "$latest")" == "$issue" ]] ||
     fail "$latest_relative is not a review of Issue #$issue."
+  # The review compared the feature against its base. That base is checked:
+  # the merge base the review names must be the one the feature has now, or
+  # the review judged another diff (the base was merged or rebased since).
+  [[ -z "$feature_merge_base" || "$(jq -r '.merge_base' "$latest")" == "$feature_merge_base" ]] ||
+    fail "the latest review ($latest_relative) compared the feature against $(jq -r '.merge_base' "$latest" | cut -c1-12), but the feature left its base at $(cut -c1-12 <<<"$feature_merge_base") now: the base of the branch changed since the review. Run ./scripts/review-feature.sh $issue again."
 
   tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/finish-feature.XXXXXX")"
   trap 'rm -rf "$tmp_work"' EXIT
@@ -231,6 +263,11 @@ else
   # judged on the whole diff against the Issue.
   [[ "$(jq -r '.scope.kind // "full"' "$latest")" != "changes" ]] ||
     fail "the latest review (round $(jq -r '.round' "$latest")) covers only the changes since round $(jq -r '.scope.since_round' "$latest"). A feature is committed on a review of the complete feature: run ./scripts/review-feature.sh $issue (without --changes)."
+  # And on content that passed the full verification: a round on a partial
+  # check (review-feature.sh --checks) is an intermediate round, whatever
+  # the risk policy allows for it.
+  [[ "$(jq -r '.verification.status // "passed"' "$latest")" != "partial" ]] ||
+    fail "the latest review (round $(jq -r '.round' "$latest")) was made on partially checked content: only the groups $(jq -r '.verification.groups | join(", ")' "$latest") of the verification ran before it. A feature is committed on a review of content that passed the full verification: run ./scripts/review-feature.sh $issue (without --checks)."
 
   round="$(jq -r '.round' "$latest")"
   verdict="$(jq -r '.verdict | gsub("_"; " ")' "$latest")"

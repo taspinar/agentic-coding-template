@@ -164,6 +164,14 @@ setup_repo() {
   printf 'implementer: codex model-i\nreviewer: codex model-r\ntriage: codex model-t\ntriage-implementer: codex model-f\n' \
     >"$seed/.agents/agents.conf"
   printf '%s\n' "${VERIFY_CONF:-sound: test ! -e broken.txt}" >"$seed/scripts/verify.conf"
+  # The risk policy of the project: the one the template ships, unless the
+  # test sets RISK_CONF.
+  mkdir -p "$seed/.agents/policies"
+  if [[ -n "${RISK_CONF:-}" ]]; then
+    printf '%s\n' "$RISK_CONF" >"$seed/.agents/policies/risk.conf"
+  else
+    cp "$source_root/.agents/policies/risk.conf" "$seed/.agents/policies/risk.conf"
+  fi
   printf '# Agents\n' >"$seed/AGENTS.md"
   git -C "$seed" init -q -b main
   git -C "$seed" config user.name "Run Feature Test"
@@ -975,6 +983,145 @@ expect_sessions "$repo" 2 2 1 1
 if grep -Fq "Review of changes only" "$repo.control/reviewer.args"; then
   fail "a round after a changed base reviewed only the changes"
 fi
+
+# What the rounds require follows the risk level and the risk policy of the
+# base. With the policy the template ships, which every case above runs
+# with, nothing changed: the full verification before each round, a review
+# of the changes when it can build on the round before, a complete review
+# last. A project may name groups of checks for the intermediate rounds of
+# a high-risk feature: the round after the fixes runs only them, the review
+# records that the content is partially checked, and the round that ends the
+# run is a complete review on the full verification; the commit is made on
+# that one.
+verify_trace='sound: sh -c '"'"'mkdir -p .agents/run; echo full >>.agents/run/verify-trace; test ! -e broken.txt'"'"'
+fast [fast]: sh -c '"'"'mkdir -p .agents/run; echo fast >>.agents/run/verify-trace'"'"
+repo="$(VERIFY_CONF="$verify_trace" RISK_CONF="$(printf 'default: medium\nhigh: feature.txt\nhigh: verification: groups fast\nhigh: review: delta')" setup_repo high-partial-checks)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 3 1 1
+grep -Fq "run-feature.sh: risk level before round 2: high" "$repo.out" || fail "the level of the high-risk feature was not computed before round 2"
+grep -Fq "review on a partial check of the groups fast, round 2 of at most 5" "$repo.out" || fail "round 2 did not run on a partial check"
+grep -Fq "fixes for round 1 on a partial check of the groups fast" "$repo.out" || fail "the fixes were not verified on a partial check"
+grep -Fq "verify.sh --only fast" "$repo.control/fixes.args" || fail "the fixing agent was not told to run only the groups"
+# The full run of round 1, the partial check after the fixes and before
+# round 2, and the full verification before the closing round; the commit
+# reuses that pass.
+[[ "$(tr '\n' ' ' <"$repo-2-thing/.agents/run/verify-trace")" == "full fast fast fast full fast " ]] ||
+  fail "the checks did not run as full, partial, partial, full: $(tr '\n' ' ' <"$repo-2-thing/.agents/run/verify-trace")"
+round2="$repo-2-thing/.agents/reviews/feature-2-thing-review-02.json"
+[[ "$(jq -c '[.scope.kind, .verification.status, .verification.groups]' "$round2")" == '["changes","partial",["fast"]]' ]] ||
+  fail "round 2 does not record the delta review on a partial check: $(jq -c '[.scope, .verification]' "$round2")"
+grep -Fq "## Verification of the content under review" "$repo.control/reviewer-2.context" || fail "the reviewer of round 2 was not told about the partial check"
+if grep -Fq "## Verification of the content under review" "$repo.control/reviewer-3.context"; then fail "the reviewer of round 3 was told about a partial check"; fi
+[[ "$(jq -r '.verification.status' "$repo-2-thing/.agents/reviews/feature-2-thing-review-03.json")" == "passed" ]] ||
+  fail "the closing round was not made on the full verification"
+grep -q "^Review: round 3, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the closing round"
+grep -Fqx "Risk: high" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the high level"
+# The same partial check when round 2 is a complete review by policy: it is
+# still an intermediate round, and a complete review on the full
+# verification follows before the commit.
+repo="$(VERIFY_CONF="$verify_trace" RISK_CONF="$(printf 'default: medium\nhigh: feature.txt\nhigh: verification: groups fast\nhigh: review: full')" setup_repo high-partial-full-review)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 3 1 1
+if grep -Fq "Review of changes only" "$repo.control/reviewer.args"; then fail "a round reviewed only the changes although the policy requires complete reviews"; fi
+[[ "$(jq -c '[.scope.kind, .verification.status]' "$repo-2-thing/.agents/reviews/feature-2-thing-review-02.json")" == '["full","partial"]' ]] ||
+  fail "round 2 is not a complete review on a partial check"
+[[ "$(jq -c '[.scope.kind, .verification.status]' "$repo-2-thing/.agents/reviews/feature-2-thing-review-03.json")" == '["full","passed"]' ]] ||
+  fail "the closing round is not a complete review on the full verification"
+grep -q "^Review: round 3, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the closing round"
+# A partial check that fails is repaired like a failed verification; the
+# handoff note says that the partial run is not a verification.
+repo="$(VERIFY_CONF="$verify_trace"'
+gate [fast]: test ! -e fast-broken.txt' RISK_CONF="$(printf 'default: medium\nhigh: feature.txt\nhigh: verification: groups fast')" setup_repo high-partial-repaired)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; printf "x\n" >fast-broken.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; else grep -q "verify.sh --only fast" ".agents/handoffs/$RUN_ISSUE.md" && grep -q "not a verification" ".agents/handoffs/$RUN_ISSUE.md" && rm -f fast-broken.txt; reply="Repaired."; fi' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 3 1 1
+grep -Fq "Repair attempt 1 of 3" <<<"$(log_of "$repo")" || fail "the failed partial check was not repaired"
+# A group the policy names that verify.sh does not know: the full
+# verification runs, and the run says so.
+repo="$(RISK_CONF="$(printf 'default: medium\nhigh: feature.txt\nhigh: verification: groups nope')" setup_repo high-unknown-group)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 3 1 1
+grep -Fq "a group of checks that verify.sh does not know: nope" <<<"$(log_of "$repo")" || fail "the unknown group is not in the log of the feature"
+[[ "$(jq -r '.verification.status' "$repo-2-thing/.agents/reviews/feature-2-thing-review-02.json")" == "passed" ]] ||
+  fail "round 2 did not run the full verification for an unknown group"
+
+# A medium-risk feature whose fixes touch a path of the high class is
+# reclassified: the round after the fixes reviews the complete feature
+# instead of the changes, and the commit records the level high.
+repo="$(RISK_CONF="$(printf 'default: medium\nhigh: hot.txt')" setup_repo level-rises)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+printf '%s\n' 'printf "fixed\n" >>feature.txt; printf "hot\n" >hot.txt; reply="Fixed."' >"$repo.control/fixes.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 2 1 1
+if grep -Fq "Review of changes only" "$repo.control/reviewer.args"; then fail "the round after a rise of the level reviewed only the changes"; fi
+grep -Fq "the risk level rose from medium (round 1) to high" <<<"$(log_of "$repo")" || fail "the rise of the level is not in the log of the feature"
+grep -Fq "run-feature.sh: risk level before round 2: high" "$repo.out" || fail "the level was not computed again before round 2"
+grep -Fqx "Risk: high" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the raised level"
+grep -q "^Review: round 2, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the complete review of round 2"
+# With 'medium: review: full' every round reviews the complete feature.
+repo="$(RISK_CONF="$(printf 'default: medium\nmedium: review: full')" setup_repo medium-full-reviews)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer-1.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 2 1 1
+if grep -Fq "Review of changes only" "$repo.control/reviewer.args"; then fail "a round reviewed only the changes although the policy requires complete reviews"; fi
+grep -Fq "the risk policy requires a complete review for a medium-risk feature (review: full)" <<<"$(log_of "$repo")" ||
+  fail "the complete review by policy is not in the log of the feature"
+
+# A low-risk feature in a project whose policy says 'low: review: none' is
+# verified and committed without a review; the commit and the pull request
+# say so, and the merge needs the owner, since no reviewer classified the
+# impact. A failed verification is repaired like one a review would have
+# run. Without that line, a low-risk feature is reviewed as any other.
+repo="$(RISK_CONF="$(printf 'default: medium\nlow: feature.txt\nlow: review: none')" setup_repo low-unreviewed)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 0 0 0
+grep -Fq "verification of the low-risk feature, which the project policy does not review" "$repo.out" || fail "the verification of the unreviewed feature was not a step"
+grep -Fqx "Review: not reviewed: Low risk by project policy (.agents/policies/risk.conf of the base: low: review: none)" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit does not say that the feature was not reviewed by project policy"
+grep -Fqx "Review: not reviewed: Low risk by project policy (.agents/policies/risk.conf of the base: low: review: none)" "$repo.control/pr-body" ||
+  fail "the pull request does not say that the feature was not reviewed by project policy"
+grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out" || fail "an unreviewed low-risk feature did not need the owner's approval"
+grep -Fqx "Risk: low" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the low level"
+[[ -f "$repo-2-thing/.agents/verification/passed" ]] || fail "the unreviewed feature was committed without a recorded verification"
+repo="$(RISK_CONF="$(printf 'default: medium\nlow: feature.txt\nlow: review: none')" setup_repo low-unreviewed-repaired)"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; printf "x\n" >broken.txt
+else grep -q "FAIL  *sound" ".agents/handoffs/$RUN_ISSUE.md" && rm -f broken.txt; reply="Repaired."; fi' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 0 0 0
+grep -Fq "Repair attempt 1 of 3" <<<"$(log_of "$repo")" || fail "the verification of the unreviewed feature was not repaired"
+grep -Fq "not reviewed: Low risk by project policy" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the repaired feature was not committed without a review"
+# A repair that touches a medium path makes the feature medium: it is
+# reviewed after all.
+repo="$(RISK_CONF="$(printf 'default: medium\nlow: feature.txt\nlow: review: none')" setup_repo low-rises)"
+printf '%s\n' 'if [[ "$count" -eq 1 ]]; then eval "$default"; printf "x\n" >broken.txt
+else rm -f broken.txt; printf "helper\n" >helper.txt; reply="Repaired with a helper."; fi' \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+grep -Fqx "Risk: medium" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the raised level"
+grep -q "^Review: round 1, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the feature that became medium was not reviewed"
+repo="$(RISK_CONF="$(printf 'default: medium\nlow: feature.txt')" setup_repo low-reviewed)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -q "^Review: round 1, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "a low-risk feature was not reviewed without 'low: review: none'"
+grep -Fqx "Risk: low" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the low level"
 
 # A pull request that cannot be opened stops the run after the commit; the
 # next run only publishes.

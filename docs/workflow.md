@@ -149,7 +149,11 @@ flowchart TD
   round reviews the complete feature; after a small fix,
   `review-feature.sh <issue> --changes` reviews only what changed since the
   previous round. The round a feature is committed on always covers the
-  complete feature: it is what establishes that the Issue is done.
+  complete feature, on content that passed the full verification: it is what
+  establishes that the Issue is done. What the rounds require follows the risk
+  level of the feature and `.agents/policies/risk.conf` (docs/development.md,
+  "What each level requires"); the shipped policy keeps every level at the
+  full verification and delta reviews.
 - A session that ends is not a feature that is complete. The implementer
   records where the work stands in a completion record; the commit and a
   pull request that closes the Issue need a record that says complete (or
@@ -290,15 +294,15 @@ exits with status 3.
 | `finish-planning.sh --amend` | Anything but the architecture and the ADRs changed, an ADR was deleted, the planning on `main` has no current approval, the branch lacks the latest `main`, or a required planning document is missing |
 | `create-feature-issue.sh` | The planning approval is missing or stale, the feature ID is unknown, duplicated, or empty, or the feature already has an Issue |
 | `start-feature.sh` | Tracked files in the checkout are modified, or the feature branch or worktree exists. With `--resume`: no worktree, or more than one, is on a branch of the Issue |
-| `review-feature.sh` | Not on `feature/<issue>-*`, nothing to review, or verification fails (unless `--unverified "<reason>"` is given) |
+| `review-feature.sh` | Not on `feature/<issue>-*`, nothing to review, or verification fails (unless `--unverified "<reason>"` is given). With `--checks <groups>` only those groups of `verify.sh` run, as a partial check that the review records as such; `--checks` with `--unverified` is refused |
 | `review-feature.sh --changes` | Also: there is no previous round, nothing changed since it, the base of the branch changed, or the content of the previous round is no longer known |
 | `triage-review.sh` | The review is stale or invalid, or it is a planning review |
-| `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale |
-| `finish-feature.sh` | Verification fails, the latest review is stale or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it, or the feature changes the roadmap, the requirements, the description, or a change request, which only a planning cycle may change, or the completion record claims a lower risk level than the diff shows. With agent attribution disabled in `.agents/attribution.conf`: a commit of the feature names an agent as a co-author, or the commit message got agent attribution in the editor (that commit is undone, the changes stay staged) |
+| `apply-triage.sh` | The triage is unapproved, invalid, or does not match its review, or the review is stale. With `--checks <groups>` the result is verified with only those groups of `verify.sh`, a partial check that is not a verification |
+| `finish-feature.sh` | Verification fails, the latest review is stale, compared the feature against another base than the feature has now, was made on partially checked content (`review-feature.sh --checks`), or has a critical or major finding, a round with findings has no published triage, `FIX_NOW` findings are left, or a latest review of changes only does not build on the round before it, or the feature changes the roadmap, the requirements, the description, or a change request, which only a planning cycle may change, or the completion record claims a lower risk level than the diff shows. Without any review: unless the feature is `low` risk and the risk policy of the base says `low: review: none` (then the commit says `not reviewed: Low risk by project policy`, and the merge needs the owner); `review: none` for `medium` or `high` is refused. With agent attribution disabled in `.agents/attribution.conf`: a commit of the feature names an agent as a co-author, or the commit message got agent attribution in the editor (that commit is undone, the changes stay staged) |
 | `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. With agent attribution disabled: a commit of the branch names an agent as a co-author, or the description would carry generated attribution text; nothing is pushed. With `--wait` it exits non-zero when a check fails |
-| `run-feature.sh` | A step fails or is refused as described above, an agent needs your decision (status 3), five review rounds are used while a finding must still be fixed, or the fixes changed nothing |
+| `run-feature.sh` | A step fails or is refused as described above, an agent needs your decision (status 3), five review rounds are used while a finding must still be fixed or the last round was an intermediate one, or the fixes changed nothing. What the rounds require per risk level comes from `.agents/policies/risk.conf` of the base, computed again before every round: a partial check of named groups before an intermediate round of a `high` feature, a review of the changes only when the policy allows it and the level did not rise, no review for a `low` feature with `low: review: none`; the commit is always made on the full verification |
 | `check-guardrails.sh` | Nothing stops: it reports `protected` when the feature changes an ADR, a file of the workflow, a changed or removed check, or a path the project protects. `finish-feature.sh` then records that only you may merge |
-| `check-risk.sh` | Nothing stops: it reports the risk level of the feature, `low`, `medium`, or `high`, with its reasons, by `.agents/policies/risk.conf` of the base branch. `finish-feature.sh` refuses a completion record that claims a lower level than computed, and records the level in the commit; `publish-feature.sh` computes it again for the pull request. A record without a claim, as every record written before the level existed, is never refused |
+| `check-risk.sh` | Nothing stops: it reports the risk level of the feature, `low`, `medium`, or `high`, with its reasons, by `.agents/policies/risk.conf` of the base branch, and what the level requires of the review rounds (`verification:`, `review:`, with `refused:` for a value of the policy that is not accepted). `finish-feature.sh` refuses a completion record that claims a lower level than computed, and records the level in the commit; `publish-feature.sh` computes it again for the pull request. A record without a claim, as every record written before the level existed, is never refused |
 
 ### Helper scripts
 
@@ -308,7 +312,7 @@ exits with status 3.
 | `check-docs.sh` | To check that the Markdown files name files that exist; add it to `scripts/verify.conf` to run it with every verification |
 | `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
-| `check-risk.sh [<base>]` | To see the risk level of the feature in the worktree and every reason for it; exits 0, 1, or 2 for `low`, `medium`, or `high`, for a CI step |
+| `check-risk.sh [<base>]` | To see the risk level of the feature in the worktree, every reason for it, and what the level requires of the review rounds; exits 0, 1, or 2 for `low`, `medium`, or `high`, for a CI step |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
 | `finish-planning.sh --amend "<reason>"` | To approve a change to the architecture and the ADRs only, on a `planning/<name>` branch, without a review round. Refuses any other planning change and a planning without a current approval |
 | `triage-review.sh --publish <triage-json>` | To repeat a failed publication of the review and triage reports |

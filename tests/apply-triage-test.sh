@@ -319,6 +319,32 @@ grep -Fq "Correctness regression" "$repo.log" || fail "the unattended agent was 
 grep -Fq "C1 is fixed." "$repo.out" || fail "the final message of the fixes was not shown"
 grep -Fq "verification passed" "$repo.out" || fail "the unattended fixes were not verified"
 
+# --checks verifies the result with only the named groups, a partial check
+# that records nothing, and tells the agent to run only them.
+repo="$(setup_repo partial-checks)"
+printf 'count: echo run >>verify-count.log\nfast [fast]: echo fast >>verify-fast.log\n' >"$repo/scripts/verify.conf"
+git -C "$repo" commit -qam "Groups of checks"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+MOCK_OUTPUT="C1 is fixed." MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" \
+  run_apply "$repo" "" "$triage" --unattended --checks fast || {
+  cat "$repo.out" >&2
+  fail "applying fixes on a partial check failed"
+}
+[[ ! -e "$repo/verify-count.log" ]] || fail "a partial check ran a check outside its groups"
+[[ "$(grep -c . "$repo/verify-fast.log")" -eq 1 ]] || fail "the partial check did not run its group"
+[[ ! -e "$repo/.agents/verification/passed" ]] || fail "a partial check recorded a passed verification"
+grep -Fq "verify.sh --only fast" "$repo.log" || fail "the agent was not told to run only the groups"
+grep -Fq "not a verification" "$repo.log" || fail "the agent was not told that a partial run is not a verification"
+grep -Fq "partial check of the groups fast passed (not a verification)" "$repo.out" || fail "the partial check was reported as a verification"
+printf 'count: echo run >>verify-count.log\nfast [fast]: false\n' >"$repo/scripts/verify.conf"
+git -C "$repo" commit -qam "A failing group"
+record_reviewed_tree "$repo" "$repo/$review" "$repo/$triage"
+status=0
+MOCK_OUTPUT="C1 is fixed." MOCK_WRITE_ACTION="printf 'fixed\n' >>'$repo/feature.txt'" \
+  run_apply "$repo" "" "$triage" --unattended --checks fast || status=$?
+[[ "$status" -eq 4 ]] || fail "a failing partial check did not exit with the status of a failed verification ($status)"
+if run_apply "$repo" "" "$triage" --unattended --checks "Fast"; then fail "a group name with a capital was accepted"; fi
+
 # A handoff note, which may hold your answer to an earlier question, is named
 # to the agent; without a note nothing is said about one.
 if grep -Fq ".agents/handoffs/13.md" "$repo.log"; then fail "a handoff note that does not exist was named"; fi

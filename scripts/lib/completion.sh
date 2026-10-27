@@ -30,7 +30,9 @@
 # it: finish-feature.sh refuses a record that claims less.
 #
 # 'complete' needs every criterion met or not applicable and nothing
-# remaining. 'partial' and 'blocked' need something that remains.
+# remaining. 'partial' and 'blocked' need something that remains. The
+# evidence of a criterion cannot be a partial run of the checks
+# ('verify.sh --only'): such a run is not a verification.
 #
 # Evidence appears at a gate: 'implementation' (the default, before the work
 # is committed), 'pr_ci' (after the pull request is published, before the
@@ -88,7 +90,9 @@ completion_errors() {
             then "criterion \($n): owner_approval cannot be met in a record the implementer writes; it stays pending until the owner approves on GitHub" else empty end),
            (if .status == "pending" and ((.gate // "implementation") == "implementation")
             then "criterion \($n): pending is only for evidence of a later gate (pr_ci, owner_approval, or post_merge)" else empty end),
-           (if (.evidence | text) | not then "criterion \($n) has no evidence" else empty end)
+           (if (.evidence | text) | not then "criterion \($n) has no evidence" else empty end),
+           (if (.evidence | type) == "string" and (.evidence | test("verify\\.sh([[:space:]]+-[^[:space:]]*)*[[:space:]]+--only([[:space:]]|$)"))
+            then "criterion \($n) cites a partial run of the checks (verify.sh --only) as evidence, which is not a verification" else empty end)
          end)
        end),
       (if (.remaining | type) != "array" or ([.remaining[]? | text] | all | not)
