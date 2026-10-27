@@ -10,9 +10,13 @@
 #    of that file for a path no class names;
 # 2. the fixed escalations to high: a changed or removed line in a
 #    verification configuration, a change to an existing test file, a change
-#    under .agents/policies/, .agents/prompts/, or .agents/schemas/ (the
-#    policy itself among them), and a change to a dependency or toolchain
-#    manifest the policy names;
+#    to an existing file under .agents/policies/, .agents/prompts/, or
+#    .agents/schemas/ (the policy itself among them), and a change to an
+#    existing dependency or toolchain manifest the policy names. An
+#    escalation reads only changed or removed existing lines and files: a
+#    file the feature adds, and the lines of a new file, never escalate by
+#    themselves, whatever they hold; a protected path keeps its high class by
+#    the path rule. No escalation reads the content of a line;
 # 3. what an agent recorded: 'risk' in the implementer's completion record,
 #    and the independent reviewer's architecture_impact, of which major and
 #    breaking count as high.
@@ -21,8 +25,8 @@
 # computed one is ignored and reported. The rules are read from the base
 # branch as it is now, like the merge approval gate's, so a feature cannot
 # relax the rules it is classified by; the diff is taken from where the
-# feature left its base. When that base cannot be determined, the level is
-# high.
+# feature left its base. When that base cannot be determined, or the changes
+# of the feature cannot be enumerated, the level is high.
 
 if ! declare -F guardrails_rules_refs >/dev/null; then
   source "${BASH_SOURCE[0]%/*}/guardrails.sh"
@@ -122,6 +126,25 @@ risk_union_values() {
   fi
 }
 
+# risk_existing_changed <root> <from> <to> <pathspec...>
+# Prints the paths under the pathspecs that exist in <from> and are changed
+# or removed, one per line as '<M|D><TAB><path>'. A file the feature adds is
+# left out, also an untracked one: it is new, whatever it holds. With an
+# empty <to> the working tree is compared.
+risk_existing_changed() {
+  local root="$1"
+  local from="$2"
+  local to="$3"
+
+  shift 3
+  [[ $# -gt 0 ]] || return 0
+  if [[ -n "$to" ]]; then
+    git -C "$root" diff --name-status --no-renames "$from" "$to" -- "$@"
+  else
+    git -C "$root" diff --name-status --no-renames "$from" -- "$@"
+  fi | awk -F '\t' '$1 !~ /^A/ && $2 != "" { printf "%s\t%s\n", substr($1, 1, 1), $2 }' | sort -u
+}
+
 # risk_classify <root> <rules-refs> <from> [<to>]
 # Prints one line per finding: '<level><TAB><path><TAB><reason>'. The path
 # classes of each ref are applied on their own and the findings are joined,
@@ -197,48 +220,75 @@ risk_classify() {
   # A change to an existing test file; a new, standalone test file is none.
   specs=()
   while IFS= read -r spec; do specs+=("$spec"); done < <(risk_union_values "$root" "$rules" tests "${RISK_BUILTIN_TESTS[@]}")
-  if [[ -n "$to" ]]; then
-    list="$(git -C "$root" diff --name-status --no-renames "$from" "$to" -- "${specs[@]}" "${RISK_EXCLUDES[@]}")"
-  else
-    list="$(git -C "$root" diff --name-status --no-renames "$from" -- "${specs[@]}" "${RISK_EXCLUDES[@]}")"
-  fi
   while IFS=$'\t' read -r level path; do
     [[ -n "$path" ]] || continue
-    case "$level" in
-      A*) ;;
-      D*) printf 'high\t%s\t%s\n' "$path" "an existing test file is removed" ;;
-      *) printf 'high\t%s\t%s\n' "$path" "an existing test file is changed" ;;
-    esac
-  done < <(printf '%s\n' "$list" | sort -u)
+    if [[ "$level" == "D" ]]; then
+      printf 'high\t%s\t%s\n' "$path" "an existing test file is removed"
+    else
+      printf 'high\t%s\t%s\n' "$path" "an existing test file is changed"
+    fi
+  done < <(risk_existing_changed "$root" "$from" "$to" "${specs[@]}" "${RISK_EXCLUDES[@]}")
 
-  # The policies, the agent contracts, and the schemas.
-  while IFS= read -r path; do
+  # An existing policy, agent contract, or schema that is changed or removed.
+  # A file the feature adds under these directories is new and does not
+  # escalate by itself; in the template it is high by the path rule.
+  while IFS=$'\t' read -r level path; do
     [[ -n "$path" ]] || continue
     if [[ "$path" == "$RISK_CONFIG" ]]; then
       printf 'high\t%s\t%s\n' "$path" "the risk policy itself is changed"
+    elif [[ "$level" == "D" ]]; then
+      printf 'high\t%s\t%s\n' "$path" "a policy, an agent contract, or a schema is removed"
     else
       printf 'high\t%s\t%s\n' "$path" "a policy, an agent contract, or a schema is changed"
     fi
-  done < <(guardrails_changed "$root" "$from" "$to" "${RISK_ESCALATION_DIRS[@]}" | sort -u)
+  done < <(risk_existing_changed "$root" "$from" "$to" "${RISK_ESCALATION_DIRS[@]}")
 
-  # The manifests the project names.
+  # An existing manifest the project names that is changed or removed.
   specs=()
   while IFS= read -r spec; do specs+=("$spec"); done < <(risk_union_values "$root" "$rules" manifests)
   if [[ "${#specs[@]}" -gt 0 ]]; then
-    while IFS= read -r path; do
+    while IFS=$'\t' read -r level path; do
       [[ -n "$path" ]] || continue
-      printf 'high\t%s\t%s\n' "$path" "a dependency or toolchain manifest is changed"
-    done < <(guardrails_changed "$root" "$from" "$to" "${specs[@]}" | sort -u)
+      if [[ "$level" == "D" ]]; then
+        printf 'high\t%s\t%s\n' "$path" "a dependency or toolchain manifest is removed"
+      else
+        printf 'high\t%s\t%s\n' "$path" "a dependency or toolchain manifest is changed"
+      fi
+    done < <(risk_existing_changed "$root" "$from" "$to" "${specs[@]}")
+  fi
+}
+
+# risk_enumerable <root> <from> [<to>]
+# Succeeds when Git can list the changes of the feature as risk_classify
+# enumerates them: the diff from <from> to <to>, or to the working tree with
+# its untracked files when <to> is empty.
+risk_enumerable() {
+  local root="$1"
+  local from="$2"
+  local to="${3:-}"
+
+  if [[ -n "$to" ]]; then
+    git -C "$root" diff --name-only --no-renames "$from" "$to" -- . >/dev/null 2>&1
+  else
+    git -C "$root" diff --name-only --no-renames "$from" -- . >/dev/null 2>&1 &&
+      git -C "$root" ls-files --others --exclude-standard >/dev/null 2>&1
   fi
 }
 
 # risk_computed <root> <rules-refs> <from> [<to>]
 # Prints the level that follows from the diff on the first line, and the
 # reasons for exactly that level after it, one per line as '<path>: <reason>'.
+# The changes are enumerated once first: when Git cannot list them (a bad
+# object, an unreadable tree), the level is high, so a failing diff never
+# passes as a feature that changed nothing.
 risk_computed() {
   local findings
   local level
 
+  if ! risk_enumerable "$1" "$3" "${4:-}"; then
+    risk_undetermined "the changes of the feature could not be enumerated (git diff failed)"
+    return 0
+  fi
   findings="$(risk_classify "$@" | sort -u)"
   level="$(printf '%s\n' "$findings" | awk -F '\t' 'NF >= 3 { print $1 }' | sort -u | tr '\n' ' ')"
   # shellcheck disable=SC2086

@@ -12,7 +12,9 @@ usage() {
   echo "opens the pull request. The description is the message of the commit that"
   echo "finish-feature.sh made, also after the base branch was merged into the"
   echo "feature to bring it up to date, and the manual steps; an open pull request"
-  echo "gets it again, replacing its description. It never merges."
+  echo "gets it again, replacing its description. The risk level in it is computed"
+  echo "here again from the diff and the rules of the base, never copied from the"
+  echo "commit. It never merges."
   echo
   echo "The pull request closes the Issue only when the feature is complete: the"
   echo "commit carries 'Completion: complete' of finish-feature.sh and the"
@@ -62,6 +64,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/github.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/completion.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/records.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/attribution.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/fingerprint.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/guardrails.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib/risk.sh"
 records_wrap feature "$issue" "$0" ${records_arguments[@]+"${records_arguments[@]}"}
 command -v jq >/dev/null 2>&1 || fail "jq is required."
 
@@ -188,6 +193,43 @@ if [[ "$closes" -eq 0 ]]; then
   fi
 fi
 
+# The risk level of the feature (lib/risk.sh), computed here again: from the
+# diff of the branch from where it left its base, by the rules of the base
+# as it is now, raised by the completion record and the latest review. The
+# level the finish commit recorded is not trusted: the description shows the
+# level computed now, and names the commit's when the two differ.
+slug="${branch//\//-}"
+shopt -s nullglob
+reviews=("$root/.agents/reviews/${slug}-review-"[0-9][0-9].json)
+shopt -u nullglob
+latest_review=""
+[[ "${#reviews[@]}" -eq 0 ]] || latest_review="${reviews[${#reviews[@]}-1]}"
+if lines="$(feature_base "$root" "$feature_base")"; then
+  risk_computed_lines="$(risk_computed "$root" "$(guardrails_rules_refs "$root" "$feature_base")" "$(printf '%s\n' "$lines" | sed -n 2p)" HEAD)"
+else
+  risk_computed_lines="$(risk_undetermined "the base of the feature could not be determined ($feature_base)")"
+fi
+risk_lines="$(risk_decision "$risk_computed_lines" "$(completion_record "$root" "$issue")" "$latest_review")"
+risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
+committed_risk="$(git -C "$root" log -1 --format=%b "$finish_commit" | sed -n 's/^Risk: //p' | sed -n 1p)"
+if [[ -n "$committed_risk" && "$committed_risk" != "$risk_level" ]]; then
+  risk_lines+=$'\n'"the finish commit recorded $committed_risk; the level is computed again at every publication"
+fi
+risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
+echo "Risk level: $risk_level"
+printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'
+# risk_recomputed: copies standard input, the commit message, with its
+# 'Risk:' block replaced by the one computed now, or that block appended
+# when the commit has none.
+risk_recomputed() {
+  RISK_BLOCK="$risk_block" awk '
+    /^Risk: (low|medium|high)$/ { print ENVIRON["RISK_BLOCK"]; replaced = 1; skip = 1; next }
+    skip && /^$/ { skip = 0 }
+    skip { next }
+    { print }
+    END { if (!replaced) { print ""; print ENVIRON["RISK_BLOCK"] } }'
+}
+
 # The description is generated from the finish commit and the current manual
 # steps, also for a pull request that is already open: a fix round can change
 # both.
@@ -203,7 +245,7 @@ closing_allowed() {
   fi
 }
 {
-  git -C "$root" log -1 --format=%b "$finish_commit" | closing_allowed
+  git -C "$root" log -1 --format=%b "$finish_commit" | risk_recomputed | closing_allowed
   echo
   echo "## Manual steps"
   echo

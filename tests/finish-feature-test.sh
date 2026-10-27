@@ -727,6 +727,23 @@ record_reviewed_tree "$repo" "$repo/$review"
 expect_no_commit "$repo" "the record claims low for a change to a file of the gate" 12 "Add the marker"
 grep -Fq "but the feature is high" "$repo.out" || fail "the computed level high was not reported"
 
+# A feature that was already in progress when the level came into the
+# workflow is not refused: its completion record has no 'risk', as no record
+# written before had one, so there is no claim to refuse; the level is
+# derived and recorded all the same.
+repo="$(setup_repo risk-earlier-record PASS "[]")"
+set_impact "$repo" minor
+jq 'del(.risk)' "$repo/.agents/completion/12.json" >"$repo/.agents/completion/12.json.tmp" &&
+  mv "$repo/.agents/completion/12.json.tmp" "$repo/.agents/completion/12.json"
+printf '\n# changed\n' >>"$repo/scripts/publish-feature.sh"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a high-risk feature whose record predates the risk level was refused"
+}
+grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the level of a feature with an earlier record was not derived and recorded"
+grep -Fq -- "- scripts/publish-feature.sh: " <<<"$(risk_of "$repo")" || fail "the reason for the derived level was not recorded"
+
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
 EDITOR_COMMAND='sh -c ": > \"\$0\""' expect_no_commit "$repo" "the commit message was emptied" 12 "Add the marker"

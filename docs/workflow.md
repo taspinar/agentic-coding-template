@@ -298,7 +298,7 @@ exits with status 3.
 | `publish-feature.sh` | There are uncommitted changes or the branch belongs to another Issue. With agent attribution disabled: a commit of the branch names an agent as a co-author, or the description would carry generated attribution text; nothing is pushed. With `--wait` it exits non-zero when a check fails |
 | `run-feature.sh` | A step fails or is refused as described above, an agent needs your decision (status 3), five review rounds are used while a finding must still be fixed, or the fixes changed nothing |
 | `check-guardrails.sh` | Nothing stops: it reports `protected` when the feature changes an ADR, a file of the workflow, a changed or removed check, or a path the project protects. `finish-feature.sh` then records that only you may merge |
-| `check-risk.sh` | Nothing stops: it reports the risk level of the feature, `low`, `medium`, or `high`, with its reasons, by `.agents/policies/risk.conf` of the base branch. `finish-feature.sh` refuses a completion record that claims a lower level than computed, and records the level in the commit |
+| `check-risk.sh` | Nothing stops: it reports the risk level of the feature, `low`, `medium`, or `high`, with its reasons, by `.agents/policies/risk.conf` of the base branch. `finish-feature.sh` refuses a completion record that claims a lower level than computed, and records the level in the commit; `publish-feature.sh` computes it again for the pull request. A record without a claim, as every record written before the level existed, is never refused |
 
 ### Helper scripts
 

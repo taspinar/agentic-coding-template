@@ -1603,7 +1603,7 @@ tests: tests test
 | `low`, `medium`, `high` | The path classes. The highest class of any path the feature changed is its path-based minimum; a path in two classes gets the higher one |
 | `default` | The level of a path that no class names |
 | `tests` | The test files. A change to an existing one escalates to `high`; without the key, `tests test` |
-| `manifests` | The dependency and toolchain manifests. A change to one escalates to `high` |
+| `manifests` | The dependency and toolchain manifests. A change to an existing one escalates to `high` |
 
 The template ships the file with `default: medium`, the paths that the merge
 approval gate protects as the `high` class (the ADRs, the CI workflows, the
@@ -1634,25 +1634,37 @@ authorization, a migration, the infrastructure, or a dependency file is
    removed line in `scripts/verify.conf` or `scripts/verify-workflow.conf`;
    a change to an existing test file, which is where shared fixtures, test
    collection, skips, and acceptance thresholds live (a new, standalone test
-   file does not escalate by itself); a change under `.agents/policies/`,
-   `.agents/prompts/`, or `.agents/schemas/`, the policy itself among them;
-   and a change to a manifest the policy names;
+   file does not escalate by itself); a change to an existing file under
+   `.agents/policies/`, `.agents/prompts/`, or `.agents/schemas/`, the policy
+   itself among them; and a change to an existing manifest the policy names.
+   An escalation reads only changed or removed existing lines and files,
+   never their content: a file the feature adds, and the lines of a new file,
+   never escalate by themselves, whatever they hold, and a protected path
+   keeps its `high` class by the path rule. The template ships no detector of
+   content patterns (tolerances, test markers, assertions);
 3. what the agents recorded: `"risk": "<level>"` in the implementer's
    completion record, and the reviewer's `architecture_impact`, of which
    `major` and `breaking` count as `high`.
 
 An agent can raise the level, never lower it: a recorded level below the
 computed one is ignored and reported, and `finish-feature.sh` refuses a
-completion record that claims less than the diff shows. The rules are read
-from the base branch as it is now, like those of the gate, so a feature that
-adds its own paths to `low` is still classified by the base's file, and is
-`high` because it changed the policy. When the base of the feature cannot be
-determined, the level is `high`.
+completion record that claims less than the diff shows. A record without
+`risk`, as every record written before the level existed, claims nothing and
+is never refused: a feature that was already in progress gets its level
+derived, recorded, and shown like any other. The rules are read from the base
+branch as it is now, like those of the gate, so a feature that adds its own
+paths to `low` is still classified by the base's file, and is `high` because
+it changed the policy. When the base of the feature cannot be determined, or
+Git cannot enumerate its changes (a failed `git diff`), the level is `high`,
+never the default for a feature that changed nothing.
 
-**Where it appears.** `review-feature.sh` tells the reviewer the level and
-its reasons and stores them in the review artifact (`risk`).
-`finish-feature.sh` records them in the commit message, under `Risk:`, and
-`publish-feature.sh` copies that message into the pull request.
+**Where it appears.** Each script derives the level itself, from the diff
+and the rules of the base at that moment; a level stored in an artifact is an
+input to the maximum, never the source of truth. `review-feature.sh` tells
+the reviewer the level and its reasons and stores them in the review artifact
+(`risk`). `finish-feature.sh` records them in the commit message, under
+`Risk:`. `publish-feature.sh` computes the level again for the pull request
+description and names the commit's level when the two differ.
 `run-feature.sh` prints the level once the worktree exists and before each
 review round, and the run record notes it (`risk` events). The merge approval
 gate is unchanged: a `high` level grants nothing, and a protected path keeps

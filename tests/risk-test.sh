@@ -32,6 +32,7 @@ setup_repo() {
   mkdir -p "$repo/docs" "$repo/src" "$repo/tests" "$repo/spec" "$repo/.agents/policies"
   copy_workflow "$repo"
   cp "$source_root/.gitignore" "$repo/.gitignore"
+  cp "$source_root/.agents/policies/autonomy.md" "$repo/.agents/policies/autonomy.md"
   case "$2" in
     template) cp "$source_root/.agents/policies/risk.conf" "$repo/.agents/policies/risk.conf" ;;
     none) ;;
@@ -54,12 +55,14 @@ setup_repo() {
 }
 
 # check <repo> [argument...]: runs check-risk.sh; sets 'status' and '<repo>.out'.
+# A directory in 'check_path_prefix' comes first on PATH, for a fake tool.
+check_path_prefix=""
 check() {
   local repo="$1"
 
   shift
   status=0
-  (cd "$repo" && PATH="/usr/bin:/bin" ./scripts/check-risk.sh "$@") >"$repo.out" 2>&1 || status=$?
+  (cd "$repo" && PATH="${check_path_prefix:+$check_path_prefix:}/usr/bin:/bin" ./scripts/check-risk.sh "$@") >"$repo.out" 2>&1 || status=$?
 }
 
 # expect_level <repo> <level> <description> [argument...]
@@ -220,14 +223,49 @@ expect_level "$repo" low "a file outside the named test files is not a test file
 
 for path in .agents/prompts/implementer.md .agents/policies/autonomy.md; do
   repo="$(setup_repo "contract-$(basename "$path")" "$lenient")"
-  mkdir -p "$repo/$(dirname "$path")"
   printf '\nChanged.\n' >>"$repo/$path"
   expect_level "$repo" high "a change to $path escalates"
   expect_reason "$repo" "$path: a policy, an agent contract, or a schema is changed" "$path was not given as the reason"
 done
+repo="$(setup_repo contract-removed "$lenient")"
+git -C "$repo" rm -q .agents/prompts/implementer.md
+expect_level "$repo" high "a removed agent contract escalates"
+expect_reason "$repo" ".agents/prompts/implementer.md: a policy, an agent contract, or a schema is removed" \
+  "the removed contract was not given as the reason"
+
+# An escalation reads only changed or removed existing lines and files. A
+# file the feature adds never escalates by itself, whatever it holds: not a
+# schema, a policy, a manifest, or a verification configuration that the
+# base does not have. A protected path keeps its high class by the path
+# rule, so the same schema is high under the template's policy.
 repo="$(setup_repo schema-added "$lenient")"
 printf '{}\n' >"$repo/.agents/schemas/extra.schema.json"
-expect_level "$repo" high "an added schema escalates"
+expect_level "$repo" low "an added schema does not escalate by itself"
+repo="$(setup_repo schema-added-template template)"
+printf '{}\n' >"$repo/.agents/schemas/extra.schema.json"
+expect_level "$repo" high "an added schema is high by the path rule of the template"
+expect_reason "$repo" ".agents/schemas/extra.schema.json: listed as high in .agents/policies/risk.conf" \
+  "the path rule was not given as the reason"
+if grep -Fq "a policy, an agent contract, or a schema is changed" "$repo.out"; then
+  fail "an added schema was counted as a changed one"
+fi
+repo="$(setup_repo policy-added "$lenient")"
+printf 'tolerance: 1e-6\n' >"$repo/.agents/policies/new-policy.md"
+expect_level "$repo" low "an added policy file does not escalate by itself"
+repo="$(setup_repo policy-added-committed "$lenient")"
+printf 'A policy.\n' >"$repo/.agents/policies/new-policy.md"
+git -C "$repo" add .agents/policies/new-policy.md
+git -C "$repo" commit -qm "Add a policy"
+printf 'Changed again.\n' >>"$repo/.agents/policies/new-policy.md"
+expect_level "$repo" low "a policy file the feature itself added is new, also when it changes it again"
+repo="$(setup_repo check-list-added "$lenient")"
+git -C "$repo" switch -q main
+git -C "$repo" rm -q scripts/verify-workflow.conf
+git -C "$repo" commit -qm "Without a workflow self-test list"
+git -C "$repo" branch -q -f feature/5-thing main
+git -C "$repo" switch -q feature/5-thing
+printf 'paths: scripts\nself: echo skipped\n' >"$repo/scripts/verify-workflow.conf"
+expect_level "$repo" low "a verification configuration the feature adds has only added lines and does not escalate"
 
 repo="$(setup_repo manifest "$(printf 'default: low\nmanifests: package.json')")"
 printf '{"name": "x", "dependencies": {"left-pad": "1"}}\n' >"$repo/package.json"
@@ -236,6 +274,13 @@ expect_reason "$repo" "package.json: a dependency or toolchain manifest is chang
 repo="$(setup_repo manifest-unnamed "$lenient")"
 printf '{"name": "y"}\n' >"$repo/package.json"
 expect_level "$repo" low "a manifest the project does not name is an ordinary path"
+repo="$(setup_repo manifest-added "$(printf 'default: low\nmanifests: package.json package-lock.json')")"
+printf '{"dependencies": {"left-pad": "1"}}\n' >"$repo/package-lock.json"
+expect_level "$repo" low "a manifest the feature adds does not escalate by itself"
+repo="$(setup_repo manifest-removed "$(printf 'default: low\nmanifests: package.json')")"
+git -C "$repo" rm -q package.json
+expect_level "$repo" high "a removed manifest escalates"
+expect_reason "$repo" "package.json: a dependency or toolchain manifest is removed" "the removed manifest was not given as the reason"
 
 # The rules are read from the base. A feature that adds its own paths to the
 # low class is classified by the base's file, and is high because it changed
@@ -319,6 +364,31 @@ git -C "$repo" branch -q -m main trunk
 expect_level "$repo" high "a feature without a known base is high"
 expect_reason "$repo" "could not be determined" "the unknown base was not given as the reason"
 expect_level "$repo" high "an unknown base branch is high" no-such-base
+
+# When Git cannot enumerate the changes (a bad object, an unreadable tree),
+# the level is high, and never the default for a feature that changed
+# nothing: a git on PATH whose every 'diff' fails stands in for it.
+mkdir -p "$tmp/broken-git"
+cat >"$tmp/broken-git/git" <<GIT
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [[ "\$arg" != diff ]] || { echo "fatal: bad object (injected)" >&2; exit 128; }
+done
+exec "$(command -v git)" "\$@"
+GIT
+chmod +x "$tmp/broken-git/git"
+check_path_prefix="$tmp/broken-git"
+repo="$(setup_repo enumeration-fails template)"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" high "a feature whose changes cannot be enumerated is high, not the default medium"
+expect_reason "$repo" "the changes of the feature could not be enumerated (git diff failed)" \
+  "the failed enumeration was not given as the reason"
+if grep -Fq "no path is changed" "$repo.out"; then fail "a failed diff passed as a feature that changed nothing"; fi
+repo="$(setup_repo enumeration-fails-low "$(printf 'default: low\nlow: docs')")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" high "a feature whose changes cannot be enumerated is high, not the low of its policy"
+expect_reason "$repo" "could not be enumerated" "the failed enumeration was not given as the reason"
+check_path_prefix=""
 
 # Refusals.
 repo="$(setup_repo refusals template)"
