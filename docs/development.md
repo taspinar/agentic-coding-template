@@ -1863,6 +1863,18 @@ project's own, add `:(exclude)<path>` to `paths:` in the project's
 | The template changed only the executable bit | Applies it to the project's file |
 | The file, or a directory above it, is a symbolic link in the project | Reports it and writes nothing |
 
+Whether the template started to list a file is decided against the files of
+the version the project has. When that version predates the `paths:` list,
+the script says so and takes the list in the project's
+`.agents/template.conf` as the files of that version: a file the template
+lists now and the project's list does not is newly owned, with the outcomes
+in the table. When the project's list is empty too, the files of that
+version are not known and nothing counts as newly owned. When neither the
+template now nor the project's `.agents/template.conf` lists files under
+`paths:`, the script stops with an error before it changes anything. A list
+that matches no file is an empty set: every file the template lists now is
+newly owned.
+
 The script records the template commit the project now has in
 `.agents/template.conf` and prints the next steps: resolve conflicts, run
 `./scripts/verify.sh --all`, commit, and open a pull request. It never commits

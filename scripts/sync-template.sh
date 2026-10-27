@@ -235,12 +235,20 @@ merge() {
 
 # The files owned in the base version and in the target version, to tell a
 # file the template started to list under 'paths:' from one it always owned.
-# The project's exclusions apply to both.
+# The project's exclusions apply to both. A base version that predates the
+# list falls back to the project's own, which the project got from that
+# version or wrote itself.
 template_git show "$base:$config_relative" >"$work/base.conf" 2>/dev/null || : >"$work/base.conf"
 base_paths_value="$(config_value "$work/base.conf" paths)"
+if [[ -z "$base_paths_value" ]]; then
+  base_paths_value="$(config_value "$config" paths)"
+  [[ -z "$base_paths_value" ]] ||
+    echo "Template commit ${base:0:7} does not list its files under 'paths:'; using the list in $config_relative as its files."
+fi
 : >"$work/owned.base"
-# Whether the base version lists its files at all: a valid list that matches
-# no file is an empty ownership set, not missing information.
+# Whether the base ownership is known at all; every guard below tests this
+# flag. A valid list that matches no file is an empty ownership set, not
+# missing information.
 base_ownership_known=0
 if [[ -n "$base_paths_value" ]]; then
   base_ownership_known=1
