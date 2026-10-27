@@ -346,6 +346,15 @@ run_review "$repo" 7 || fail "the review after the claims failed"
 [[ "$(verification_runs "$repo")" -eq 1 ]] || fail "the verification ran again although only the claims changed"
 if grep -Fq "+++ b/.agents/completion/7.json" "$repo.log.stdin"; then fail "the completion record was shown as a file of the feature"; fi
 grep -Fq '"status": "complete"' "$repo.log.stdin" || fail "the completion record was not given to the reviewer as a section"
+# The content tree the reviewer is given is the content without the claims:
+# another value than the reviewed tree of the artifact, which covers them.
+review="$repo/.agents/reviews/feature-7-marker-review-02.json"
+content_tree="$(
+  source "$source_root/scripts/lib/fingerprint.sh"
+  fingerprint_worktree "$repo" "$tmp"
+)"
+grep -Fq "Content tree of the reviewed content: $content_tree" "$repo.log.stdin" || fail "the reviewer was not given the content tree of the content with claims"
+[[ "$content_tree" != "$(jq -r '.reviewed_tree' "$review")" ]] || fail "the content tree given to the reviewer is the reviewed tree, which covers the claims"
 
 repo="$(setup_repo verification-fails)"
 printf 'broken: false\n' >"$repo/scripts/verify.conf"
@@ -573,6 +582,15 @@ artifact="$repo/.agents/reviews/feature-7-marker-review-01.json"
   fail "the stored decision lacks the reasons: the added ADR and the classification"
 grep -Fq "Merge approval: required from the owner" "$repo.out" || fail "the needed approval was not shown after the review"
 grep -Fq "## Merge approval gate" "$repo.log.stdin" || fail "the reviewer was not told about the gate"
+# The reviewer sees the content tree of the reviewed content, the value
+# finish-feature.sh prints and an approval request names, and is told that
+# it is not the reviewed tree of the artifact.
+content_tree="$(
+  source "$source_root/scripts/lib/fingerprint.sh"
+  fingerprint_worktree "$repo" "$tmp"
+)"
+grep -Fq "Content tree of the reviewed content: $content_tree" "$repo.log.stdin" || fail "the reviewer was not given the content tree"
+grep -Fq "never report a difference as a" "$repo.log.stdin" || fail "the reviewer was not told how to treat an approval request"
 grep -Fq -- "- protected: docs/decisions/009-storage.md" "$repo.log.stdin" || fail "the reviewer was not told about the added ADR"
 grep -Fq -- "- sensitive: feature.txt" "$repo.log.stdin" || fail "the reviewer was not told about the sensitive path"
 

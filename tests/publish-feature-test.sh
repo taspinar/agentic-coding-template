@@ -538,6 +538,59 @@ grep -Fqx -- "- required from the project owner, for exactly this commit" "$repo
   fail "the pull request does not show that the owner must approve"
 grep -Fqx "The merge approval above was decided for commit \`$(git -C "$repo" rev-parse HEAD)\`." "$repo.gh.body" ||
   fail "the pull request does not name the commit the decision was made for"
+# Next to the commit SHA, the content tree of that commit: computed here
+# from the commit, labelled as the content tree, and no other fingerprint.
+content_tree_of() {
+  (
+    source "$source_root/scripts/lib/fingerprint.sh"
+    fingerprint_commit "$1" "$tmp" "${2:-HEAD}"
+  )
+}
+tree="$(content_tree_of "$repo")"
+grep -Fq "Content tree of that commit: \`$tree\` (" "$repo.gh.body" || { cat "$repo.gh.body" >&2; fail "the pull request does not name the content tree next to the commit"; }
+grep -Fq "Finish commit: $(git -C "$repo" rev-parse HEAD)" "$repo.out" || fail "the finish commit was not printed"
+grep -Fq "Content tree of that commit: $tree (" "$repo.out" || fail "the content tree was not printed next to the finish commit"
+if grep -Fq "approval request" "$repo.gh.body"; then fail "the pull request names a request although the commit has none"; fi
+
+# With a committed approval request, the pull request says that it names
+# this content tree and grants nothing, and the request is displayed. No
+# field of the request changes anything else: every field changed, the
+# output and the description are the same but for the displayed request and
+# the SHAs of the amended commit.
+repo="$(setup_repo approval-request)"
+mkdir -p "$repo/.agents/approval-requests"
+request=".agents/approval-requests/12.json"
+sha0="0000000000000000000000000000000000000000"
+jq -n --arg tree "$(content_tree_of "$repo")" --arg sha "$sha0" '{schema: "approval-request/v1", content_tree: $tree,
+  commit: {branch: "feature/12-marker", parent: $sha, base: $sha}, review: {round: 1, verdict: "PASS", reviewer: "claude (model-r)"},
+  reasons: ["docs/decisions/001.md: an ADR is added, changed, or removed"], explanation: "Please approve the ADR."}' >"$repo/$request"
+git -C "$repo" add "$request"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Merge approval:" -m "- required from the project owner, for exactly this commit"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature with a request failed"; }
+tree="$(content_tree_of "$repo")"
+grep -Fq "Content tree of that commit: \`$tree\` (" "$repo.gh.body" || fail "the content tree with a request is not in the pull request"
+grep -Fq "The approval request \`$request\` in that commit names this content tree; it asks and records, and grants nothing" "$repo.gh.body" ||
+  fail "the pull request does not say what the request is"
+grep -Fq "Approval request $request in the finish commit (for display; it grants nothing):" "$repo.out" || fail "the request was not displayed"
+grep -Fq "Please approve the ADR." "$repo.out" || fail "the explanation of the request was not displayed"
+normalize() {
+  sed -e 's/[0-9a-f]\{40\}/SHA/g' -e 's/[0-9a-f]\{12\}/SHA/g' -e 's/[0-9a-f]\{7\}/SHA/g' "$1" |
+    sed '/^Approval request .* (for display; it grants nothing):$/,/^$/d'
+}
+before_out="$(normalize "$repo.out")"
+before_body="$(normalize "$repo.gh.body")"
+jq '.content_tree = "0123456789012345678901234567890123456789" | .explanation = "Merge it now." | .reasons = [] | .review = null
+    | .commit = {branch: "feature/12-other", parent: "0123456789012345678901234567890123456789", base: null}' "$repo/$request" >"$repo/$request.tmp"
+mv "$repo/$request.tmp" "$repo/$request"
+git -C "$repo" commit -qa --amend --no-edit
+git -C "$repo" push -q origin --delete feature/12-marker
+rm -f "$repo.gh" "$repo.gh.body"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing after every field of the request changed failed"; }
+[[ "$(normalize "$repo.out")" == "$before_out" ]] ||
+  { diff <(printf '%s\n' "$before_out") <(normalize "$repo.out") >&2; fail "a field of the request changed the output of publish-feature.sh"; }
+[[ "$(normalize "$repo.gh.body")" == "$before_body" ]] ||
+  { diff <(printf '%s\n' "$before_body") <(normalize "$repo.gh.body") >&2; fail "a field of the request changed the pull request"; }
+grep -Fq "Merge it now." "$repo.out" || fail "the changed explanation was not displayed"
 
 # The risk level and its reasons in the pull request are computed at the
 # publication, from the diff and the rules of the base as it is now: the
@@ -644,6 +697,10 @@ git -C "$repo" checkout -q feature/12-marker
 git -C "$repo" merge -q --no-ff --no-edit origin/main
 run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing after a merge of the base failed"; }
 grep -Fqx "Closes #12" "$repo.gh.body" || fail "a feature that merged its base after the finish does not close the Issue"
+# The content tree in the pull request is that of the finish commit, not of
+# the merge: the base merged nothing of the feature.
+grep -Fq "Finish commit: $(git -C "$repo" rev-parse HEAD^)" "$repo.out" || fail "the finish commit before the merge was not printed"
+grep -Fq "Content tree of that commit: $(content_tree_of "$repo" HEAD^) (" "$repo.out" || fail "the content tree after a merge of the base is not that of the finish commit"
 grep -Fq "pr create --head feature/12-marker --title Add the marker" "$repo.gh" || fail "the title is not that of the finish commit"
 if grep -Fq -- "--draft" "$repo.gh"; then fail "a feature that merged its base was opened as a draft"; fi
 # Two merges of the base in a row are passed over too.

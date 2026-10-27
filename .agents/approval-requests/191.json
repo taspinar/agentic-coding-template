@@ -1,0 +1,26 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "a36475c3bd446a47e70fc59e4806453581561c03",
+  "commit": {
+    "branch": "feature/191-separate-the-content-fingerprint",
+    "parent": "6b00f643726dd241ba115e87919b65d880acf453",
+    "base": "6b00f643726dd241ba115e87919b65d880acf453"
+  },
+  "review": {
+    "round": 6,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".agents/prompts/reviewer.md: the file defines or carries out the workflow and its gate",
+    ".agents/schemas/approval-request.schema.json: the file defines or carries out the workflow and its gate",
+    "scripts/check-guardrails.sh: the file defines or carries out the workflow and its gate",
+    "scripts/finish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/lib/fingerprint.sh: the file defines or carries out the workflow and its gate",
+    "scripts/lib/guardrails.sh: the file defines or carries out the workflow and its gate",
+    "scripts/publish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The change adds shared content-tree and approval-request behavior across the finish, publish, review, and guardrail workflows, including protected scripts and a schema. It therefore affects infrastructure other features rely on. "
+  ],
+  "explanation": "Issue #191: Separate the content fingerprint, approval requests and the approval of a commit (step C of #160). The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

@@ -217,6 +217,17 @@ if [[ -n "$budget_results" ]]; then
   fi
 fi
 
+tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/finish-feature.XXXXXX")"
+trap 'rm -rf "$tmp_work"' EXIT
+# The content tree: the Git tree hash of the content without the metadata
+# the workflow writes about it (lib/fingerprint.sh). It is the value the
+# verification was recorded for and the review is current for, what an
+# approval request names, and what check-guardrails.sh recomputes from the
+# commit. It is computed before the commit and checked against the commit
+# after it.
+content_tree="$(fingerprint_worktree "$root" "$tmp_work")" ||
+  fail "could not compute the content tree of the working tree."
+
 # 2. The latest review is current and resolved, unless explicitly skipped.
 slug="${branch//\//-}"
 shopt -s nullglob
@@ -264,8 +275,6 @@ else
   [[ -z "$feature_merge_base" || "$(jq -r '.merge_base' "$latest")" == "$feature_merge_base" ]] ||
     fail "the latest review ($latest_relative) compared the feature against $(jq -r '.merge_base' "$latest" | cut -c1-12), but the feature left its base at $(cut -c1-12 <<<"$feature_merge_base") now: the base of the branch changed since the review. Run ./scripts/review-feature.sh $issue again."
 
-  tmp_work="$(mktemp -d "${TMPDIR:-/tmp}/finish-feature.XXXXXX")"
-  trap 'rm -rf "$tmp_work"' EXIT
   current=0
   review_is_current "$root" "$tmp_work" "$latest" || current=$?
   case "$current" in
@@ -373,18 +382,43 @@ if [[ -n "$owner_pending" ]]; then
   fi
   approval_lines+=$'\n'"$(printf '%s\n' "$owner_pending" | sed 's/^/the completion record leaves a criterion of the owner_approval gate pending: /')"
 fi
+# The approval request (lib/guardrails.sh): when the owner must approve,
+# what they are asked to approve and why is written to
+# .agents/approval-requests/<issue>.json and committed with the feature. It
+# names the content tree; it is not part of it, so its explanation may be
+# edited later without changing the evidence. It grants nothing: the
+# approval is the owner's review of the pull request on GitHub (the
+# template's Issue #99 is about the identity that binds it).
+# A request of an earlier finish is rewritten, or removed when the gate no
+# longer requires the owner.
+request_file="$(guardrails_request_file "$root" "$issue")"
+request_relative="${request_file#"$root"/}"
 if [[ "$(printf '%s\n' "$approval_lines" | sed -n 1p)" == "owner" ]]; then
   merge_approval="- required from the project owner, for exactly this commit"
   echo "This feature needs the owner's approval before it is merged:"
   printf '%s\n' "$approval_lines" | sed '1d; s/^/  - /'
   echo "The pull request can be opened; no script or agent may merge it."
   echo
+  ! git -C "$root" check-ignore -q "$request_relative" ||
+    fail "Git ignores $request_relative, so the approval request would not be committed with the feature. Remove the rule from .gitignore. Nothing was committed."
+  guardrails_request_write "$root" "$issue" "$content_tree" "$branch" "$(git -C "$root" rev-parse HEAD)" \
+    "${feature_merge_base:-null}" "$latest" "$(printf '%s\n' "$approval_lines" | sed 1d)" \
+    "Issue #$issue: $summary. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing." ||
+    fail "could not write the approval request $request_relative. Nothing was committed."
+  guardrails_request_display "$root" "$request_file"
+  echo
 else
   merge_approval="- not required"
+  if [[ -e "$request_file" ]]; then
+    rm -f "$request_file"
+    echo "The approval request $request_relative of an earlier finish is removed: the owner's approval is not required now."
+    echo
+  fi
 fi
 merge_approval+=$'\n'"$(printf '%s\n' "$approval_lines" | sed '1d; s/^/- /')"
-if [[ -n "$latest" ]]; then
-  merge_approval+=$'\n'"- decided for the reviewed content $(jq -r '.reviewed_tree' "$latest")"
+merge_approval+=$'\n'"- content tree $content_tree: the content of this commit without the workflow's metadata under .agents/ (scripts/lib/fingerprint.sh); what the verification and the review are recorded for"
+if [[ -e "$request_file" ]]; then
+  merge_approval+=$'\n'"- approval request: $request_relative (asks and records; grants nothing)"
 fi
 
 # The effective risk level: the computed one, raised by the implementer's
@@ -460,8 +494,21 @@ if [[ "$attribution" == "disabled" ]]; then
   fi
 fi
 
+# The commit holds exactly the content whose tree was printed and, when the
+# owner must approve, written into the request: the same value that
+# check-guardrails.sh recomputes from the commit. A hook that changed a file
+# during the commit would break that, so such a commit is undone.
+committed_tree="$(fingerprint_commit "$root" "$tmp_work" HEAD)" || committed_tree=""
+if [[ "$committed_tree" != "$content_tree" ]]; then
+  git -C "$root" reset --soft --quiet HEAD^
+  echo "Error: the content of the commit (content tree ${committed_tree:-unknown}) is not the content that was verified and reviewed (content tree $content_tree): a file changed during the commit, for example by a commit hook." >&2
+  echo "The commit was undone; the changes remain staged. Look at what changed, verify and review it, and run finish-feature.sh again." >&2
+  exit 1
+fi
+
 echo
-echo "Committed $(git -C "$root" rev-parse --short HEAD) on $branch."
+echo "Committed $(git -C "$root" rev-parse HEAD) on $branch."
+echo "Content tree of this commit: $content_tree (its content without the workflow's metadata under .agents/; what the verification, the review, and the approval request refer to; recomputed by check-guardrails.sh)."
 echo
 if [[ "$gate_status" == "complete" ]]; then
   echo "Next: push the branch and open the pull request; follow its checks there:"

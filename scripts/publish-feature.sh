@@ -100,29 +100,33 @@ done
 # date with its base merges the base into the branch; such merge commits
 # change nothing of the feature itself and come after the finish commit, so
 # the statement, the description, and the title are taken from the commit
-# before them. Any other commit after the finish needs a new finish.
-# in_base <commit>: whether the commit is in the base, local or on the remote,
-# whichever is ahead.
-in_base() {
-  local candidate
-
-  for candidate in "origin/$feature_base" "$feature_base"; do
-    git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null || continue
-    git -C "$root" merge-base --is-ancestor "$1" "$candidate" 2>/dev/null && return 0
-  done
-  return 1
-}
-# A merge of the base has exactly two parents: the feature, and a commit of
-# the base. A merge with more parents brings in something else too.
-finish_commit="$(git -C "$root" rev-parse HEAD)"
-while second_parent="$(git -C "$root" rev-parse --verify --quiet "$finish_commit^2" 2>/dev/null)" &&
-  ! git -C "$root" rev-parse --verify --quiet "$finish_commit^3" >/dev/null 2>&1 &&
-  in_base "$second_parent"; do
-  finish_commit="$(git -C "$root" rev-parse "$finish_commit^1")"
-done
+# before them (guardrails_finish_commit, which check-guardrails.sh uses the
+# same way). Any other commit after the finish needs a new finish.
+finish_commit="$(guardrails_finish_commit "$root" HEAD "origin/$feature_base" "$feature_base")"
 if [[ "$finish_commit" != "$(git -C "$root" rev-parse HEAD)" ]]; then
   echo "The branch merged its base after the feature was finished; the pull request is described by the finish commit $(git -C "$root" rev-parse --short "$finish_commit")."
 fi
+
+# The content tree of the finish commit (lib/fingerprint.sh): its content
+# without the workflow's metadata, the value finish-feature.sh printed, what
+# an approval request names, and what check-guardrails.sh recomputes. It is
+# computed here again from the commit, never copied from the message.
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/publish-feature.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+content_tree="$(fingerprint_commit "$root" "$scratch" "$finish_commit")" ||
+  fail "could not compute the content tree of the finish commit $finish_commit."
+echo "Finish commit: $finish_commit"
+echo "Content tree of that commit: $content_tree (its content without the workflow's metadata under .agents/; what the verification, the review, and the approval request refer to)."
+# The approval request the finish commit carries, if any: shown, and nothing
+# else. It asks and records; the approval is the owner's review of the pull
+# request on GitHub.
+request_relative="${GUARDRAILS_APPROVAL_REQUESTS}/$issue.json"
+request_committed=0
+if git -C "$root" show "$finish_commit:$request_relative" >"$scratch/request.json" 2>/dev/null; then
+  request_committed=1
+  guardrails_request_display "$root" "$scratch/request.json" | sed "1s|.*|Approval request $request_relative in the finish commit (for display; it grants nothing):|"
+fi
+echo
 
 # Whether this pull request may close the Issue. finish-feature.sh recorded
 # the outcome of the completion gate in the commit; the gate is asked again
@@ -241,7 +245,7 @@ risk_recomputed() {
 # steps, also for a pull request that is already open: a fix round can change
 # both.
 body="$(mktemp "${TMPDIR:-/tmp}/publish-feature-body.XXXXXX")"
-trap 'rm -f "$body"' EXIT
+trap 'rm -f "$body"; rm -rf "$scratch"' EXIT
 # closing_allowed: copies standard input; in a description that may not close
 # the Issue, a closing keyword for it becomes a reference.
 closing_allowed() {
@@ -262,6 +266,10 @@ closing_allowed() {
   # later commit on the branch needs a new decision by finish-feature.sh.
   if git -C "$root" log -1 --format=%b "$finish_commit" | grep -Fqx "Merge approval:"; then
     echo "The merge approval above was decided for commit \`$finish_commit\`."
+    echo "Content tree of that commit: \`$content_tree\` (its content without the workflow's metadata under \`.agents/\`, by \`scripts/lib/fingerprint.sh\`; what the verification and the review are recorded for, and what \`check-guardrails.sh\` recomputes)."
+    if [[ "$request_committed" -eq 1 ]]; then
+      echo "The approval request \`$request_relative\` in that commit names this content tree; it asks and records, and grants nothing: the approval is your review of this pull request, bound to the commit by GitHub."
+    fi
     echo
   fi
   if [[ "$closes" -eq 1 ]]; then

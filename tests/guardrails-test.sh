@@ -159,7 +159,7 @@ for file in scripts/check-guardrails.sh scripts/lib/guardrails.sh scripts/finish
   scripts/lib/review-run.sh scripts/lib/review-data.sh scripts/lib/agent.sh scripts/review-feature.sh \
   scripts/publish-feature.sh scripts/run-feature.sh scripts/lib/fingerprint.sh \
   scripts/check-risk.sh scripts/lib/risk.sh \
-  .agents/prompts/reviewer.md .agents/schemas/review.schema.json; do
+  .agents/prompts/reviewer.md .agents/schemas/review.schema.json .agents/schemas/approval-request.schema.json; do
   repo="$(setup_repo "gate-$(basename "$file")")"
   printf '\n# changed\n' >>"$repo/$file"
   expect_level "$repo" protected "a feature changes $file"
@@ -267,5 +267,179 @@ check "$repo" --commits main no-such-commit
 [[ "$status" -eq 2 ]] || fail "an unknown commit was accepted"
 check "$repo" no-such-base
 [[ "$status" -eq 2 ]] || fail "an unknown base branch was accepted"
+
+# The approval requests. finish-feature.sh writes .agents/approval-requests/
+# <issue>.json when the owner must approve; the gate checks every request the
+# diff adds or changes: its name, its schema, and that its content_tree is the
+# content tree the gate recomputes itself, with the exclusion list of the
+# base. The request changes nothing else: it can only be refused.
+source "$source_root/scripts/lib/fingerprint.sh"
+source "$source_root/scripts/lib/guardrails.sh"
+scratch="$tmp/scratch"
+mkdir -p "$scratch"
+
+# write_request <repo> <content-tree> [<jq-filter>]
+write_request() {
+  local base
+
+  base="$(git -C "$1" rev-parse main)"
+  guardrails_request_write "$1" 5 "$2" feature/5-thing "$(git -C "$1" rev-parse HEAD)" "$base" "" \
+    "docs/decisions/002-other.md: an ADR is added, changed, or removed" "Please approve the new ADR."
+  if [[ -n "${3:-}" ]]; then
+    jq "$3" "$1/.agents/approval-requests/5.json" >"$1/.agents/approval-requests/5.json.tmp" &&
+      mv "$1/.agents/approval-requests/5.json.tmp" "$1/.agents/approval-requests/5.json"
+  fi
+}
+
+# content_tree_of <out-file>: the value the gate printed.
+content_tree_of() {
+  sed -n 's/^content tree: \([0-9a-f]*\) .*/\1/p' "$1"
+}
+
+# commit_feature <repo> <message>: commits the working tree of the feature.
+commit_feature() {
+  git -C "$1" add -A
+  git -C "$1" commit -qm "$2"
+}
+
+# A request that names the content tree of the working tree is accepted,
+# before and after the commit, and the gate prints the value it recomputed.
+repo="$(setup_repo request-accepted)"
+printf '# ADR 002: Other\n\nStatus: Proposed\n' >"$repo/docs/decisions/002-other.md"
+worktree_tree="$(fingerprint_worktree "$repo" "$scratch")"
+write_request "$repo" "$worktree_tree"
+[[ -z "$(guardrails_request_errors "$repo/.agents/approval-requests/5.json" "$source_root/.agents/schemas/approval-request.schema.json")" ]] ||
+  fail "the request of guardrails_request_write does not follow its schema"
+check "$repo"
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "a valid request in the working tree was refused ($status)"; }
+[[ "$(sed -n 1p "$repo.out")" == "level: protected" ]] || fail "the level with a request is not that of the diff"
+[[ "$(content_tree_of "$repo.out")" == "$worktree_tree" ]] || fail "the gate did not print the content tree of the working tree"
+grep -Fq "request: .agents/approval-requests/5.json names the content tree recomputed here" "$repo.out" ||
+  fail "the accepted request was not reported"
+commit_feature "$repo" "Finish the feature"
+committed_tree="$(fingerprint_commit "$repo" "$scratch" HEAD)"
+[[ "$committed_tree" == "$worktree_tree" ]] || fail "the content tree of the commit is not the one of the working tree"
+check "$repo" --commits main HEAD
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "a valid committed request was refused ($status)"; }
+[[ "$(content_tree_of "$repo.out")" == "$committed_tree" ]] || fail "the gate did not print the content tree of the commit"
+grep -Fq "of commit $(git -C "$repo" rev-parse HEAD)" "$repo.out" || fail "the printed content tree does not name the commit"
+check "$repo" --commits main HEAD --fail-on-protected
+[[ "$status" -eq 3 ]] || fail "a valid request changed the status of a protected diff ($status)"
+accepted_output="$(sed 's/of commit [0-9a-f]*/of commit X/' "$repo.out")"
+check "$repo" --fail-on-protected
+[[ "$status" -eq 3 ]] || fail "a valid request changed the status of a protected working tree ($status)"
+
+# No field but content_tree has any effect: every other field changed, the
+# gate prints the same and exits the same.
+jq '.explanation = "Something else entirely." | .reasons = ["another reason"] | .commit.branch = "feature/5-other"
+    | .commit.parent = "0000000000000000000000000000000000000000" | .commit.base = null
+    | .review = {round: 9, verdict: "PASS", reviewer: "nobody (none)"}' \
+  "$repo/.agents/approval-requests/5.json" >"$repo/.agents/approval-requests/5.json.tmp"
+mv "$repo/.agents/approval-requests/5.json.tmp" "$repo/.agents/approval-requests/5.json"
+commit_feature "$repo" "Edit the request"
+check "$repo" --commits main HEAD --fail-on-protected
+[[ "$status" -eq 3 ]] || { cat "$repo.out" >&2; fail "an edited request changed the status ($status)"; }
+[[ "$(sed 's/of commit [0-9a-f]*/of commit X/' "$repo.out")" == "$accepted_output" ]] ||
+  { diff <(printf '%s\n' "$accepted_output") "$repo.out" >&2; fail "an edited request changed the output of the gate"; }
+
+# A request whose content_tree is not the recomputed value is refused, with
+# status 4 whatever the flags, and the level of the diff is unchanged.
+jq '.content_tree = "0123456789012345678901234567890123456789"' "$repo/.agents/approval-requests/5.json" >"$repo/.agents/approval-requests/5.json.tmp"
+mv "$repo/.agents/approval-requests/5.json.tmp" "$repo/.agents/approval-requests/5.json"
+check "$repo"
+[[ "$status" -eq 4 ]] || { cat "$repo.out" >&2; fail "a request with another content tree was not refused ($status)"; }
+[[ "$(sed -n 1p "$repo.out")" == "level: protected" ]] || fail "the refused request changed the level"
+grep -Fq "refused: .agents/approval-requests/5.json (its content_tree 0123456789012345678901234567890123456789 is not the content tree recomputed here)" "$repo.out" ||
+  fail "the mismatch was not reported with both values' roles"
+commit_feature "$repo" "Name another tree"
+check "$repo" --commits main HEAD
+[[ "$status" -eq 4 ]] || fail "a committed request with another content tree was not refused ($status)"
+# A removed request is nothing to check.
+git -C "$repo" rm -q .agents/approval-requests/5.json
+check "$repo"
+[[ "$status" -eq 0 ]] || fail "a removed request was checked ($status)"
+if grep -Fq "content tree:" "$repo.out"; then fail "the content tree was printed without a request"; fi
+
+# A field the schema does not name, a value outside an enum, a wrong type,
+# and a file that is not <issue>.json are refused; an old request of the
+# same tree stays in the base and is not checked again.
+repo="$(setup_repo request-schema)"
+printf '# ADR 002: Other\n\nStatus: Proposed\n' >"$repo/docs/decisions/002-other.md"
+write_request "$repo" "$(fingerprint_worktree "$repo" "$scratch")" '.granted = true'
+check "$repo"
+[[ "$status" -eq 4 ]] || fail "a request with an extra field was not refused ($status)"
+grep -Fq "request.granted is not a field of the schema" "$repo.out" || fail "the extra field was not named"
+write_request "$repo" "$(fingerprint_worktree "$repo" "$scratch")" '.schema = "approval-request/v0"'
+check "$repo"
+[[ "$status" -eq 4 ]] || fail "a request with a schema outside the enum was not refused ($status)"
+grep -Fq "request.schema must be one of approval-request/v1" "$repo.out" || fail "the value outside the enum was not named"
+write_request "$repo" "$(fingerprint_worktree "$repo" "$scratch")" '.reasons = "one"'
+check "$repo"
+[[ "$status" -eq 4 ]] || fail "a request with a wrong type was not refused ($status)"
+grep -Fq "request.reasons must be array, not string" "$repo.out" || fail "the wrong type was not named"
+write_request "$repo" "$(fingerprint_worktree "$repo" "$scratch")"
+printf 'not a request\n' >"$repo/.agents/approval-requests/notes.md"
+check "$repo"
+[[ "$status" -eq 4 ]] || fail "a file that is not <issue>.json was accepted ($status)"
+grep -Fq "refused: .agents/approval-requests/notes.md (only <issue>.json may be under .agents/approval-requests/)" "$repo.out" ||
+  fail "the stray file was not refused by name"
+grep -Fq "request: .agents/approval-requests/5.json names" "$repo.out" || fail "the valid request next to the stray file was not accepted"
+rm "$repo/.agents/approval-requests/notes.md"
+printf '{"schema": "approval-request/v1"} {}\n' >"$repo/.agents/approval-requests/5.json"
+check "$repo"
+[[ "$status" -eq 4 ]] || fail "a file with two JSON values was accepted ($status)"
+grep -Fq "not exactly one JSON value" "$repo.out" || fail "the malformed request was not explained"
+
+# The exclusion list is read from the base: a feature that extends the list
+# in its own fingerprint.sh and names the tree computed with it is refused,
+# and the changed library is reported as protected. The tree computed with
+# the base's list is accepted.
+repo="$(setup_repo request-exclusion)"
+printf '# ADR 002: Other\n\nStatus: Proposed\n' >"$repo/docs/decisions/002-other.md"
+mkdir -p "$repo/.agents/extra"
+printf 'hidden\n' >"$repo/.agents/extra/payload"
+sed -i 's|^FINGERPRINT_EXCLUDES=(\(.*\))$|FINGERPRINT_EXCLUDES=(\1 ".agents/extra")|' "$repo/scripts/lib/fingerprint.sh"
+extended_tree="$(
+  source "$repo/scripts/lib/fingerprint.sh"
+  fingerprint_worktree "$repo" "$scratch"
+)"
+base_tree="$(fingerprint_worktree "$repo" "$scratch")"
+[[ "$extended_tree" != "$base_tree" ]] || fail "the extended exclusion list did not change the fingerprint of the feature"
+write_request "$repo" "$extended_tree"
+check "$repo"
+[[ "$status" -eq 4 ]] || { cat "$repo.out" >&2; fail "a request computed with an exclusion the feature added was accepted ($status)"; }
+[[ "$(content_tree_of "$repo.out")" == "$base_tree" ]] || fail "the gate did not compute the content tree with the list of the base"
+grep -Fq "protected: scripts/lib/fingerprint.sh" "$repo.out" || fail "the changed exclusion list was not reported as protected"
+write_request "$repo" "$base_tree"
+check "$repo"
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "a request computed with the list of the base was refused ($status)"; }
+commit_feature "$repo" "Try an exclusion"
+check "$repo" --commits main HEAD
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "the committed request with the base's tree was refused ($status)"; }
+[[ "$(content_tree_of "$repo.out")" == "$base_tree" ]] || fail "the gate did not compute the content tree of the commit with the list of the base"
+
+# A merge of the base after the finish is passed over: the request names
+# the content tree of the finish commit, which the gate recomputes from that
+# commit and says so. Any other commit after the finish is the content.
+repo="$(setup_repo request-base-merged)"
+printf '# ADR 002: Other\n\nStatus: Proposed\n' >"$repo/docs/decisions/002-other.md"
+finish_tree="$(fingerprint_worktree "$repo" "$scratch")"
+write_request "$repo" "$finish_tree"
+commit_feature "$repo" "Finish the feature"
+finish="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" switch -q main
+printf 'meanwhile\n' >"$repo/src/other.py"
+git -C "$repo" add src/other.py
+git -C "$repo" commit -qm "Meanwhile on main"
+git -C "$repo" switch -q feature/5-thing
+git -C "$repo" merge -q --no-ff --no-edit main
+check "$repo" --commits main HEAD
+[[ "$status" -eq 0 ]] || { cat "$repo.out" >&2; fail "a request was refused after a merge of the base ($status)"; }
+grep -Fq "of the finish commit $finish, before the merges of the base" "$repo.out" || fail "the gate did not say that it checked the finish commit"
+[[ "$(content_tree_of "$repo.out")" == "$finish_tree" ]] || fail "the content tree after a merge of the base is not that of the finish commit"
+printf 'later\n' >>"$repo/src/code.py"
+commit_feature "$repo" "A change after the finish"
+check "$repo" --commits main HEAD
+[[ "$status" -eq 4 ]] || fail "a commit after the finish kept the request valid ($status)"
 
 echo "guardrails tests passed"

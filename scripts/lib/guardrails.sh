@@ -222,3 +222,179 @@ guardrails_decision() {
     echo "the independent review classified the impact on the architecture as $level, and no protected path is changed"
   fi
 }
+
+# The approval requests: what the owner is asked to approve, and why.
+# finish-feature.sh writes .agents/approval-requests/<issue>.json when the
+# gate requires the owner, and the feature commits it. The file holds
+# references and an explanation only, constrained by its schema; it is left
+# out of the content fingerprint (lib/fingerprint.sh), so editing its
+# explanation changes nothing of the verification or the review. It grants
+# nothing and changes nothing: a script reads it to display it, and
+# check-guardrails.sh reads it to refuse one whose content_tree is not the
+# content tree it recomputes from the commit. The approval itself is the
+# owner's review of the pull request on GitHub (the template's Issue #99 is
+# about the identity that binds it).
+GUARDRAILS_APPROVAL_REQUESTS="${FINGERPRINT_APPROVAL_REQUESTS:-.agents/approval-requests}"
+GUARDRAILS_REQUEST_SCHEMA=".agents/schemas/approval-request.schema.json"
+
+# guardrails_request_file <root> <issue>
+guardrails_request_file() {
+  printf '%s/%s/%s.json\n' "$1" "$GUARDRAILS_APPROVAL_REQUESTS" "$2"
+}
+
+# guardrails_request_name_errors <path>
+# Prints why a repository-relative path is not where an approval request may
+# be: anything under the directory that is not '<issue>.json'.
+guardrails_request_name_errors() {
+  [[ "$1" =~ ^"$GUARDRAILS_APPROVAL_REQUESTS"/[1-9][0-9]*\.json$ ]] ||
+    echo "only <issue>.json may be under $GUARDRAILS_APPROVAL_REQUESTS/"
+}
+
+# guardrails_request_errors <request-json> <schema-json>
+# Prints one line per way the request does not follow its schema: a field
+# the schema does not name, a missing field, a wrong type, or a value that
+# does not match. Prints nothing for a valid request. The schema is read as
+# data: type, enum, pattern, minLength, minimum, required, properties,
+# additionalProperties, and items.
+guardrails_request_errors() {
+  local request="$1"
+  local schema="$2"
+
+  [[ -f "$schema" ]] || {
+    echo "the schema $schema is missing"
+    return 0
+  }
+  jq -e . "$request" >/dev/null 2>&1 && [[ "$(jq -s 'length' "$request")" == "1" ]] || {
+    echo "the request is not exactly one JSON value"
+    return 0
+  }
+  jq -r --slurpfile schemas "$schema" '
+    def jtype: if type == "number" and . == floor then "integer" else type end;
+    def type_ok($t):
+      if $t == null then true
+      else ([$t] | flatten) as $types
+        | (jtype) as $actual
+        | ($types | index($actual)) != null or ($actual == "integer" and ($types | index("number")) != null)
+      end;
+    def describe($t): [$t] | flatten | join(" or ");
+    def check($schema; $path):
+      . as $value
+      | if type_ok($schema.type) | not then "\($path) must be \(describe($schema.type)), not \(jtype)"
+      else
+        (if $schema.enum != null and ($schema.enum | any(. == $value) | not) then
+           "\($path) must be one of \($schema.enum | map(tostring) | join(", "))" else empty end),
+        (if type == "string" and $schema.pattern != null and (test($schema.pattern) | not) then
+           "\($path) does not match \($schema.pattern)" else empty end),
+        (if type == "string" and $schema.minLength != null and length < $schema.minLength then
+           "\($path) must not be empty" else empty end),
+        (if type == "number" and $schema.minimum != null and . < $schema.minimum then
+           "\($path) must be at least \($schema.minimum)" else empty end),
+        (if type == "object" then
+           (($schema.required // [])[] as $field
+             | if has($field) then empty else "\($path).\($field) is missing" end),
+           (keys[] as $key
+             | if (($schema.properties // {}) | has($key)) then
+                 (.[$key] | check($schema.properties[$key]; "\($path).\($key)"))
+               elif $schema.additionalProperties == false then
+                 "\($path).\($key) is not a field of the schema"
+               else empty end)
+         elif type == "array" and $schema.items != null then
+           (to_entries[] as $entry | $entry.value | check($schema.items; "\($path)[\($entry.key)]"))
+         else empty end)
+      end;
+    check($schemas[0]; "request")
+  ' "$request"
+}
+
+# guardrails_request_write <root> <issue> <content-tree> <branch> <parent>
+#                          <base> <review-json> <reasons> <explanation>
+# Writes the approval request of an Issue. <base> is the merge base, or
+# 'null' when it could not be determined; <review-json> is the review the
+# decision rests on, or empty without one; <reasons> is one reason per line.
+guardrails_request_write() {
+  local file
+  local review='null'
+
+  file="$(guardrails_request_file "$1" "$2")"
+  mkdir -p "$(dirname "$file")" || return 1
+  if [[ -n "$7" ]]; then
+    review="$(jq '{round, verdict: (.verdict | gsub("_"; " ")), reviewer: "\(.reviewer.agent) (\(.reviewer.model))"}' "$7")" || return 1
+  fi
+  jq -n --arg tree "$3" --arg branch "$4" --arg parent "$5" --arg base "$6" --argjson review "$review" \
+    --arg reasons "$8" --arg explanation "$9" '{
+      schema: "approval-request/v1",
+      content_tree: $tree,
+      commit: {branch: $branch, parent: $parent, base: (if $base == "null" or $base == "" then null else $base end)},
+      review: $review,
+      reasons: ($reasons | split("\n") | map(select(length > 0))),
+      explanation: $explanation
+    }' >"$file"
+}
+
+# guardrails_request_display <root> <request-json>
+# Prints an approval request for a person, as a block that says what it is:
+# the fields as they are, whatever they hold. This is the only use any
+# script makes of its fields, apart from the check of check-guardrails.sh,
+# which can only refuse it.
+guardrails_request_display() {
+  local relative="${2#"$1"/}"
+
+  echo "Approval request $relative (for display; it grants nothing):"
+  if jq -e -s 'length == 1 and (.[0] | type) == "object"' "$2" >/dev/null 2>&1; then
+    jq -r '
+      def short: tostring | .[0:12];
+      "  content tree: \(.content_tree // "missing" | tostring)",
+      "  on branch \(.commit.branch? // "unknown" | tostring), parent \(.commit.parent? // "unknown" | short), base \(.commit.base? // "unknown" | short)",
+      (if (.review? | type) == "object" then "  review: round \(.review.round | tostring), \(.review.verdict | tostring), by \(.review.reviewer | tostring)" else "  review: none" end),
+      "  reasons:",
+      ((.reasons? // []) | if type == "array" then .[] else . end | "    - \(tostring)"),
+      "  explanation:",
+      ((.explanation? // "") | tostring | split("\n")[] | "    \(.)")
+    ' "$2"
+  else
+    echo "  (not a JSON object; check-guardrails.sh refuses it)"
+  fi
+}
+
+# guardrails_requests_changed <root> <from> [<to>]
+# Prints the approval requests that the diff from <from> adds or changes,
+# one path per line: against <to>, or against the working tree with its
+# untracked files when <to> is empty. A removed request is not listed.
+guardrails_requests_changed() {
+  if [[ -n "${3:-}" ]]; then
+    git -C "$1" diff --name-only --no-renames --diff-filter=AM "$2" "$3" -- "$GUARDRAILS_APPROVAL_REQUESTS"
+  else
+    git -C "$1" diff --name-only --no-renames --diff-filter=AM "$2" -- "$GUARDRAILS_APPROVAL_REQUESTS"
+    git -C "$1" ls-files --others --exclude-standard -- "$GUARDRAILS_APPROVAL_REQUESTS"
+  fi | sort -u
+}
+
+# guardrails_finish_commit <root> <head> <base-ref>...
+# Prints the commit that finish-feature.sh made, from <head> back over the
+# merges of the base that brought the feature up to date afterwards: a merge
+# with exactly two parents whose second parent is in one of the <base-ref>s.
+# Such a merge changes nothing of the feature itself, so the finish commit
+# is what describes the pull request and what an approval request names.
+# Any other commit after the finish is the head itself.
+guardrails_finish_commit() {
+  local root="$1"
+  local commit="$2"
+  local second
+  local ref
+  local in_base
+
+  shift 2
+  while second="$(git -C "$root" rev-parse --verify --quiet "$commit^2" 2>/dev/null)" &&
+    ! git -C "$root" rev-parse --verify --quiet "$commit^3" >/dev/null 2>&1; do
+    in_base=0
+    for ref in "$@"; do
+      git -C "$root" rev-parse --verify --quiet "$ref^{commit}" >/dev/null || continue
+      git -C "$root" merge-base --is-ancestor "$second" "$ref" 2>/dev/null || continue
+      in_base=1
+      break
+    done
+    [[ "$in_base" -eq 1 ]] || break
+    commit="$(git -C "$root" rev-parse "$commit^1")"
+  done
+  git -C "$root" rev-parse "$commit"
+}
