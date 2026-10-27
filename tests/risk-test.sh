@@ -471,6 +471,53 @@ expect_level "$repo" low "a documentation change is low"
 [[ "$(requirement_of "$repo" review)" == "delta" ]] || fail "the stricter review requirement of origin did not count: $(cat "$repo.out")"
 [[ "$(requirement_of "$repo" verification)" == "full" ]] || fail "the stricter verification of origin did not count: $(cat "$repo.out")"
 
+# The triage mode of a level: 'full' as shipped, 'light' for low and medium
+# where the policy says so, refused for high and for a word the policy does
+# not know (the full triage applies and the refusal is reported), and the
+# strictest of the base refs counts.
+repo="$(setup_repo triage-template template)"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "the template classifies a documentation change as medium"
+[[ "$(requirement_of "$repo" triage)" == "full" ]] || fail "the template does not ship the full triage: $(cat "$repo.out")"
+if grep -q "^refused: " "$repo.out"; then fail "the shipped triage mode is refused"; fi
+triage_policy='default: medium
+low: docs
+low: triage: light
+medium: triage: light
+high: triage: light'
+repo="$(setup_repo triage-light-medium "$triage_policy")"
+printf 'print("y")\n' >>"$repo/src/code.py"
+expect_level "$repo" medium "a code change is medium"
+[[ "$(requirement_of "$repo" triage)" == "light" ]] || fail "'medium: triage: light' was not read: $(cat "$repo.out")"
+repo="$(setup_repo triage-light-low "$triage_policy")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" low "a documentation change is low"
+[[ "$(requirement_of "$repo" triage)" == "light" ]] || fail "'low: triage: light' was not read: $(cat "$repo.out")"
+repo="$(setup_repo triage-light-high "$triage_policy")"
+printf 'exit 1\n' >"$repo/tests/unit-test.sh"
+expect_level "$repo" high "a changed test file is high"
+[[ "$(requirement_of "$repo" triage)" == "full" ]] || fail "'high: triage: light' was not refused with the full triage: $(cat "$repo.out")"
+expect_reason "$repo" "refused: high: triage: light is refused" "the refused 'high: triage: light' was not reported"
+repo="$(setup_repo triage-unknown "$(printf 'default: medium\nmedium: triage: maybe')")"
+printf 'print("y")\n' >>"$repo/src/code.py"
+expect_level "$repo" medium "a code change is medium"
+[[ "$(requirement_of "$repo" triage)" == "full" ]] || fail "an unknown triage value was not refused with the full triage: $(cat "$repo.out")"
+expect_reason "$repo" "refused: medium: triage: maybe is not accepted" "the unknown triage value was not reported"
+# 'medium: triage: light' that only the local base knows, while origin does
+# not, gives the full triage.
+repo="$(setup_repo triage-refs "$(printf 'default: medium\nmedium: triage: light')")"
+printf 'print("y")\n' >>"$repo/src/code.py"
+git -C "$repo" stash -q
+git -C "$repo" switch -q -c ahead main
+printf 'default: medium\n' >"$repo/.agents/policies/risk.conf"
+git -C "$repo" commit -qam "Origin keeps the full triage"
+git -C "$repo" update-ref refs/remotes/origin/main ahead
+git -C "$repo" switch -q feature/5-thing
+git -C "$repo" branch -q -D ahead
+git -C "$repo" stash pop -q
+expect_level "$repo" medium "a code change is medium"
+[[ "$(requirement_of "$repo" triage)" == "full" ]] || fail "the stricter triage mode of origin did not count: $(cat "$repo.out")"
+
 # Refusals.
 repo="$(setup_repo refusals template)"
 check "$repo" --fail-on-protected

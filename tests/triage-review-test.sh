@@ -660,6 +660,81 @@ jq 'del(.owner_directed) | .triage = {agent: "claude", model: "model-t"}' "$arti
 [[ -z "$(source "$source_root/scripts/lib/review-data.sh"; triage_artifact_errors "$tmp/old.json" "$repo/$review")" ]] ||
   fail "an artifact without the new fields is no longer valid"
 
+# The triage mode of the project policy. The script derives the risk level
+# itself, from the diff and the rules of the base: with 'medium: triage:
+# light' a medium feature gets the light triage, which the agent is told and
+# the artifact records; a project without the line gets the full triage,
+# with nothing added to the context; a high feature never gets the light
+# triage, whatever the policy says; and a critical finding is FIX_NOW in
+# every mode, also by the owner.
+# with_policy <repo> <policy>: the policy committed on main, and a feature
+# branch of Issue 5 with a change, on which the fixture review is current.
+with_policy() {
+  mkdir -p "$1/.agents/policies"
+  printf '%s\n' "$2" >"$1/.agents/policies/risk.conf"
+  git -C "$1" add .agents/policies/risk.conf
+  git -C "$1" commit -qm "The risk policy"
+  git -C "$1" switch -q -c feature/5-test
+  printf 'work\n' >"$1/work.txt"
+  record_reviewed_tree "$1" "$1/$review"
+}
+repo="$(setup_repo mode-light)"
+with_policy "$repo" "$(printf 'default: medium\nmedium: triage: light')"
+run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a light triage failed"
+}
+artifact="$repo/.agents/triage/feature-5-test-review-01-triage.json"
+[[ "$(jq -r '.triage.mode' "$artifact")" == "light" ]] || fail "the light triage was not recorded in the artifact"
+grep -Fq "## Triage mode" "$repo.log.stdin" || fail "the triage agent was not told the light mode"
+grep -Fq "Triage mode: light" "$repo.out" || fail "the light mode was not shown"
+[[ "$(jq -c '[.decisions[].decision]' "$artifact")" == '["FIX_NOW","DEFER","ACCEPT"]' ]] || fail "the light triage lost its decisions"
+grep -Fq "TITLE: [F02][R01][MIN1] Add boundary-condition coverage" "$repo.gh" || fail "the deferred finding of a light triage got no follow-up Issue"
+jq -e '.published_at' "$artifact" >/dev/null || fail "the light triage was not published"
+(
+  source "$source_root/scripts/lib/review-data.sh"
+  [[ -z "$(triage_artifact_errors "$artifact" "$repo/$review")" ]]
+) || fail "the artifact of a light triage is not valid"
+jq '.triage.mode = "maybe"' "$artifact" >"$tmp/mode.json"
+[[ -n "$(source "$source_root/scripts/lib/review-data.sh"; triage_artifact_errors "$tmp/mode.json" "$repo/$review")" ]] ||
+  fail "an unknown triage mode was accepted in the artifact"
+# A critical finding cannot be deferred in the light mode: not by the
+# agent, not by the owner.
+repo="$(setup_repo mode-light-critical)"
+with_policy "$repo" "$(printf 'default: medium\nmedium: triage: light')"
+MOCK_OUTPUT="$downgraded_decisions" expect_no_triage "$repo" "a critical finding is deferred in the light mode" "$review"
+printf '%s\n' "$downgraded_decisions" >"$repo.decisions.json"
+expect_no_triage "$repo" "the owner defers a critical finding in the light mode" "$review" --decisions "$repo.decisions.json" --reason "$reason"
+# An owner-directed triage records the mode too.
+printf '%s\n' "$owner_decisions" >"$repo.decisions.json"
+run_owner "$repo" y --decisions "$repo.decisions.json" --reason "$reason" || {
+  cat "$repo.out" >&2
+  fail "an owner-directed triage in the light mode failed"
+}
+[[ "$(jq -r '.triage.mode' "$repo/.agents/triage/feature-5-test-review-01-triage.json")" == "light" ]] ||
+  fail "the owner-directed triage did not record the light mode"
+# Without the line, the full triage: nothing is added to the context.
+repo="$(setup_repo mode-full)"
+with_policy "$repo" "$(printf 'default: medium')"
+run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "a full triage failed"
+}
+[[ "$(jq -r '.triage.mode' "$repo/.agents/triage/feature-5-test-review-01-triage.json")" == "full" ]] || fail "the full triage was not recorded"
+if grep -Fq "## Triage mode" "$repo.log.stdin"; then fail "the triage agent was told a mode although the triage is full"; fi
+# A high feature keeps the full triage although the policy says light.
+repo="$(setup_repo mode-high)"
+with_policy "$repo" "$(printf 'default: medium\nhigh: hot.txt\nhigh: triage: light')"
+printf 'hot\n' >"$repo/hot.txt"
+record_reviewed_tree "$repo" "$repo/$review"
+run_triage "$repo" y "$review" || {
+  cat "$repo.out" >&2
+  fail "the triage of a high feature failed"
+}
+[[ "$(jq -r '.triage.mode' "$repo/.agents/triage/feature-5-test-review-01-triage.json")" == "full" ]] || fail "a high feature got a light triage"
+if grep -Fq "## Triage mode" "$repo.log.stdin"; then fail "the agent was told the light mode for a high feature"; fi
+grep -Fq "high: triage: light is refused" "$repo.out" || fail "the refused policy line was not reported"
+
 # The triage agent gets the owner's comments after the Issue body, as the
 # implementer and the reviewer do, and none of the others; the run record
 # says how many. A report that the triage publishes is never passed on.

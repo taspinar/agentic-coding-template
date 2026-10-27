@@ -274,6 +274,9 @@ else
   blocking="$(jq '[.findings[] | select(.severity == "critical" or .severity == "major")] | length' "$latest")"
   [[ "$blocking" -eq 0 ]] ||
     fail "the latest review (round $round) has $blocking critical or major finding(s). Triage, fix, and review again."
+  # The level the commit is decided on, for the triage mode: a light triage
+  # is for a low- or medium-risk feature only.
+  committed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest" | sed -n 1p)"
 
   # Every round with findings needs an approved triage that was published on
   # the Issue; only the latest round may not have FIX_NOW findings left, since
@@ -293,6 +296,12 @@ else
     if [[ "$review" == "$latest" ]]; then
       [[ "$(jq '[.decisions[] | select(.decision == "FIX_NOW")] | length' "$triage")" -eq 0 ]] ||
         fail "round $review_round has FIX_NOW findings. Apply them with ./scripts/apply-triage.sh $triage_relative and review again."
+      # 'triage: light' is refused for high, whatever the policy or the
+      # artifact says: the level is decided here from the diff, the record,
+      # and the review, and a light triage of a feature that is high now is
+      # not the triage the commit may rest on.
+      [[ "$(jq -r '.triage.mode // "full"' "$triage")" != "light" || "$committed_level" != "high" ]] ||
+        fail "the triage of round $review_round is a light triage, but the feature is high risk: 'triage: light' is refused for a high-risk feature, which keeps the full triage. Triage the round again: ./scripts/triage-review.sh ${review#"$root"/}. Nothing was committed."
     fi
     triage_note="; triage published on #$issue"
   done
@@ -366,6 +375,11 @@ risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
 risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
 echo "Risk level: $risk_level"
 printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'
+# The triage mode of the policy for that level. It is not part of the
+# commit message; publish-feature.sh names it in the pull request. A refused
+# value ('high: triage: light') is reported here, and the full triage applies.
+triage_mode_lines="$(risk_triage_mode "$root" "$feature_base_ref" "$risk_level")"
+echo "Triage mode: $(printf '%s\n' "$triage_mode_lines" | sed -n 1p) ($(printf '%s\n' "$triage_mode_lines" | sed -n 2p))"
 echo
 
 # 4. Stage everything and commit with an editable, structured message.

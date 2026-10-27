@@ -393,6 +393,8 @@ triage_artifact_errors() {
        else "triage and review reference different source Issues" end),
       (if (.triage | type) == "object" and (.triage.agent | nonempty) and (.triage.model | nonempty) then empty
        else "triage must name its agent and model" end),
+      (if (.triage | type) != "object" or .triage.mode == null or (.triage.mode | IN("full", "light")) then empty
+       else "triage.mode must be full or light" end),
       (if .review_verdict == $review[0].verdict and .reviewed_tree == $review[0].reviewed_tree then empty
        else "the triage does not describe the stored state of its source review" end),
       ($review[0].findings | map({key: .id, value: {severity, title}}) | from_entries) as $source

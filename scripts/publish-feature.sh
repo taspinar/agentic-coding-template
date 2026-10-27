@@ -204,8 +204,9 @@ reviews=("$root/.agents/reviews/${slug}-review-"[0-9][0-9].json)
 shopt -u nullglob
 latest_review=""
 [[ "${#reviews[@]}" -eq 0 ]] || latest_review="${reviews[${#reviews[@]}-1]}"
+feature_rules="$(guardrails_rules_refs "$root" "$feature_base")"
 if lines="$(feature_base "$root" "$feature_base")"; then
-  risk_computed_lines="$(risk_computed "$root" "$(guardrails_rules_refs "$root" "$feature_base")" "$(printf '%s\n' "$lines" | sed -n 2p)" HEAD)"
+  risk_computed_lines="$(risk_computed "$root" "$feature_rules" "$(printf '%s\n' "$lines" | sed -n 2p)" HEAD)"
 else
   risk_computed_lines="$(risk_undetermined "the base of the feature could not be determined ($feature_base)")"
 fi
@@ -218,6 +219,12 @@ fi
 risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
 echo "Risk level: $risk_level"
 printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'
+# The triage mode of the project policy for that level, one line after the
+# risk block: the commit message does not carry it.
+triage_mode_lines="$(risk_triage_mode "$root" "$feature_rules" "$risk_level")"
+triage_mode_line="Triage mode: $(printf '%s\n' "$triage_mode_lines" | sed -n 1p) ($(printf '%s\n' "$triage_mode_lines" | sed -n 2p))"
+risk_block+=$'\n\n'"$triage_mode_line"
+echo "$triage_mode_line"
 # risk_recomputed: copies standard input, the commit message, with its
 # 'Risk:' block replaced by the one computed now, or that block appended
 # when the commit has none.

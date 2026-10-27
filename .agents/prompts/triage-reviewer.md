@@ -28,6 +28,18 @@ Classify every finding exactly once:
 
 Every decision requires a concise rationale.
 
+## Triage mode
+
+The project's risk policy (`.agents/policies/risk.conf`) sets a triage mode
+per risk level, `full` or `light`. The calling script tells you the mode in
+a "Triage mode" section of the context when it is `light`; without that
+section the mode is `full`, and the rules above apply as written. In the
+`light` mode, decide `FIX_NOW` for a suggestion or a minor finding only when
+it blocks the feature; otherwise defer it, with a follow-up Issue, or accept
+it. A round whose findings are all suggestions or minor and all deferred or
+accepted ends the review loop without a fix session. Critical and Major
+findings are `FIX_NOW` in every mode.
+
 For `DEFER`, also propose:
 
 - a concise GitHub Issue title without feature, review, or finding prefixes;

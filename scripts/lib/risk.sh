@@ -31,12 +31,14 @@
 # The same policy says what each level requires of the workflow
 # (risk_requirement): '<level>: verification: full|groups <group>...' for the
 # verification of the intermediate review rounds of run-feature.sh, and
-# '<level>: review: full|delta|none' for its later rounds. Without the line a
-# level requires the full verification and allows a review of changes only
-# (delta), which is what the workflow did before the policy knew the levels.
-# 'none' is accepted for low only. Of the refs the rules come from, the
-# strictest requirement counts, and a value that is not accepted counts as
-# the strictest and is reported.
+# '<level>: review: full|delta|none' for its later rounds, and
+# '<level>: triage: full|light' for the triage of its findings. Without the
+# line a level requires the full verification, allows a review of changes
+# only (delta), and gets the full triage, which is what the workflow did
+# before the policy knew the levels. 'none' is accepted for low only, 'light'
+# for low and medium only. Of the refs the rules come from, the strictest
+# requirement counts, and a value that is not accepted counts as the
+# strictest and is reported.
 
 if ! declare -F guardrails_rules_refs >/dev/null; then
   source "${BASH_SOURCE[0]%/*}/guardrails.sh"
@@ -58,9 +60,10 @@ RISK_EXCLUDES=(":(exclude).agents/reviews" ":(exclude).agents/triage" ":(exclude
 # policy, and what the template ships for every level: the full verification
 # before each review round, and a review of changes only when it can build on
 # the round before.
-RISK_REQUIREMENT_KINDS="verification|review"
+RISK_REQUIREMENT_KINDS="verification|review|triage"
 RISK_DEFAULT_VERIFICATION="full"
 RISK_DEFAULT_REVIEW="delta"
+RISK_DEFAULT_TRIAGE="full"
 
 # risk_is_level <text>
 risk_is_level() {
@@ -124,13 +127,15 @@ risk_requirement_value() {
 # risk_requirement <root> <rules-refs> <level> <kind>
 # Prints on the first line what the level requires: for 'verification', 'full'
 # or 'groups <group> ...' (the groups of verify.sh that the intermediate
-# review rounds run); for 'review', 'full', 'delta', or 'none'. Every line
-# after it names a value of the policy that is not accepted. The requirement
-# is the strictest over the refs (full before groups; full before delta before
-# none), the built-in default (RISK_DEFAULT_VERIFICATION,
-# RISK_DEFAULT_REVIEW) stands for a ref without the line, and a value that
+# review rounds run); for 'review', 'full', 'delta', or 'none'; for 'triage',
+# 'full' or 'light'. Every line after it names a value of the policy that is
+# not accepted. The requirement is the strictest over the refs (full before
+# groups; full before delta before none; full before light), the built-in
+# default (RISK_DEFAULT_VERIFICATION, RISK_DEFAULT_REVIEW,
+# RISK_DEFAULT_TRIAGE) stands for a ref without the line, and a value that
 # is not accepted counts as the strictest: a word the policy does not know, a
-# group name that is none, or 'none' for a level other than low.
+# group name that is none, 'none' for a level other than low, or 'light' for
+# high.
 risk_requirement() {
   local root="$1"
   local rules="$2"
@@ -175,6 +180,23 @@ risk_requirement() {
             ;;
         esac
         ;;
+      triage)
+        case "$value" in
+          "" | full) rank=1 ;;
+          light)
+            if [[ "$level" == "high" ]]; then
+              problems+="$level: triage: light is refused in $RISK_CONFIG of $ref: only a low- or medium-risk feature may have a light triage; the full triage applies"$'\n'
+              rank=1
+            else
+              [[ "$rank" -ge 0 ]] || rank=0
+            fi
+            ;;
+          *)
+            problems+="$level: triage: $value is not accepted in $RISK_CONFIG of $ref (full, or light for low and medium); the full triage applies"$'\n'
+            rank=1
+            ;;
+        esac
+        ;;
     esac
   done
 
@@ -193,23 +215,64 @@ risk_requirement() {
         *) echo "full" ;;
       esac
       ;;
+    triage)
+      if [[ "$rank" -eq 0 ]]; then
+        echo "light"
+      else
+        echo "$RISK_DEFAULT_TRIAGE"
+      fi
+      ;;
   esac
   printf '%s' "$problems"
 }
 
 # risk_requirements <root> <rules-refs> <level>
-# Prints 'verification: <requirement>' and 'review: <requirement>' for the
-# level, then one line 'refused: <problem>' per value of the policy that is
-# not accepted.
+# Prints 'verification: <requirement>', 'review: <requirement>', and
+# 'triage: <requirement>' for the level, then one line 'refused: <problem>'
+# per value of the policy that is not accepted.
 risk_requirements() {
   local verification
   local review
+  local triage
 
   verification="$(risk_requirement "$1" "$2" "$3" verification)"
   review="$(risk_requirement "$1" "$2" "$3" review)"
+  triage="$(risk_requirement "$1" "$2" "$3" triage)"
   echo "verification: $(printf '%s\n' "$verification" | sed -n 1p)"
   echo "review: $(printf '%s\n' "$review" | sed -n 1p)"
-  { printf '%s\n' "$verification" | sed 1d; printf '%s\n' "$review" | sed 1d; } | grep . | sed 's/^/refused: /' || true
+  echo "triage: $(printf '%s\n' "$triage" | sed -n 1p)"
+  { printf '%s\n' "$verification" | sed 1d; printf '%s\n' "$review" | sed 1d; printf '%s\n' "$triage" | sed 1d; } |
+    grep . | sed 's/^/refused: /' || true
+}
+
+# risk_triage_mode <root> <rules-refs> <level>
+# Prints the triage mode of the level on the first line, 'full' or 'light',
+# and on the second line where it comes from, for a message: the line of the
+# policy, its absence, or the refused value that the full triage replaces.
+risk_triage_mode() {
+  local requirement
+  local mode
+  local refused
+  local ref
+  local written=""
+
+  requirement="$(risk_requirement "$1" "$2" "$3" triage)"
+  mode="$(printf '%s\n' "$requirement" | sed -n 1p)"
+  refused="$(printf '%s\n' "$requirement" | sed -n 2p)"
+  echo "$mode"
+  if [[ -n "$refused" ]]; then
+    echo "$refused"
+    return 0
+  fi
+  for ref in $2; do
+    written="$(risk_requirement_value "$1" "$ref" "$3" triage)"
+    [[ -z "$written" ]] || break
+  done
+  if [[ -n "$written" ]]; then
+    echo "$RISK_CONFIG of the base says '$3: triage: $mode'"
+  else
+    echo "the default; $RISK_CONFIG of the base has no '$3: triage:' line"
+  fi
 }
 
 # risk_default <root> <rules-refs>

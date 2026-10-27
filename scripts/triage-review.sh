@@ -263,6 +263,26 @@ source_issue="$(jq -r '.issue' "$review_path")"
 printf -v review_ref 'R%02d' "$(jq -r '.round' "$review_path")"
 finding_count="$(jq '.findings | length' "$review_path")"
 
+# The triage mode of the project policy, 'full' or 'light', for the risk
+# level of the feature. Both are computed here, from the diff and the rules
+# of the base (check-risk.sh of this worktree), never taken from the review
+# or the completion record: a light triage is never run for a high-risk
+# feature, whatever an artifact says, and a level that cannot be determined
+# gets the full triage.
+triage_mode="full"
+triage_mode_reason="the risk level could not be determined; the full triage applies"
+risk_level=""
+risk_base="$(git -C "$root" config --get "branch.$(git -C "$root" branch --show-current).workflow-base" || true)"
+risk_status=0
+risk_output="$( (cd "$root" && ./scripts/check-risk.sh "${risk_base:-main}" </dev/null) 2>/dev/null)" || risk_status=$?
+if [[ "$risk_status" -le 2 ]]; then
+  risk_level="$(printf '%s\n' "$risk_output" | sed -n '1s/^risk: //p')"
+  triage_mode="$(printf '%s\n' "$risk_output" | sed -n 's/^triage: //p' | sed -n 1p)"
+  [[ "$triage_mode" == "light" ]] || triage_mode="full"
+  triage_mode_reason="$(printf '%s\n' "$risk_output" | sed -n 's/^refused: \([a-z]*: triage: .*\)$/\1/p' | sed -n 1p)"
+  [[ -n "$triage_mode_reason" ]] || triage_mode_reason="the project policy for a $risk_level-risk feature"
+fi
+
 source_issue_context="$(gh issue view "$source_issue" \
   --json title,body \
   --template 'Title: {{.title}}{{"\n\n"}}{{.body}}')" ||
@@ -349,6 +369,7 @@ else
   echo "  Agent:  $agent"
   echo "  Model:  $model"
 fi
+echo "  Triage mode: $triage_mode ($triage_mode_reason)"
 if [[ "$historical" -eq 1 ]]; then
   echo "  Historical: the code changed after this review; the later round ${later_review#"$root"/} exists."
   echo "              The findings are classified against the reviewed content ($reviewed_tree), not the current code."
@@ -413,6 +434,16 @@ else
     echo "## Review findings (JSON)"
     echo
     jq '{verdict, limitations, findings}' "$review_path"
+    if [[ "$triage_mode" == "light" ]]; then
+      # The light triage of the policy, told to the agent as the contract
+      # describes it (.agents/prompts/triage-reviewer.md, "Triage mode").
+      # Without this section the mode is full and the contract applies as
+      # written.
+      echo
+      echo "## Triage mode"
+      echo
+      echo "The risk policy of this project (.agents/policies/risk.conf) sets the triage mode \`light\` for this feature, which is $risk_level risk. Decide FIX_NOW for a suggestion or a minor finding only when it blocks the feature; otherwise defer it, with a follow-up Issue, or accept it. Every FIX_NOW costs a fix session, a verification, and another review round; a round whose findings are all suggestions or minor and all DEFER or ACCEPT ends the review loop without a fix session. Critical and major findings are FIX_NOW in every mode."
+    fi
   } >"$context_file"
 
   agent_dir="$root"
@@ -625,6 +656,7 @@ jq -n \
   --arg source_review "$review_relative" \
   --arg agent "$agent" \
   --arg model "$model" \
+  --arg mode "$triage_mode" \
   --arg approved_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --slurpfile owner_record "${owner_record:-/dev/null}" \
   --argjson unattended "$([[ "$AGENT_UNATTENDED" -eq 1 ]] && echo true || echo false)" \
@@ -635,7 +667,7 @@ jq -n \
     issue: $review[0].issue,
     reviewed_tree: $review[0].reviewed_tree,
     review_verdict: $review[0].verdict,
-    triage: {agent: $agent, model: $model},
+    triage: {agent: $agent, model: $model, mode: $mode},
     approved_at: $approved_at,
     decisions: $decisions[0]
   } + (if $unattended then {unattended: true} else {} end)

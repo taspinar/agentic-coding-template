@@ -1123,6 +1123,85 @@ expect_sessions "$repo" 1 1 0 0
 grep -q "^Review: round 1, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "a low-risk feature was not reviewed without 'low: review: none'"
 grep -Fqx "Risk: low" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the low level"
 
+# The triage mode. With 'medium: triage: light' on the base, a round whose
+# findings are all suggestions or minor and all deferred or accepted ends
+# the loop without a fix session: the feature is committed on that complete
+# review, the triage is published with its follow-up Issue, the agent was
+# told the mode, the log says so, and the pull request names the mode. A
+# FIX_NOW on a minor finding is still fixed and reviewed again; a major
+# finding cannot be accepted; 'high: triage: light' is refused for a
+# high-risk feature, which gets the full triage; and the shipped policy
+# gives the full triage, with nothing told to the agent.
+minor_and_suggestion='reply="{\"architecture_impact\": {\"level\": \"minor\", \"rationale\": \"Stays within the accepted architecture.\", \"checked_against\": []}, \"verdict\": \"PASS_WITH_MINOR_FINDINGS\", \"limitations\": \"\", \"findings\": [
+  {\"severity\": \"minor\", \"title\": \"Vague name\", \"evidence\": \"feature.txt:1\", \"impact\": \"Unclear.\", \"recommendation\": \"Rename.\"},
+  {\"severity\": \"suggestion\", \"title\": \"Add a comment\", \"evidence\": \"feature.txt:1\", \"impact\": \"Readability.\", \"recommendation\": \"Comment.\"}
+]}"'
+defer_and_accept='reply="{\"decisions\": [
+  {\"finding_id\": \"MIN1\", \"decision\": \"DEFER\", \"rationale\": \"Later.\", \"followup\": {\"title\": \"Rename it\", \"recommended_action\": \"Rename.\", \"acceptance_criteria\": [\"Renamed.\"]}},
+  {\"finding_id\": \"S1\", \"decision\": \"ACCEPT\", \"rationale\": \"Fine.\", \"followup\": null}
+]}"'
+fix_minor='reply="{\"decisions\": [
+  {\"finding_id\": \"MIN1\", \"decision\": \"FIX_NOW\", \"rationale\": \"Blocks the feature.\", \"followup\": null},
+  {\"finding_id\": \"S1\", \"decision\": \"ACCEPT\", \"rationale\": \"Fine.\", \"followup\": null}
+]}"'
+light_policy="$(printf 'default: medium\nmedium: triage: light')"
+repo="$(RISK_CONF="$light_policy" setup_repo light-ends)"
+printf '%s\n' "$minor_and_suggestion" >"$repo.control/reviewer-1.sh"
+printf '%s\n' "$defer_and_accept" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 1 0
+grep -q "^Review: round 1, PASS WITH MINOR FINDINGS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the round the light triage ended"
+triage="$repo-2-thing/.agents/triage/feature-2-thing-review-01-triage.json"
+[[ "$(jq -r '.triage.mode' "$triage")" == "light" ]] || fail "the triage does not record the light mode"
+grep -Fq "## Triage mode" "$repo.control/triage-1.context" || fail "the triage agent was not told the light mode"
+grep -q '^issue create ' "$repo.control/gh.log" || fail "the deferred finding of a light triage got no follow-up Issue"
+grep -q '^issue comment 2 ' "$repo.control/gh.log" || fail "the light triage was not published on the Issue"
+grep -Fq "the light triage of the project policy ends the round without a fix session" <<<"$(log_of "$repo")" ||
+  fail "the round the light triage ended is not in the log of the feature"
+grep -Fq "Triage mode: light (" "$repo.control/pr-body" || fail "the pull request does not name the triage mode"
+if grep -Fq "Triage mode" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)"; then fail "the commit message carries the triage mode"; fi
+repo="$(RISK_CONF="$light_policy" setup_repo light-fix-minor)"
+printf '%s\n' "$minor_and_suggestion" >"$repo.control/reviewer-1.sh"
+printf '%s\n' "$fix_minor" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 3 1 1
+grep -Fqx "fixed" "$repo-2-thing/feature.txt" || fail "the FIX_NOW minor finding was not fixed in the light mode"
+grep -q "^Review: round 3, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the fixed minor finding was not reviewed again"
+repo="$(RISK_CONF="$light_policy" setup_repo light-major)"
+printf '%s\n' "$major_and_minor" >"$repo.control/reviewer.sh"
+printf '%s\n' 'reply="{\"decisions\": [
+  {\"finding_id\": \"M1\", \"decision\": \"ACCEPT\", \"rationale\": \"Fine.\", \"followup\": null},
+  {\"finding_id\": \"MIN1\", \"decision\": \"ACCEPT\", \"rationale\": \"Fine.\", \"followup\": null}
+]}"' >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 1 "the triage of round 1 failed"
+if compgen -G "$repo-2-thing/.agents/triage/*.json" >/dev/null; then fail "a light triage that accepts a major finding was stored"; fi
+repo="$(RISK_CONF="$(printf 'default: medium\nhigh: feature.txt\nhigh: triage: light')" setup_repo light-high-refused)"
+printf '%s\n' "$minor_and_suggestion" >"$repo.control/reviewer-1.sh"
+printf '%s\n' "$defer_and_accept" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 1 0
+grep -Fq "run-feature.sh: high: triage: light is refused" "$repo.out" || fail "the refused 'high: triage: light' was not reported"
+grep -Fq "high: triage: light is refused" <<<"$(log_of "$repo")" || fail "the refused policy line is not in the log of the feature"
+[[ "$(jq -r '.triage.mode' "$repo-2-thing/.agents/triage/feature-2-thing-review-01-triage.json")" == "full" ]] ||
+  fail "a high-risk feature got a light triage"
+if grep -Fq "## Triage mode" "$repo.control/triage-1.context"; then fail "the triage agent was told the light mode for a high-risk feature"; fi
+grep -Fq "Triage mode: full (high: triage: light is refused" "$repo.control/pr-body" || fail "the pull request does not name the refused mode"
+repo="$(setup_repo full-shipped)"
+printf '%s\n' "$minor_and_suggestion" >"$repo.control/reviewer-1.sh"
+printf '%s\n' "$defer_and_accept" >"$repo.control/triage.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 1 0
+[[ "$(jq -r '.triage.mode' "$repo-2-thing/.agents/triage/feature-2-thing-review-01-triage.json")" == "full" ]] ||
+  fail "the shipped policy did not give the full triage"
+if grep -Fq "## Triage mode" "$repo.control/triage-1.context"; then fail "the triage agent was told a mode under the shipped policy"; fi
+if grep -Fq "light triage" <<<"$(log_of "$repo")"; then fail "the log names a light triage under the shipped policy"; fi
+grep -Fq "Triage mode: full (" "$repo.control/pr-body" || fail "the pull request does not name the full triage"
+
 # A pull request that cannot be opened stops the run after the commit; the
 # next run only publishes.
 repo="$(setup_repo publish-fails)"
