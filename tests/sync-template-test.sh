@@ -403,28 +403,97 @@ git -C "$empty" init -q -b main
 lines "repository: $empty" "" "paths: nothing-here" >"$empty/.agents/template.conf"
 cp "$source_root/scripts/sync-template.sh" "$empty/scripts/sync-template.sh"
 lines "tool one" >"$empty/scripts/tool.sh"
+lines "kept as it is" >"$empty/scripts/keep.sh"
+lines "removed while unowned" >"$empty/scripts/gone.sh"
 commit_all "$empty" "Empty one"
 empty_one="$(git -C "$empty" rev-parse HEAD)"
 lines "repository: $empty" "" "paths: nothing-here scripts" >"$empty/.agents/template.conf"
 lines "tool two" >"$empty/scripts/tool.sh"
+git -C "$empty" rm -q scripts/gone.sh
 commit_all "$empty" "Empty two"
 for case_name in lacks has; do
   project="$tmp/empty-$case_name"
   mkdir -p "$project"
   git -C "$empty" archive "$empty_one" | tar -x -C "$project"
   git -C "$project" init -q -b main
-  if [[ "$case_name" == "lacks" ]]; then rm "$project/scripts/tool.sh"; else lines "project tool" >"$project/scripts/tool.sh"; fi
+  if [[ "$case_name" == "lacks" ]]; then
+    rm "$project/scripts/tool.sh" "$project/scripts/keep.sh"
+  else
+    lines "project tool" >"$project/scripts/tool.sh"
+    lines "project keep" >"$project/scripts/keep.sh"
+  fi
   commit_all "$project" "Create the project"
   run_sync "$project" --from "$empty_one" --template "$empty" || {
     cat "$project.out" >&2
     fail "a sync with an empty base ownership set failed"
   }
+  # Both the diff and the files the diff leaves out treat the empty set alike.
+  if grep -Fq "scripts/gone.sh" "$project.out"; then fail "a file the empty base list did not own was reported as removed from the template"; fi
   if [[ "$case_name" == "lacks" ]]; then
     grep -Fqx "tool two" "$project/scripts/tool.sh" || fail "a newly listed, changed file was not added with an empty base ownership set"
+    grep -Fqx "kept as it is" "$project/scripts/keep.sh" || fail "a newly listed, unchanged file was not added with an empty base ownership set"
   else
-    grep -Fqx "project tool" "$project/scripts/tool.sh" || fail "a project file was merged or replaced with an empty base ownership set"
-    grep -Fq "scripts/tool.sh: newly owned by the template, but the project has its own version" "$project.out" ||
-      fail "a kept project file was not reported with an empty base ownership set"
+    for name in tool keep; do
+      grep -Fqx "project $name" "$project/scripts/$name.sh" || fail "a project file was merged or replaced with an empty base ownership set"
+      grep -Fq "scripts/$name.sh: newly owned by the template, but the project has its own version" "$project.out" ||
+        fail "a kept project file was not reported with an empty base ownership set"
+    done
+  fi
+done
+
+# A base version that predates the 'paths:' list: the project's own list is
+# the base ownership, so a file the target newly lists is newly owned, in the
+# diff and outside it, while a file the project's list owns is synced as
+# always. A project file with other content is kept and reported.
+unlisted="$tmp/unlisted-template"
+mkdir -p "$unlisted/scripts" "$unlisted/docs" "$unlisted/.agents"
+git -C "$unlisted" init -q -b main
+lines "repository: $unlisted" >"$unlisted/.agents/template.conf"
+cp "$source_root/scripts/sync-template.sh" "$unlisted/scripts/sync-template.sh"
+lines "tool one" >"$unlisted/scripts/tool.sh"
+lines "guide" >"$unlisted/docs/guide.md"
+lines "helper one" >"$unlisted/docs/helper.md"
+lines "removed while unowned" >"$unlisted/docs/gone.md"
+commit_all "$unlisted" "Unlisted one"
+unlisted_one="$(git -C "$unlisted" rev-parse HEAD)"
+lines "repository: $unlisted" "" "paths: scripts docs .agents/template.conf" >"$unlisted/.agents/template.conf"
+lines "tool two" >"$unlisted/scripts/tool.sh"
+lines "helper two" >"$unlisted/docs/helper.md"
+git -C "$unlisted" rm -q docs/gone.md
+commit_all "$unlisted" "Unlisted two: lists the files"
+for case_name in lacks has; do
+  project="$tmp/unlisted-$case_name"
+  mkdir -p "$project"
+  git -C "$unlisted" archive "$unlisted_one" | tar -x -C "$project"
+  git -C "$project" init -q -b main
+  lines "repository: $unlisted" "" "paths: scripts" >"$project/.agents/template.conf"
+  if [[ "$case_name" == "lacks" ]]; then
+    rm "$project/docs/guide.md" "$project/docs/helper.md"
+  else
+    lines "project guide" >"$project/docs/guide.md"
+    lines "project helper" >"$project/docs/helper.md"
+  fi
+  commit_all "$project" "Create the project"
+  run_sync "$project" --from "$unlisted_one" || {
+    cat "$project.out" >&2
+    fail "a sync from a base without 'paths:' failed"
+  }
+  grep -Fq "does not list its files under 'paths:'; using the list in .agents/template.conf" "$project.out" ||
+    fail "the fallback to the project's list was not reported"
+  grep -Fqx "tool two" "$project/scripts/tool.sh" || fail "a file the project's list owns was not replaced"
+  if grep -Fq "docs/gone.md" "$project.out"; then fail "a file the project's list did not own was reported as removed from the template"; fi
+  grep -Fq ".agents/template.conf: newly owned by the template, but the project has its own version" "$project.out" ||
+    fail "the project's configuration was not kept as its own version"
+  grep -Fqx "paths: scripts" "$project/.agents/template.conf" || fail "the project's list was replaced"
+  if [[ "$case_name" == "lacks" ]]; then
+    grep -Fqx "guide" "$project/docs/guide.md" || fail "a newly owned, unchanged file was not added from a base without 'paths:'"
+    grep -Fqx "helper two" "$project/docs/helper.md" || fail "a newly owned, changed file was not added from a base without 'paths:'"
+  else
+    for name in guide helper; do
+      grep -Fqx "project $name" "$project/docs/$name.md" || fail "a project file was merged or replaced from a base without 'paths:'"
+      grep -Fq "docs/$name.md: newly owned by the template, but the project has its own version" "$project.out" ||
+        fail "a kept project file was not reported from a base without 'paths:'"
+    done
   fi
 done
 
