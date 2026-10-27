@@ -308,9 +308,10 @@ for index in "${!names[@]}"; do
   set +e
   # A check is not part of the run that verifies: a workflow script that it
   # starts, as the self-tests do, must not write into that run's records, and
-  # must not use the agent configuration that was chosen for that run.
+  # must not use the agent or attribution configuration that was chosen for
+  # that run.
   (
-    unset AGENT_CONFIG_FILE
+    unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
     unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
     cd "$root" && bash -eo pipefail -c "$command"
   )

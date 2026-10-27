@@ -12,6 +12,7 @@ source "$script_dir/lib/planning.sh"
 source "$script_dir/lib/guardrails.sh"
 source "$script_dir/lib/completion.sh"
 source "$script_dir/lib/records.sh"
+source "$script_dir/lib/attribution.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> \"<commit summary>\" [--no-review \"<reason>\"] [--unattended] [--partial]"
@@ -150,6 +151,25 @@ if feature_base_lines="$(feature_base "$root" "${feature_base_branch:-main}")"; 
   fi
 elif [[ -f "$root/$PLANNING_APPROVAL_FILE" ]] || git -C "$root" cat-file -e "HEAD:$PLANNING_APPROVAL_FILE" 2>/dev/null; then
   fail "could not determine the base of $branch, so it cannot be checked that the feature leaves the approved planning as it is. Nothing was committed."
+fi
+
+# Agent attribution. When the project disables it (.agents/attribution.conf),
+# no commit of the feature may name an agent as a co-author. Only the commits
+# of the feature are checked, from where it left its base, never the history
+# of the base; a co-author who is a person passes.
+attribution="$(attribution_preference "$root")" || exit 1
+if [[ "$attribution" == "disabled" ]]; then
+  if [[ -n "$feature_merge_base" ]]; then
+    attributed="$(attribution_commit_trailers "$root" "$feature_merge_base..HEAD")"
+  else
+    attributed="$(attribution_commit_trailers "$root" -1 HEAD)"
+  fi
+  if [[ -n "$attributed" ]]; then
+    echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but a commit of this feature names an agent as a co-author:" >&2
+    printf '%s\n' "$attributed" | attribution_format_commits >&2
+    echo "Remove the trailer from the commit (git commit --amend for the last one, an interactive rebase of the feature branch for an earlier one); co-authors who are people stay. Nothing was committed." >&2
+    exit 1
+  fi
 fi
 
 # 1. Verification passes. A pass that was already recorded for exactly this
@@ -322,6 +342,24 @@ commit_options=(--edit)
 if ! git -C "$root" commit "${commit_options[@]}" -F "$message_file"; then
   echo "Error: the commit was not created. The changes remain staged." >&2
   exit 1
+fi
+
+# The message as it was committed, after the editor and any hook: with agent
+# attribution disabled it may neither name an agent as a co-author nor carry
+# generated attribution text, which publish-feature.sh would copy into the
+# pull request description. Such a commit is undone; the changes stay staged.
+if [[ "$attribution" == "disabled" ]]; then
+  attributed="$(
+    git -C "$root" log -1 --format=%B | attribution_agent_trailers
+    git -C "$root" log -1 --format=%B | attribution_generated_lines
+  )"
+  if [[ -n "$attributed" ]]; then
+    git -C "$root" reset --soft --quiet HEAD^
+    echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but the commit message carries it:" >&2
+    printf '%s\n' "$attributed" | sed 's/^/  /' >&2
+    echo "The commit was undone; the changes remain staged. Run finish-feature.sh again with a message that leaves it out." >&2
+    exit 1
+  fi
 fi
 
 echo

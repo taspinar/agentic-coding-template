@@ -124,7 +124,8 @@ $COMMITTED_EXTRA}"
   mkdir -p "$repo/scripts/lib"
   cp "$source_root/scripts/publish-feature.sh" "$source_root/scripts/report-runs.sh" "$repo/scripts/"
   cp "$source_root/scripts/lib/report.jq" "$repo/scripts/lib/"
-  cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$source_root/scripts/lib/records.sh" "$repo/scripts/lib/"
+  cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$source_root/scripts/lib/records.sh" \
+    "$source_root/scripts/lib/attribution.sh" "$repo/scripts/lib/"
   printf '.agents/manual-steps/\n.agents/completion/\n.agents/handoffs/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
   git -C "$repo" config user.email "publish-test@example.com"
@@ -639,5 +640,92 @@ git -C "$repo" commit -qam "Change the marker by hand"
 run_publish "$repo" 12 || fail "publishing a commit after the finish failed"
 if grep -Fqx "Closes #12" "$repo.gh.body"; then fail "a commit after the finish closes the Issue"; fi
 grep -Fq -- "--draft" "$repo.gh" || fail "a commit after the finish was not opened as a draft"
+
+
+# Agent attribution. With 'disabled', nothing is pushed while a commit of the
+# branch names an agent as a co-author or the description would carry
+# generated attribution text; the two are reported apart. A human co-author
+# passes, the history of the base is not checked, and a project that allows
+# attribution, or has not configured it, publishes as before.
+disable_attribution() {
+  mkdir -p "$1/.agents"
+  printf 'agent-attribution: disabled\n' >"$1/.agents/attribution.conf"
+  git -C "$1" add .agents/attribution.conf
+  git -C "$1" commit -q --amend --no-edit
+}
+
+repo="$(setup_repo attribution-trailer)"
+disable_attribution "$repo"
+git -C "$repo" commit -q --amend --no-edit --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" --trailer "Co-authored-by: Jane Doe <jane@example.com>"
+if run_publish "$repo" 12; then fail "a commit with an agent trailer was published although attribution is disabled"; fi
+if pushed "$repo"; then fail "a commit with an agent trailer was pushed"; fi
+grep -Fq "names an agent as a co-author" "$repo.out" || fail "the agent trailer was not reported"
+grep -Fq "noreply@anthropic.com" "$repo.out" || fail "the agent trailer is not shown"
+if grep -Fq "jane@example.com" "$repo.out"; then fail "the human co-author was reported"; fi
+if grep -Fq "description would carry" "$repo.out"; then fail "a trailer was reported as description text"; fi
+
+repo="$(setup_repo attribution-text)"
+disable_attribution "$repo"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Issue: #12" -m "Completion: complete
+- met: The marker exists (feature.txt)" -m "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+if run_publish "$repo" 12; then fail "a description with generated attribution text was published although attribution is disabled"; fi
+if pushed "$repo"; then fail "a branch whose description carries attribution was pushed"; fi
+grep -Fq "description would carry" "$repo.out" || fail "the description text was not reported"
+grep -Fq "Generated with" "$repo.out" || fail "the description text is not shown"
+if grep -Fq "names an agent as a co-author" "$repo.out"; then fail "description text was reported as a commit trailer"; fi
+
+# Both at once are both reported, before anything is pushed.
+repo="$(setup_repo attribution-both)"
+disable_attribution "$repo"
+mkdir -p "$repo/.agents/manual-steps"
+printf -- '- Made with Cursor\n' >"$repo/.agents/manual-steps/12.md"
+git -C "$repo" commit -q --amend --no-edit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>"
+if run_publish "$repo" 12; then fail "attribution in the commit and the description was published"; fi
+grep -Fq "names an agent as a co-author" "$repo.out" || fail "the trailer was not reported next to the description text"
+grep -Fq "description would carry" "$repo.out" || fail "the description text was not reported next to the trailer"
+if pushed "$repo"; then fail "the branch was pushed although it carries attribution"; fi
+
+# A human co-author passes; an agent trailer in the base is not the feature's.
+repo="$(setup_repo attribution-human)"
+git -C "$repo" checkout -q main
+printf 'base\n' >"$repo/base.txt"
+git -C "$repo" add base.txt
+git -C "$repo" commit -qm "On the base" -m "Co-authored-by: Claude <noreply@anthropic.com>"
+git -C "$repo" push -q origin main
+git -C "$repo" checkout -q feature/12-marker
+disable_attribution "$repo"
+git -C "$repo" commit -q --amend --no-edit --trailer "Co-authored-by: Jane Doe <jane@example.com>"
+run_publish "$repo" 12 || {
+  cat "$repo.out" >&2
+  fail "a human co-author was refused"
+}
+pushed "$repo" || fail "a branch with a human co-author was not pushed"
+grep -Fqx "Co-authored-by: Jane Doe <jane@example.com>" "$repo.gh.body" || fail "the human co-author was removed from the description"
+
+# Allowed, and unconfigured, publish an attributed commit as before.
+for preference in allowed none; do
+  repo="$(setup_repo "attribution-$preference")"
+  if [[ "$preference" == "allowed" ]]; then
+    mkdir -p "$repo/.agents"
+    printf 'agent-attribution: allowed\n' >"$repo/.agents/attribution.conf"
+    git -C "$repo" add .agents/attribution.conf
+  fi
+  git -C "$repo" commit -q --amend --no-edit --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+  run_publish "$repo" 12 || {
+    cat "$repo.out" >&2
+    fail "an attributed commit was refused although attribution is $preference"
+  }
+  pushed "$repo" || fail "an attributed commit was not pushed although attribution is $preference"
+done
+
+# A preference that cannot be read stops the publication.
+repo="$(setup_repo attribution-invalid)"
+mkdir -p "$repo/.agents"
+printf 'agent-attribution: maybe\n' >"$repo/.agents/attribution.conf"
+git -C "$repo" add .agents/attribution.conf
+git -C "$repo" commit -q --amend --no-edit
+if run_publish "$repo" 12; then fail "an unreadable attribution preference was accepted"; fi
+if pushed "$repo"; then fail "the branch was pushed with an unreadable attribution preference"; fi
+grep -Fq "unknown value 'maybe'" "$repo.out" || fail "the unreadable preference was not explained"
 
 echo "publish-feature tests passed"

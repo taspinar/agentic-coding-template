@@ -457,4 +457,44 @@ status=0
 MOCK_AGENT_EXIT=5 MOCK_ENVELOPE='{"is_error": true, "result": "failed"}' run_structured || status=$?
 [[ "$status" -eq 5 ]] || fail "Claude's exit status was not returned (got $status)"
 
+
+# Agent attribution. When the project disables it, a Claude session that may
+# commit is started with the setting that turns off its commit trailer and
+# its pull request line; a read-only session, Codex, and a project that allows
+# attribution get nothing. A preference that cannot be read starts no session.
+mkdir -p "$workdir/.agents"
+printf 'agent-attribution: disabled\n' >"$workdir/.agents/attribution.conf"
+for profile in write unattended; do
+  : >"$MOCK_AGENT_LOG"
+  agent_run "$profile" claude model-b "$workdir" "the prompt" "$tmp/final.txt" >/dev/null ||
+    fail "the claude $profile session failed with attribution disabled"
+  grep -Fq -- '--settings {"attribution": {"commit": "", "pr": "", "sessionUrl": false}}' "$MOCK_AGENT_LOG" ||
+    fail "the claude $profile session was not told to leave out its attribution"
+  : >"$MOCK_AGENT_LOG"
+  agent_run "$profile" codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null ||
+    fail "the codex $profile session failed with attribution disabled"
+  if grep -Fq -- "attribution" "$MOCK_AGENT_LOG"; then fail "codex, which has no attribution setting, was given one"; fi
+done
+: >"$MOCK_AGENT_LOG"
+agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/report.txt"
+if grep -Fq -- "--settings" "$MOCK_AGENT_LOG"; then fail "a read-only claude session, which commits nothing, was given the attribution setting"; fi
+
+printf 'agent-attribution: allowed\n' >"$workdir/.agents/attribution.conf"
+: >"$MOCK_AGENT_LOG"
+agent_run write claude model-b "$workdir" "the prompt" >/dev/null
+if grep -Fq -- "--settings" "$MOCK_AGENT_LOG"; then fail "a project that allows attribution changed Claude's settings"; fi
+rm "$workdir/.agents/attribution.conf"
+: >"$MOCK_AGENT_LOG"
+agent_run write claude model-b "$workdir" "the prompt" >/dev/null
+if grep -Fq -- "--settings" "$MOCK_AGENT_LOG"; then fail "an unconfigured project changed Claude's settings"; fi
+
+printf 'agent-attribution: maybe\n' >"$workdir/.agents/attribution.conf"
+: >"$MOCK_AGENT_LOG"
+if agent_run write claude model-b "$workdir" "the prompt" >/dev/null 2>"$tmp/err.log"; then
+  fail "a claude session started with an unreadable attribution preference"
+fi
+[[ ! -s "$MOCK_AGENT_LOG" ]] || fail "claude was started although the attribution preference cannot be read"
+grep -Fq "unknown value 'maybe'" "$tmp/err.log" || fail "the unreadable preference was not explained"
+rm "$workdir/.agents/attribution.conf"
+
 echo "agent tests passed"

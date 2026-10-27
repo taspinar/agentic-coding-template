@@ -37,6 +37,17 @@ If a material conflict remains, stop and report it.
 - Deferred findings have a linked follow-up Issue; accepted findings have an
   explicit rationale.
 
+## Attribution
+`.agents/attribution.conf` says whether a commit or a pull request of this
+project may name an agent: `agent-attribution: allowed` or `disabled`. When it
+is `disabled`, add no `Co-authored-by` trailer for an agent and no
+"Generated with" line to a commit message, a pull request description, or a
+summary that the scripts copy into them (`.agents/summaries/`,
+`.agents/manual-steps/`); co-authors who are people are still named.
+`finish-feature.sh` and `publish-feature.sh` refuse a commit or a description
+that carries agent attribution. When the setting is `allowed` or absent,
+attribute as your client does.
+
 ## Boundaries
 - Never push directly to `main`.
 - Never access or mutate production data, secrets, IAM, or production infrastructure without explicit human approval.

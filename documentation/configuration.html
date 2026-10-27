@@ -59,6 +59,9 @@ reviewer: claude &lt;model&gt;</code></pre>
   <p>The supported agents are Claude Code (<code>claude</code>) and Codex (<code>codex</code>). You can override the agent and the model for one run with <code>--agent</code> and <code>--model</code> on a workflow script. The model you name is passed to the agent as it is: the workflow never replaces it with another one, and an unknown agent is an error.</p>
   <p>A different agent for writing and for reviewing gives you a more independent review.</p>
 
+  <h2 id="attribution">Agent attribution</h2>
+  <p>Coding agents name themselves in what they commit: Claude Code adds a <code>Co-Authored-By</code> trailer to a commit and a "Generated with Claude Code" line to a pull request. Whether your project wants that is one setting in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/attribution.conf"><code>.agents/attribution.conf</code></a>: <code>agent-attribution: allowed</code>, which the template ships and which changes nothing, or <code>disabled</code>. With <code>disabled</code>, <code>AGENTS.md</code> tells the agents, the Claude sessions the scripts start get the matching setting, and <code>finish-feature.sh</code> and <code>publish-feature.sh</code> refuse a commit of the feature with an agent's trailer and a description with generated attribution text, each reported on its own. Co-authors who are people are never rejected, and the history of the base is never touched. Codex has no attribution setting and Cursor's is set per user, not per project: <code>doctor.sh</code> says so instead of claiming that they are configured.</p>
+
   <h2 id="profiles">What an agent is allowed to do</h2>
   <p>A script starts an agent with one of three permission profiles:</p>
   <div class="table-scroll">

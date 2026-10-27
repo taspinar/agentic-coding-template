@@ -13,6 +13,7 @@
 agent_library_dir="${BASH_SOURCE[0]%/*}"
 [[ "$agent_library_dir" != "${BASH_SOURCE[0]}" ]] || agent_library_dir="."
 source "$agent_library_dir/records.sh"
+source "$agent_library_dir/attribution.sh"
 
 AGENT_ROLES="project-grill project-planner planning-reviewer implementer reviewer triage triage-implementer analyst"
 
@@ -222,6 +223,11 @@ agent_session_notice() {
 #              use the network. What goes beyond that needs the user's
 #              permission: Claude asks before it runs a shell command, Codex
 #              before a command leaves its work-directory sandbox.
+#              When the project disables agent attribution
+#              (.agents/attribution.conf), a Claude session of this profile
+#              and of 'unattended' is started with the setting that turns off
+#              its commit trailer and its pull request line; Codex has no
+#              such setting.
 #   unattended Non-interactive session with the reach of 'write': it may
 #              modify the work directory and use the network, needs no
 #              terminal, asks nothing, and ends by itself. The agent's final
@@ -377,6 +383,8 @@ agent_run_session() {
   local context_file="${7:-/dev/null}"
   local schema_file="${8:-}"
   local codex_schema=()
+  local claude_settings=()
+  local attribution
   local claude_read_only=(
     --print
     --restricted
@@ -401,6 +409,17 @@ agent_run_session() {
   # schema file would be dropped without notice.
   if [[ "$profile" == "unattended" && ( "$context_file" != "/dev/null" || -n "$schema_file" ) ]]; then
     agent_fail "permission profile 'unattended' takes no context file or schema file."
+  fi
+
+  # Claude Code follows the project's attribution preference through its
+  # settings; the setting is given on the command line, so a session the
+  # scripts start follows it also without a .claude/settings.json. Only a
+  # session that may commit gets it: a read-only session changes nothing.
+  if [[ "$provider" == "claude" && "$profile" != "read-only" ]]; then
+    attribution="$(attribution_preference "$workdir")" || return 1
+    if [[ "$attribution" == "disabled" ]]; then
+      claude_settings=(--settings '{"attribution": {"commit": "", "pr": "", "sessionUrl": false}}')
+    fi
   fi
 
   if [[ "$profile" == "unattended" ]]; then
@@ -437,6 +456,7 @@ agent_run_session() {
         cd "$workdir"
         claude \
           --permission-mode acceptEdits \
+          ${claude_settings[@]+"${claude_settings[@]}"} \
           --model "$model" \
           "$prompt"
       ) || agent_write_failed claude $?
@@ -486,6 +506,7 @@ agent_run_session() {
           --permission-prompts none \
           --strict-mcp-config \
           --output-format json \
+          ${claude_settings[@]+"${claude_settings[@]}"} \
           --model "$model" \
           "$prompt"
       ) </dev/null >"$envelope" 2>"$output_file.log" || status=$?
