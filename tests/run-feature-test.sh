@@ -291,6 +291,15 @@ if grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out"; then fail "ordinary work was 
 grep -Fqx -- "- not required" <<<"$(git -C "$repo-2-thing" log -1 --format=%B | grep -A1 -Fx "Merge approval:")" ||
   fail "the commit does not record that no approval is needed"
 
+# The risk level is printed when the feature starts and before the review,
+# the reviewer is told, the commit records it, and the run record notes it.
+grep -Fq "run-feature.sh: risk level at the start: medium" "$repo.out" || fail "the risk level was not printed when the feature started"
+grep -Fq "run-feature.sh: risk level before round 1: medium" "$repo.out" || fail "the risk level was not printed before the review"
+grep -Fq "## Risk level" "$repo.control/reviewer-1.context" || fail "the reviewer was not told the risk level"
+grep -Fqx "Risk: medium" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the risk level"
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "risk" and .level == "medium" and (.reasons | length) >= 1)' >/dev/null ||
+  fail "the risk level is not in the run records"
+
 # A finished feature is not run again: a repeated command only publishes.
 run_feature "$repo" 2
 expect_published "$repo"

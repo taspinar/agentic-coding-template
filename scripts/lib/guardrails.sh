@@ -23,6 +23,8 @@ GUARDRAILS_BUILTIN_PROTECTED=(
   .agents/schemas
   scripts/check-guardrails.sh
   scripts/lib/guardrails.sh
+  scripts/check-risk.sh
+  scripts/lib/risk.sh
   .agents/agents.conf
   scripts/lib/agent.sh
   scripts/lib/review-data.sh

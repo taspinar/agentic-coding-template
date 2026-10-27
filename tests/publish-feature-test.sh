@@ -126,7 +126,8 @@ $COMMITTED_EXTRA}"
   cp "$source_root/scripts/publish-feature.sh" "$source_root/scripts/report-runs.sh" "$repo/scripts/"
   cp "$source_root/scripts/lib/report.jq" "$repo/scripts/lib/"
   cp "$source_root/scripts/lib/github.sh" "$source_root/scripts/lib/completion.sh" "$source_root/scripts/lib/records.sh" \
-    "$source_root/scripts/lib/attribution.sh" "$repo/scripts/lib/"
+    "$source_root/scripts/lib/attribution.sh" "$source_root/scripts/lib/fingerprint.sh" \
+    "$source_root/scripts/lib/guardrails.sh" "$source_root/scripts/lib/risk.sh" "$repo/scripts/lib/"
   printf '.agents/manual-steps/\n.agents/completion/\n.agents/handoffs/\n' >"$repo/.gitignore"
   git -C "$repo" config user.name "Publish Test"
   git -C "$repo" config user.email "publish-test@example.com"
@@ -537,6 +538,34 @@ grep -Fqx -- "- required from the project owner, for exactly this commit" "$repo
   fail "the pull request does not show that the owner must approve"
 grep -Fqx "The merge approval above was decided for commit \`$(git -C "$repo" rev-parse HEAD)\`." "$repo.gh.body" ||
   fail "the pull request does not name the commit the decision was made for"
+
+# The risk level and its reasons in the pull request are computed at the
+# publication, from the diff and the rules of the base as it is now: the
+# level the finish commit recorded is replaced, and named when it differs,
+# never trusted. A commit without a level gets one.
+repo="$(setup_repo risk)"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Risk: high" -m "- scripts/finish-feature.sh: listed as high in .agents/policies/risk.conf" -m "Refs #12"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature with a risk level failed"; }
+grep -Fqx "Risk: medium" "$repo.gh.body" || { cat "$repo.gh.body" >&2; fail "the pull request does not show the level computed at the publication"; }
+grep -Fq -- "- feature.txt: " "$repo.gh.body" || fail "the pull request does not show the reasons for the computed level"
+grep -Fqx -- "- the finish commit recorded high; the level is computed again at every publication" "$repo.gh.body" ||
+  fail "the pull request does not name the level the commit recorded"
+if grep -Fq "Risk: high" "$repo.gh.body"; then fail "the level of the commit was copied into the pull request"; fi
+grep -Fqx "Refs #12" "$repo.gh.body" || fail "the rest of the commit message after the risk block was lost"
+grep -Fq "Risk level: medium" "$repo.out" || fail "the computed level was not printed"
+
+repo="$(setup_repo risk-raised)"
+git -C "$repo" commit -q --amend -m "Add the marker" -m "Risk: medium" -m "- feature.txt: the default is medium"
+jq '.risk = "high"' "$repo/.agents/completion/12.json" >"$repo/.agents/completion/12.json.tmp" &&
+  mv "$repo/.agents/completion/12.json.tmp" "$repo/.agents/completion/12.json"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a feature whose record raises the level failed"; }
+grep -Fqx "Risk: high" "$repo.gh.body" || fail "the record did not raise the level at the publication"
+grep -Fq "recorded risk: high in the completion record" "$repo.gh.body" || fail "the raised level does not name the record"
+
+repo="$(setup_repo risk-none)"
+run_publish "$repo" 12 || { cat "$repo.out" >&2; fail "publishing a commit without a risk level failed"; }
+grep -Fqx "Risk: medium" "$repo.gh.body" || { cat "$repo.gh.body" >&2; fail "a commit without a level got none in the pull request"; }
+grep -Fqx "Closes #12" "$repo.gh.body" || fail "the appended risk block broke the rest of the description"
 
 # The run summary on the Issue is off by default. With --summary it is one
 # comment with numbers only, replaced on a later publication; a failure to

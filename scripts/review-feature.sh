@@ -12,6 +12,7 @@ source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/verification.sh"
 source "$script_dir/lib/review-run.sh"
 source "$script_dir/lib/guardrails.sh"
+source "$script_dir/lib/risk.sh"
 source "$script_dir/lib/completion.sh"
 source "$script_dir/lib/issue-comments.sh"
 
@@ -297,6 +298,28 @@ guardrails="$(printf '%s\n' "$guardrail_findings" |
   fi
 } >>"$context_file"
 
+# The risk level of the feature (lib/risk.sh): the rules of the base on the
+# diff, the fixed escalations, and what the implementer recorded, which can
+# raise it. The reviewer is told, and the artifact records it; the reviewer's
+# own classification of the impact can raise it further, never lower it.
+risk_lines="$(risk_decision "$(risk_computed "$root" "$guardrail_rules" "$merge_base")" "$(completion_record "$root" "$issue")" "")"
+risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
+risk="$(printf '%s\n' "$risk_lines" | sed 1d |
+  jq -Rn --arg level "$risk_level" '{level: $level, reasons: [inputs | select(length > 0)]}')"
+{
+  echo
+  echo "## Risk level"
+  echo
+  echo "The effective risk level of this feature is $risk_level, by $RISK_CONFIG of the"
+  echo "base branch on the complete diff, the fixed escalations, and the implementer's"
+  echo "completion record:"
+  echo
+  printf '%s\n' "$risk_lines" | sed '1d; s/^/- /'
+  echo
+  echo "Your classification of the impact on the architecture as major or breaking"
+  echo "makes the level high. No input of an agent lowers it."
+} >>"$context_file"
+
 # What the implementer says about how far the Issue is done. It is given to
 # the reviewer as a claim to check, in a review of the complete feature: the
 # scripts only read the status, and only a reviewer can tell whether the code
@@ -335,6 +358,7 @@ echo "  Branch:   $branch"
 echo "  Base:     $base_ref"
 echo "  Agent:    $agent"
 echo "  Model:    $model"
+echo "  Risk:     $risk_level"
 echo "  Output:   $review_relative.json"
 if [[ -n "$previous_review" ]]; then
   echo "  Previous: .agents/reviews/$(basename "$previous_review")"
@@ -409,10 +433,12 @@ metadata="$(jq -n \
   --argjson verification "$verification" \
   --argjson scope "$scope" \
   --argjson guardrails "$guardrails" \
+  --argjson risk "$risk" \
   '{
     schema: "review/v1",
     kind: "feature",
     guardrails: $guardrails,
+    risk: $risk,
     verification: $verification,
     scope: $scope,
     issue: $issue,

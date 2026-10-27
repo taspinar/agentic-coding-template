@@ -228,12 +228,16 @@ review_artifact_errors() {
     else
       unexpected(["architecture_impact", "base", "branch", "created_at", "findings", "guardrails", "head",
                   "issue", "kind", "limitations", "merge_approval", "merge_base", "reviewed_paths", "reviewed_tree", "reviewer",
-                  "round", "schema", "scope", "verdict", "verification"]; "the review"),
+                  "risk", "round", "schema", "scope", "verdict", "verification"]; "the review"),
       (if has("architecture_impact") then (.architecture_impact | architecture_impact_rules) else empty end),
       (if has("guardrails") | not then empty
        elif (.guardrails | type) == "object" and (.guardrails.level | IN("none", "sensitive", "protected"))
             and (.guardrails.findings | type) == "array" then empty
        else "guardrails must hold the level and the findings of the gate" end),
+      (if has("risk") | not then empty
+       elif (.risk | type) == "object" and (.risk.level | IN("low", "medium", "high"))
+            and (.risk.reasons | type) == "array" then empty
+       else "risk must hold the level and its reasons" end),
       (if has("merge_approval") | not then empty
        elif (.merge_approval | type) == "object" and (.merge_approval.required | type) == "boolean"
             and (.merge_approval.reasons | type) == "array" then empty

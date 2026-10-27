@@ -680,6 +680,70 @@ run_finish "$repo" 12 "Fix a typo" --no-review "documentation typo" || fail "fin
 grep -Fqx -- "- required from the project owner, for exactly this commit" <<<"$(approval_of "$repo")" ||
   fail "a feature without a review did not need the owner's approval"
 
+# The risk level. Computed from the diff by the rules of the base and
+# recorded in the commit message with its reasons; the implementer's record
+# can raise it, never lower it, and the reviewer's classification raises it.
+risk_of() {
+  message "$1" | sed -n '/^Risk: /,/^$/p'
+}
+
+set_risk_claim() {
+  jq --arg risk "$2" '.risk = $risk' "$1/.agents/completion/12.json" >"$1/.agents/completion/12.json.tmp" &&
+    mv "$1/.agents/completion/12.json.tmp" "$1/.agents/completion/12.json"
+}
+
+repo="$(setup_repo risk-default PASS "[]")"
+set_impact "$repo" minor
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature of today's shape failed"
+grep -Fqx "Risk: medium" <<<"$(risk_of "$repo")" || fail "a feature without a project policy is not recorded as medium"
+grep -Fq -- "- feature.txt: " <<<"$(risk_of "$repo")" || fail "the reason for the level was not recorded"
+
+repo="$(setup_repo risk-lowered PASS "[]")"
+set_impact "$repo" minor
+set_risk_claim "$repo" low
+expect_no_commit "$repo" "the completion record claims a lower level than computed" 12 "Add the marker"
+grep -Fq "claims risk: low, but the feature is medium" "$repo.out" || fail "the refused claim was not explained with the computed level"
+grep -Fq -- "- feature.txt: " "$repo.out" || fail "the refusal does not give the reasons for the computed level"
+
+repo="$(setup_repo risk-raised PASS "[]")"
+set_impact "$repo" minor
+set_risk_claim "$repo" high
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature whose record raises the level failed"
+grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the record did not raise the level"
+grep -Fq "recorded risk: high in the completion record" <<<"$(risk_of "$repo")" || fail "the raised level does not name the record as the reason"
+
+repo="$(setup_repo risk-review PASS "[]")"
+set_impact "$repo" major
+run_finish "$repo" 12 "Add the marker" || fail "finishing a feature with a major impact failed"
+grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "a major impact did not raise the level to high"
+grep -Fq "classified the impact on the architecture as major" <<<"$(risk_of "$repo")" || fail "the review is not named as the reason for high"
+
+# A high-risk path stays high whatever the record claims.
+repo="$(setup_repo risk-protected PASS "[]")"
+set_impact "$repo" minor
+set_risk_claim "$repo" low
+printf '\n# changed\n' >>"$repo/scripts/publish-feature.sh"
+record_reviewed_tree "$repo" "$repo/$review"
+expect_no_commit "$repo" "the record claims low for a change to a file of the gate" 12 "Add the marker"
+grep -Fq "but the feature is high" "$repo.out" || fail "the computed level high was not reported"
+
+# A feature that was already in progress when the level came into the
+# workflow is not refused: its completion record has no 'risk', as no record
+# written before had one, so there is no claim to refuse; the level is
+# derived and recorded all the same.
+repo="$(setup_repo risk-earlier-record PASS "[]")"
+set_impact "$repo" minor
+jq 'del(.risk)' "$repo/.agents/completion/12.json" >"$repo/.agents/completion/12.json.tmp" &&
+  mv "$repo/.agents/completion/12.json.tmp" "$repo/.agents/completion/12.json"
+printf '\n# changed\n' >>"$repo/scripts/publish-feature.sh"
+record_reviewed_tree "$repo" "$repo/$review"
+run_finish "$repo" 12 "Add the marker" || {
+  cat "$repo.out" >&2
+  fail "a high-risk feature whose record predates the risk level was refused"
+}
+grep -Fqx "Risk: high" <<<"$(risk_of "$repo")" || fail "the level of a feature with an earlier record was not derived and recorded"
+grep -Fq -- "- scripts/publish-feature.sh: " <<<"$(risk_of "$repo")" || fail "the reason for the derived level was not recorded"
+
 # An emptied commit message creates no commit.
 repo="$(setup_repo abort PASS "[]")"
 EDITOR_COMMAND='sh -c ": > \"\$0\""' expect_no_commit "$repo" "the commit message was emptied" 12 "Add the marker"
