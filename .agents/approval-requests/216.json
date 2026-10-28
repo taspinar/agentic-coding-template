@@ -1,0 +1,23 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "9d8de421fcb3ed0ecc01e6012c492b9ddfe7eaf9",
+  "commit": {
+    "branch": "feature/216-record-the-step-and",
+    "parent": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1",
+    "base": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "scripts/finish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/lib/agent.sh: the file defines or carries out the workflow and its gate",
+    "scripts/publish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/run-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The change adds stop events and step/reason fields to the shared run-record data model, and updates the experience and run-report consumers. This is shared infrastructure other workflow features depend on. "
+  ],
+  "explanation": "Issue #216: Record the step and the reason of every stop of a workflow script in the run record. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}
