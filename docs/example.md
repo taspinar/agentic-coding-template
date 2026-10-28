@@ -19,16 +19,19 @@ and check your machine:
 
 Every line should read `OK`. A missing agent CLI that `.agents/agents.conf`
 assigns to a role is `FAILED`. Set each role to a provider and model your
-accounts support, for example:
+accounts support; the file ships with these (a line with `@high` applies to
+a high-risk feature, see "Configuring agents" in `docs/development.md`):
 
 ```text
 project-grill: claude fable
 project-planner: claude fable
 planning-reviewer: codex gpt-6-astra
-implementer: codex gpt-6-astra
-reviewer: claude fable
-triage: claude fable
-triage-implementer: codex gpt-6-astra
+implementer: claude opus
+implementer@high: claude fable
+reviewer: codex gpt-6-luna
+triage: claude sonnet
+triage-implementer: claude opus
+triage-implementer@high: claude fable
 analyst: claude fable
 ```
 
