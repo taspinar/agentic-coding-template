@@ -594,6 +594,46 @@ grep -Fq "never report a difference as a" "$repo.log.stdin" || fail "the reviewe
 grep -Fq -- "- protected: docs/decisions/009-storage.md" "$repo.log.stdin" || fail "the reviewer was not told about the added ADR"
 grep -Fq -- "- sensitive: feature.txt" "$repo.log.stdin" || fail "the reviewer was not told about the sensitive path"
 
+# The diff the reviewer gets never shows a change in a path the content
+# fingerprint leaves out: an approval request the base has is not shown as
+# deleted, and the feature's own request is not a file of the diff but a
+# section of its own, with the content tree it names.
+repo="$(setup_repo approval-requests)"
+git -C "$repo" stash -q --include-untracked
+git -C "$repo" switch -q main
+mkdir -p "$repo/.agents/approval-requests"
+request_tree="0123456789abcdef0123456789abcdef01234567"
+write_request() {
+  printf '{"schema": "approval-request/v1", "content_tree": "%s", "commit": {"branch": "%s", "parent": "%s", "base": null}, "review": null, "reasons": ["%s"], "explanation": "Issue #%s: %s"}\n' \
+    "$2" "$3" "$(git -C "$repo" rev-parse HEAD)" "$4" "$1" "$5" >"$repo/.agents/approval-requests/$1.json"
+}
+write_request 3 "fedcba9876543210fedcba9876543210fedcba98" feature/3-earlier "docs/decisions/003-earlier.md: an ADR" "an earlier feature"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Finish the earlier feature with its approval request"
+git -C "$repo" switch -q feature/7-marker
+git -C "$repo" rebase -q main
+write_request 7 "$request_tree" feature/7-marker "feature.txt: a sensitive path" "the marker"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "Finish the feature with its approval request"
+git -C "$repo" stash pop -q >/dev/null
+run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review of a feature with approval requests failed"
+}
+if grep -Fq ".agents/approval-requests/3.json" "$repo.log.stdin"; then fail "the approval request of the base was shown to the reviewer as a change"; fi
+if grep -Fq "deleted file" "$repo.log.stdin"; then fail "the diff shown to the reviewer has a deletion"; fi
+if grep -Fq "+++ b/.agents/approval-requests/7.json" "$repo.log.stdin"; then fail "the approval request of the feature was shown as a file of the diff"; fi
+if grep -Fq ".agents/approval-requests/7.json |" "$repo.log.stdin"; then fail "the approval request of the feature was listed as a changed file"; fi
+grep -Fq "## Approval request of the feature" "$repo.log.stdin" || fail "the approval request of the feature was not given to the reviewer as a section"
+grep -Fq "Content tree the request names: $request_tree" "$repo.log.stdin" || fail "the reviewer was not given the content tree the request names"
+grep -Fq '    {"schema": "approval-request/v1", "content_tree": "'"$request_tree"'"' "$repo.log.stdin" || fail "the approval request of the feature was not shown"
+grep -Fq '"explanation": "Issue #7: the marker"' "$repo.log.stdin" || fail "the explanation of the approval request was not shown"
+grep -Fq "shown below under 'Approval request of the feature', never in" "$repo.log.stdin" || fail "the gate section does not say where the request is shown"
+[[ "$(jq -r '[.guardrails.findings[] | select(.path | test("approval-requests"))] | length' "$repo/.agents/reviews/feature-7-marker-review-01.json")" -eq 0 ]] ||
+  fail "the gate reported an approval request as a change"
+# A feature without a request of its own gets no such section.
+if grep -Fq "## Approval request of the feature" "$tmp/gate.log.stdin"; then fail "a feature without an approval request got the section"; fi
+
 # The comments of the owner, a member, and a collaborator follow the body, in
 # order, with their authors and times; the comments of others and the
 # workflow's own reports do not. The run record says how many were passed on.

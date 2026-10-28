@@ -109,6 +109,20 @@ expect_rejected "a malformed level line" "malformed entry" implementer
 write_config "implementer: codex sonnet" "implementer@high: copilot fable"
 expect_rejected "an unsupported provider on a level line" "unsupported agent 'copilot'" implementer "" "" high
 
+# The provider and the model of every line are checked while the file is
+# read, also on a level line of a role that is not the one resolved, and the
+# message names the line, its role, and its level.
+write_config "implementer: codex sonnet" "reviewer@high: copilot nope"
+expect_rejected "an unsupported provider on a level line of another role" "unsupported agent 'copilot' for role 'reviewer@high' on line 2 of $config" implementer
+expect_rejected "an unsupported provider on a level line of another role, at a level" "for role 'reviewer@high' on line 2" implementer "" "" medium
+write_config "implementer: codex sonnet" "reviewer@high: claude --fallback"
+expect_rejected "an invalid model on a level line of another role" "model must use only letters" implementer
+grep -Fq "for role 'reviewer@high' on line 2 of $config" "$tmp/err.log" || fail "the invalid model is not reported with its line: $(cat "$tmp/err.log")"
+write_config "implementer: codex sonnet" "triage@low: codex fable"
+expect_rejected "an unsupported combination on a level line of another role" "unsupported agent/model combination: codex + fable for role 'triage@low' on line 2" implementer "" "" high
+write_config "implementer: codex sonnet" "reviewer: copilot nope" "reviewer@high: claude model-rh"
+expect_rejected "an unsupported provider on the plain line of another role" "unsupported agent 'copilot' for role 'reviewer' on line 2" implementer "" "" high
+
 # --- The highest level of the run records -----------------------------------
 
 # records_highest_level joins the events to the runs whose start names the
@@ -281,10 +295,21 @@ if run_doctor "$bin"; then fail "an unknown level passed doctor"; fi
 grep -Eq '^FAILED +agent configuration is invalid' "$tmp/doctor.log" || fail "the unknown level was not reported as invalid"
 grep -Fq "unknown risk level 'critical'" "$tmp/doctor.log" || fail "the unknown level was not named"
 
-# An unsupported provider on a level line fails and names the line.
+# An unsupported provider on a level line fails as an invalid configuration
+# and names the line, also on a line of a role that no script started.
 write_config "implementer: codex sonnet" "implementer@high: copilot fable" "reviewer: claude model-r"
 if run_doctor "$bin"; then fail "an unsupported provider on a level line passed doctor"; fi
-grep -Fq "role 'implementer@high' uses unsupported agent 'copilot'" "$tmp/doctor.log" || fail "the unsupported provider was not reported with its line"
+grep -Eq '^FAILED +agent configuration is invalid' "$tmp/doctor.log" || fail "the unsupported provider was not reported as invalid: $(cat "$tmp/doctor.log")"
+grep -Fq "unsupported agent 'copilot' for role 'implementer@high' on line 2" "$tmp/doctor.log" || fail "the unsupported provider was not reported with its line: $(cat "$tmp/doctor.log")"
+write_config "implementer: codex sonnet" "reviewer: claude model-r" "reviewer@high: copilot nope"
+if run_doctor "$bin"; then fail "an unsupported provider on a level line of the reviewer passed doctor"; fi
+grep -Fq "unsupported agent 'copilot' for role 'reviewer@high' on line 3" "$tmp/doctor.log" || fail "the unsupported provider of the reviewer was not reported with its line: $(cat "$tmp/doctor.log")"
+
+# An invalid model on a level line fails and names the line.
+write_config "implementer: codex sonnet" "reviewer: claude model-r" "reviewer@high: claude --fallback"
+if run_doctor "$bin"; then fail "an invalid model on a level line passed doctor"; fi
+grep -Eq '^FAILED +agent configuration is invalid' "$tmp/doctor.log" || fail "the invalid model was not reported as invalid: $(cat "$tmp/doctor.log")"
+grep -Fq "for role 'reviewer@high' on line 3" "$tmp/doctor.log" || fail "the invalid model was not reported with its line: $(cat "$tmp/doctor.log")"
 
 # A CLI that only a level line needs is required, and the line is named.
 bin_codex="$(make_bin codex-only git gh jq codex)"
@@ -472,6 +497,24 @@ grep -Fq "unknown risk level 'critical'" "$repo_invalid.out" || fail "the invali
 [[ ! -e "$tmp/invalid-5-thing" ]] || fail "a worktree was created although the configuration is invalid"
 [[ ! -s "$repo_invalid.log" ]] || fail "an agent was started although the configuration is invalid"
 
+# So does an unsupported provider or an invalid model on a level line of
+# the reviewer, which start-feature.sh does not start: the whole file is
+# validated before the implementer is resolved.
+break_config() {
+  printf '%s\n' "$@" >"$repo_invalid/.agents/agents.conf"
+  git -C "$repo_invalid" -c user.name="Agent Levels Test" -c user.email="agent-levels-test@example.com" commit -qam "Break the configuration again"
+}
+break_config "implementer: codex sonnet" "reviewer: claude model-r" "reviewer@high: copilot nope"
+if run_start "$repo_invalid" 5 thing; then fail "a feature started with an unsupported provider on the reviewer's level line"; fi
+grep -Fq "unsupported agent 'copilot' for role 'reviewer@high' on line 3" "$repo_invalid.out" || fail "the reviewer's invalid line was not named: $(cat "$repo_invalid.out")"
+[[ ! -e "$tmp/invalid-5-thing" ]] || fail "a worktree was created although the reviewer's level line is invalid"
+[[ ! -s "$repo_invalid.log" ]] || fail "an agent was started although the reviewer's level line is invalid"
+break_config "implementer: codex sonnet" "reviewer: claude model-r" "reviewer@high: claude --fallback"
+if run_start "$repo_invalid" 5 thing; then fail "a feature started with an invalid model on the reviewer's level line"; fi
+grep -Fq "for role 'reviewer@high' on line 3" "$repo_invalid.out" || fail "the reviewer's invalid model was not named: $(cat "$repo_invalid.out")"
+[[ ! -e "$tmp/invalid-5-thing" ]] || fail "a worktree was created although the reviewer's model is invalid"
+[[ ! -s "$repo_invalid.log" ]] || fail "an agent was started although the reviewer's model is invalid"
+
 # The reviewer of a high feature is the one of its level line, and the
 # review is recorded at that level.
 finding() {
@@ -515,7 +558,7 @@ run_review() {
     PATH="$tmp/bin:/usr/bin:/bin" MOCK_AGENT_LOG="$repo_review.log" MOCK_OUTPUT="$review_result" ./scripts/review-feature.sh 7 "$@" </dev/null
   ) >"$repo_review.out" 2>&1
 }
-printf 'implementer: claude sonnet\nimplementer@high: codex fable\nreviewer: claude model-r\nreviewer@high: codex model-rh\n' >"$repo_review/.agents/agents.conf"
+printf 'implementer: claude sonnet\nimplementer@high: codex model-ih\nreviewer: claude model-r\nreviewer@high: codex model-rh\n' >"$repo_review/.agents/agents.conf"
 : >"$repo_review.log"
 if run_review; then fail "a review whose reviewer and implementer resolve to codex at high started"; fi
 grep -Fq "the reviewer and the implementer would both use codex for this high-risk feature" "$repo_review.out" ||
@@ -581,5 +624,24 @@ if run_review; then fail "a review started although the implementer ran with the
 grep -Fq "hold 2 sessions of the implementer with claude" "$repo_review.out" ||
   fail "the sessions were not counted once after the consolidation: $(grep -Fo 'hold [0-9]* sessions' "$repo_review.out")"
 [[ ! -s "$repo_review.log" ]] || fail "the reviewer was called although the implementer ran with its provider (consolidated records)"
+
+# An invalid line of a role that the review does not start (an unsupported
+# provider, an invalid model, or a refused combination on a level line of the
+# triage) is refused with its line before the reviewer is resolved: no agent
+# is called and no artifact is written.
+refused_review() {
+  local line="$1"
+  local message="$2"
+  local description="$3"
+  printf 'implementer: codex sonnet\nreviewer: claude model-r\n%s\n' "$line" >"$repo_review/.agents/agents.conf"
+  : >"$repo_review.log"
+  if run_review; then fail "a review started although $description"; fi
+  grep -Fq "$message" "$repo_review.out" || fail "the invalid line of the triage was not named ($description): $(cat "$repo_review.out")"
+  [[ ! -s "$repo_review.log" ]] || fail "the reviewer was called although $description"
+  [[ ! -e "$repo_review/.agents/reviews/feature-7-login-review-04.json" ]] || fail "a review wrote an artifact although $description"
+}
+refused_review "triage@low: copilot nope" "unsupported agent 'copilot' for role 'triage@low' on line 3 of" "a level line of the triage names an unsupported provider"
+refused_review "triage@low: claude --fallback" "for role 'triage@low' on line 3 of" "a level line of the triage names an invalid model"
+refused_review "triage@low: codex fable" "unsupported agent/model combination: codex + fable for role 'triage@low' on line 3 of" "a level line of the triage names a refused combination"
 
 echo "agent-levels tests passed"

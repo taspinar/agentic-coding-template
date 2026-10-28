@@ -285,17 +285,19 @@ that keeps no run records (see "Run records"), the level is computed anew at
 every session.
 
 `doctor.sh` validates the level lines like the plain ones: an unknown level, a
-duplicate, a malformed line, or an unsupported provider is reported, a CLI
-that only a level line needs is required, and every script refuses such a
-file. It also warns when a reviewing role and the role whose work it reviews
-resolve to the same provider, for the plain lines and for every level that
-either side has a line for, and when a role that never runs with a level (the
-planning roles and the analyst) has a level line. The reviewer's independence
-is enforced where the reviewer starts: `review-feature.sh` takes the
-implementer's provider from the run records of the feature ("Run records"),
-which hold every session of the implementer with the provider it ran with,
-also a session that `--agent` on the command line gave another provider than
-the configuration (each run counted once: from its run file while it exists,
+duplicate, a malformed line, an unsupported provider, or an invalid model is
+reported with its line, on any line of the file, also one of a role that the
+script does not start; a CLI that only a level line needs is required; and
+every script refuses such a file before it resolves a role. It also warns
+when a reviewing role and the role whose work it reviews resolve to the same
+provider, for the plain lines and for every level that either side has a
+line for, and when a role that never runs with a level (the planning roles
+and the analyst) has a level line. The reviewer's independence is enforced
+where the reviewer starts: `review-feature.sh` takes the implementer's
+provider from the run records of the feature ("Run records"), which hold
+every session of the implementer with the provider it ran with, also a
+session that `--agent` on the command line gave another provider than the
+configuration (each run counted once: from its run file while it exists,
 from the copy of the feature otherwise), and refuses, before it calls any
 agent, a reviewer that resolves to a provider the implementer ran with.
 Without a recorded session
@@ -1739,7 +1741,13 @@ commit SHA, writes it into the request as `content_tree`, and checks after
 the commit that the commit holds exactly that content. `publish-feature.sh`
 computes it again from the finish commit and puts it into the pull request,
 next to the commit SHA, labelled as the content tree. The reviewer gets it in
-the review context. No other fingerprint is printed in the same statement:
+the review context, and gets the request of the feature, when there is one,
+as a section of that context with the content tree it names, like the
+completion record and the handoff note: the diff the reviewer sees shows no
+change in `.agents/approval-requests/`, neither the feature's own request nor
+a request of an earlier feature that the base already has, since the content
+fingerprint leaves the directory out. No other fingerprint is printed in the
+same statement:
 the `reviewed_tree` of a review artifact is a different value, since it also
 covers the completion record and the handoff note (see "What does not change
 the fingerprint"), and comparing the two was a recurring false finding in

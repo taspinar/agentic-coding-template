@@ -126,6 +126,16 @@ write_config "implementer: codex model-a" "tester: claude model-b"
 expect_rejected "unknown configured role" implementer
 write_config "implementer: codex model-a" "implementer: claude model-b"
 expect_rejected "duplicate configured role" implementer
+# The provider and the model of every line are checked while the file is
+# read, not only those of the role that is resolved; the line is named.
+write_config "implementer: codex model-a" "reviewer: copilot model-b"
+expect_rejected "unsupported provider of another role" implementer
+grep -Fq "unsupported agent 'copilot' for role 'reviewer' on line 2" "$tmp/err.log" || fail "the unsupported provider of another role was not named with its line: $(cat "$tmp/err.log")"
+write_config "implementer: codex model-a" "reviewer: claude --fallback"
+expect_rejected "invalid model of another role" implementer
+grep -Fq "for role 'reviewer' on line 2" "$tmp/err.log" || fail "the invalid model of another role was not named with its line: $(cat "$tmp/err.log")"
+write_config "implementer: codex model-a" "reviewer: codex fable"
+expect_rejected "known incompatible combination of another role" implementer
 
 # Without a configuration file, explicit command-line values are sufficient.
 rm "$tmp/agents.conf"

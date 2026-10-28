@@ -143,6 +143,16 @@ edit_triage "$repo" '.review_verdict = "PASS_WITH_MINOR_FINDINGS" | del(.decisio
 run_apply "$repo" y "$triage" || fail "a triage without FIX_NOW findings returned an error"
 [[ ! -e "$repo.log" ]] || fail "an agent was started without FIX_NOW findings"
 
+# An invalid line of a role that the fix session does not start is refused
+# with its line before the triage implementer is resolved.
+repo="$(setup_repo invalid-config)"
+printf 'triage-implementer: codex model-i\nreviewer@high: copilot nope\n' >"$repo/.agents/agents.conf"
+expect_rejected "$repo" "a level line of the reviewer names an unsupported provider" "$triage"
+grep -Fq "unsupported agent 'copilot' for role 'reviewer@high' on line 2 of" "$repo.out" || fail "the invalid line of the reviewer was not named: $(cat "$repo.out")"
+printf 'triage-implementer: codex model-i\nreviewer@high: claude --fallback\n' >"$repo/.agents/agents.conf"
+expect_rejected "$repo" "a level line of the reviewer names an invalid model" "$triage"
+grep -Fq "for role 'reviewer@high' on line 2 of" "$repo.out" || fail "the invalid model of the reviewer was not named: $(cat "$repo.out")"
+
 # Unapproved, mismatching, or misplaced triage artifacts are rejected.
 repo="$(setup_repo unapproved)"
 edit_triage "$repo" 'del(.approved_at)'
