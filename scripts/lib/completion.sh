@@ -159,7 +159,7 @@ handoff_remaining() {
       print text
     }
     # Another part of the note ends the list.
-    found && (/^#/ || tolower($0) ~ /^[[:space:]]*([-*][[:space:]]*)?\**(done|in progress|tried and rejected|open questions?)\**[[:space:]]*:/) {
+    found && (/^#/ || tolower($0) ~ /^[[:space:]]*([-*][[:space:]]*)?\**(done|in progress|tried and rejected|open questions?|clarification)\**[[:space:]]*:/) {
       found = 0
     }
     tolower($0) ~ /^[[:space:]]*(#+[[:space:]]*|[-*][[:space:]]*)?\**remaining( work)?\**[[:space:]]*:?\**[[:space:]]*/ &&

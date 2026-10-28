@@ -145,6 +145,12 @@ for nothing in 'Remaining: none.' '**Remaining:** nothing' '- **Remaining:** n/a
   '**Remaining:** -' 'Remaining: nothing remains.'; do
   expect_remaining "nothing remains: $nothing" "$nothing\n" ""
 done
+# The clarification line of the implementer is a part of its own, not work
+# that remains.
+expect_remaining "the clarification line after the list" \
+  '**Remaining:** none\n\n**Clarification:** clear, the Issue settles every decision.\n' ""
+expect_remaining "the clarification line ends the list" \
+  '## Remaining\n- step 3\n- **Clarification:** clear\n' "step 3|"
 expect_remaining "a note reduced to one line" 'Issue 7 is complete.\n' ""
 expect_remaining "the word in a sentence" 'The remaining tests pass, and remaining: is not a label here.\n' ""
 expect_remaining "an empty note" '' ""

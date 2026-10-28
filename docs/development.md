@@ -912,6 +912,51 @@ the triage agent, so all three judge the same Issue.
 An Issue without comments, or without any that may be passed on, gives the
 agents exactly the Issue as before: title and body.
 
+### Clarifying a feature
+
+A feature Issue can leave a decision open that the implementer would
+otherwise invent: the room model of "Add multiplayer", say, where "Add a mute
+button to the audio controls" leaves nothing to decide. The first session of
+the implementer therefore starts with one step before it changes anything
+(`.agents/prompts/implementer.md`, "Clarification"): it reads the Issue with
+your comments, `docs/PROJECT_REQUIREMENTS.md`, the architecture, the accepted
+ADRs, the plan if there is one, and the code, and classifies the feature.
+
+- **Clear.** Every decision that materially affects scope, user experience,
+  a public interface, the data model, the architecture, security, backward
+  compatibility, or the acceptance criteria is settled by those sources. The
+  session implements as usual; its handoff note says `Clarification: clear`
+  with one line on why.
+- **Needs clarification.** The session changes nothing in the repository. It
+  writes its questions under "Open questions" in the handoff note, each with
+  the decision it settles and, where it can, the options and its
+  recommendation, records the status `blocked` in the completion record, and
+  ends. `run-feature.sh` stops with status 3 and names the handoff note;
+  nothing is reviewed or committed.
+
+A choice the implementer can make itself, such as names, private helpers, or
+the organisation of the tests, is not a question for you: it records it in the
+handoff note. A feature whose Issue would change the project requirements,
+the architecture, or an accepted ADR is a question too, never a silent
+override; the answer is then a proposed ADR or an update of the requirements,
+not a decision inside the feature.
+
+Answer in the handoff note, or in a comment on the Issue, which the next
+session gets (see "Comments on the Issue"), and continue with
+`./scripts/run-feature.sh <issue>` or
+`./scripts/start-feature.sh <issue> --resume`. That session reads the answers and implements; it asks again only
+about a decision that the answers left open. The decisions stay in the handoff
+note and on the Issue: there is no separate requirements file per feature, and
+a plan under `.agents/plans/` can take them up when the feature has one.
+
+The step is not an interview. A clear feature gets no questions, and the
+reviewer does not report missing clarification for a feature whose handoff
+note says `Clarification: clear`, unless the result settles a decision the
+sources left open. A session that ends with `BLOCKED:` but writes no question
+under "Open questions" leaves nothing to answer: the line is ignored and the
+run goes on, so the step cannot stall a run silently. How often features stop
+for questions shows in `./scripts/report-runs.sh` as blocked runs.
+
 ### Resuming an interrupted feature
 
 A session can end before the work is complete: a closed terminal, a usage

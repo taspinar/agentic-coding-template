@@ -15,6 +15,43 @@ Inspect the existing codebase and implementation patterns before changing files.
 
 Do not rely on prior chat context when it conflicts with repository state.
 
+## Clarification
+
+Before you change anything in the first session of a feature, decide whether
+the feature is **clear** or **needs clarification**. Read the Issue (its body
+and the owner's comments that follow it), `docs/PROJECT_REQUIREMENTS.md`, the
+architecture, the accepted ADRs, the plan if there is one, and the code the
+feature touches.
+
+The feature is clear when those sources settle every decision that
+materially affects the scope, the user experience, a public interface, the
+data model, the architecture, security, backward compatibility, or the
+acceptance criteria. Only such a decision is a question for the owner. A
+choice you can make yourself and record in the handoff note is not: names,
+the structure of private helpers, a minor refactoring, the organisation of
+tests, formatting that the conventions cover. The Issue cannot override the
+project requirements, an accepted ADR, or the architecture silently: where it
+would, that conflict is a question too, with a proposed ADR or update of the
+requirements as one of the options.
+
+- **Clear:** implement. Write `**Clarification:** clear` into the handoff
+  note, with one line on why, so that the record shows the step was taken.
+- **Needs clarification:** change nothing in the repository. Write each
+  question under "Open questions" in the handoff note, with the decision it
+  settles and, where you can, the options and your recommendation. Record the
+  status `blocked` in the completion record, with the questions in
+  `remaining`, and end the session; in an unattended session end with the
+  `BLOCKED:` line. Nothing is reviewed or committed until the owner answers.
+
+The owner answers in the handoff note or in a comment on the Issue. The
+session that resumes reads the answers and implements; ask again only about a
+decision that the answers left open.
+
+Do not question a clear feature, and do not use questions to postpone work
+you can do: the step exists to keep you from inventing requirements, not to
+interview the owner about every feature. When a resumed session finds the
+step already taken in the handoff note, do not take it again.
+
 ## Actions
 
 Implement only the assigned GitHub Issue in the assigned worktree.
