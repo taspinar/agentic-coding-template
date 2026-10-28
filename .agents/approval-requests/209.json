@@ -1,0 +1,18 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "7be6bdf2dc6a52b485526bca15f94b6639dbd146",
+  "commit": {
+    "branch": "feature/209-ship-the-agents-of",
+    "parent": "8085dc3f2a523bac3053726bae1f03fb6cb86055",
+    "base": "8085dc3f2a523bac3053726bae1f03fb6cb86055"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".agents/agents.conf: the file defines or carries out the workflow and its gate"
+  ],
+  "explanation": "Issue #209: Ship the agents of the feature phase by risk level: Claude implements (opus, fable at High), Codex reviews. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

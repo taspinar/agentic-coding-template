@@ -280,8 +280,9 @@ implementer@high: claude fable
 When a script starts such a role it takes, in this order: `--agent` and
 `--model` on the command line; the line of the role and the effective level of
 the feature; the plain line of the role. Without a level line the plain line
-applies, so a configuration without one behaves as before; the template ships
-none. The level is the effective level as `check-risk.sh` computes it at the
+applies, so a configuration without one behaves as before ("The shipped
+configuration" below says which lines the template ships). The level is the
+effective level as `check-risk.sh` computes it at the
 moment the role starts, raised to the highest level that the run records of
 the feature hold: the level can rise during a feature, so a later session may
 use a stronger model, never a weaker one than a session that already ran at a
@@ -320,6 +321,26 @@ plain line) and refuses a reviewer that resolves to that provider. `--agent`
 and `--model` on the command line can make the pair differ for one run, but
 never make the reviewer equal to a provider that implemented: an implementer
 that ran with both providers leaves no independent reviewer.
+
+**The shipped configuration.** The template's own `.agents/agents.conf`
+gives the writing roles of a feature to Claude at every level, `claude opus`
+for a low- and a medium-risk feature and `claude fable` at high
+(`implementer@high`, `triage-implementer@high`), the review to Codex at every
+level (`reviewer: codex gpt-6-luna`, with no level line, since the pair
+differs at every level), and the triage to `claude sonnet`, which judges the
+review of the other provider. The planning roles and the analyst have plain
+lines. The levels come from the features that built the template: a feature
+that changes the workflow and its gate, which the risk policy classes as
+high, converged in one or two rounds with the strongest model where a weaker
+one needed many, while the other features did not need it. The models are
+the template's choices; a project sets the models, the levels, and the
+providers it wants, and Codex remains supported as implementer and
+triage-implementer for a project that configures it ("Codex and `.agents/`"
+below). `tests/agent-levels-test.sh` checks a copy of the shipped file: what
+each level resolves to, and that `doctor.sh` accepts it without a
+same-provider warning. With no writing role on Codex, `doctor.sh` and
+`tests/agent-sandbox-test.sh` have no Codex sandbox to check and skip that
+check; they run it again as soon as a line gives Codex write access.
 
 `AGENT_CONFIG_FILE` selects another configuration file for a run, for the
 workflow scripts and `doctor.sh`; `ATTRIBUTION_CONFIG_FILE` does the same for

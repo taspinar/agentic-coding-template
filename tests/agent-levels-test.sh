@@ -327,6 +327,32 @@ write_config "implementer: codex sonnet" "reviewer: claude model-r" "analyst: cl
 run_doctor "$bin" || fail "a level line of the analyst failed doctor"
 grep -Fq "role 'analyst' has a line per risk level (high) that never applies" "$tmp/doctor.log" ||
   fail "a level line that never applies was not reported: $(cat "$tmp/doctor.log")"
+
+# --- The shipped configuration ----------------------------------------------
+
+# The template's own .agents/agents.conf, against a copy: the writing roles
+# of a feature are Claude at every level (opus at low and medium, fable at
+# high), the reviewer is Codex at every level, so the pair differs at every
+# level without a line of its own, and doctor.sh accepts the file without a
+# same-provider warning.
+cp "$source_root/.agents/agents.conf" "$config"
+for level in low medium high; do
+  if [[ "$level" == high ]]; then
+    expected="claude fable high level-line"
+  else
+    expected="claude opus $level plain-line"
+  fi
+  expect_resolved "$expected" implementer "" "" "$level"
+  expect_resolved "$expected" triage-implementer "" "" "$level"
+  expect_resolved "codex gpt-6-luna $level plain-line" reviewer "" "" "$level"
+  expect_resolved "claude sonnet $level plain-line" triage "" "" "$level"
+done
+expect_resolved "claude opus none plain-line" implementer
+expect_resolved "codex gpt-6-luna none plain-line" reviewer
+run_doctor "$bin" || { cat "$tmp/doctor.log" >&2; fail "the shipped configuration failed doctor"; }
+grep -Eq '^OK +agent configuration is valid' "$tmp/doctor.log" || fail "the shipped configuration was not accepted as valid"
+if grep -Fq "use the same agent" "$tmp/doctor.log"; then fail "the shipped configuration pairs the same provider: $(grep -F 'use the same agent' "$tmp/doctor.log")"; fi
+if grep -Fq "that never applies" "$tmp/doctor.log"; then fail "the shipped configuration has a level line that never applies: $(grep -F 'that never applies' "$tmp/doctor.log")"; fi
 unset AGENT_CONFIG_FILE
 
 # --- The scripts, with the fakes --------------------------------------------
