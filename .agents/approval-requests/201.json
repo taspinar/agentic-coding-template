@@ -1,0 +1,18 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "93195ea2c9b1dfbc2037c5d89d50f4dd47225cab",
+  "commit": {
+    "branch": "feature/201-195-r04-min1-deduplicate",
+    "parent": "521a26ca5bbae2608b4a766423aeffc505f04131",
+    "base": "521a26ca5bbae2608b4a766423aeffc505f04131"
+  },
+  "review": {
+    "round": 5,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "the independent review classified the impact on the architecture as major: The change alters shared run-record selection in scripts/lib/records.sh, affecting consumers such as reviewer independence checks and risk-level selection. The implementation follows the established source-selection rule in scripts/lib/report.jq. The prior deduplication finding is resolved, and the approval-request file deletions shown in the supplied diff are accounted for in the handoff as fingerprint-index artifacts rather than branch changes. "
+  ],
+  "explanation": "Issue #201: [#195][R04][MIN1] Deduplicate feature events when consolidated records and run files coexist. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

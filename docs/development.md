@@ -295,8 +295,10 @@ is enforced where the reviewer starts: `review-feature.sh` takes the
 implementer's provider from the run records of the feature ("Run records"),
 which hold every session of the implementer with the provider it ran with,
 also a session that `--agent` on the command line gave another provider than
-the configuration, and refuses, before it calls any agent, a reviewer that
-resolves to a provider the implementer ran with. Without a recorded session
+the configuration (each run counted once: from its run file while it exists,
+from the copy of the feature otherwise), and refuses, before it calls any
+agent, a reviewer that resolves to a provider the implementer ran with.
+Without a recorded session
 (a project that keeps no run records, or work done by hand) it resolves the
 implementer's provider for the same level (`implementer@<level>`, or the
 plain line) and refuses a reviewer that resolves to that provider. `--agent`
