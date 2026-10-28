@@ -176,6 +176,45 @@ highest_level() {
 } >"$records_repo/.agents/run/records/run-f.jsonl"
 [[ "$(highest_level 3)" == "high" ]] || fail "the high of a later run of feature 3 was not found: '$(highest_level 3)'"
 
+# A run that its file and the copy of the feature both hold (the copy made
+# by a consolidation while the run file stays) counts once: one session of
+# the implementer, each event once, the highest level unchanged. A run that
+# only the copy holds counts from the copy; a run that both hold is read
+# from its file, which is the complete one.
+call() {
+  printf '{"schema": "run-record/v1", "run": "%s", "type": "%s", "id": "%s-call", "role": "implementer", "agent": "claude", "model": "model-x", "level": "%s", "selection": "level-line"}\n' "$1" "$2" "$1" "$3"
+}
+feature_records() {
+  (
+    cd "$records_repo"
+    unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT
+    source "$source_root/scripts/lib/records.sh"
+    "$@"
+  )
+}
+{
+  event run-g run-start feature 9
+  call run-g agent-start high
+  call run-g agent-call high
+} >"$records_repo/.agents/run/records/run-g.jsonl"
+cp "$records_repo/.agents/run/records/run-g.jsonl" "$records_repo/.agents/records/feature-9.jsonl"
+[[ "$(feature_records records_role_providers 9 implementer)" == $'claude\t1' ]] ||
+  fail "a run that its file and the copy both hold is not counted once: '$(feature_records records_role_providers 9 implementer)'"
+[[ "$(feature_records records_feature_events 9 length)" == "3" ]] || fail "the events of a run that its file and the copy both hold are not read once: $(feature_records records_feature_events 9 length)"
+[[ "$(highest_level 9)" == "high" ]] || fail "the highest level changed with the copy: '$(highest_level 9)'"
+{
+  event run-g run-start feature 9
+  call run-g agent-start high
+  event run-h run-start feature 9
+  call run-h agent-start medium
+  call run-h agent-call medium
+} >"$records_repo/.agents/records/feature-9.jsonl"
+[[ "$(feature_records records_role_providers 9 implementer)" == $'claude\t2' ]] ||
+  fail "a run that only the copy holds did not count once: '$(feature_records records_role_providers 9 implementer)'"
+[[ "$(feature_records records_feature_events 9 length)" == "6" ]] ||
+  fail "a run that both hold was not read from its file alone: $(feature_records records_feature_events 9 length) events"
+[[ "$(highest_level 9)" == "high" ]] || fail "the highest level is not the one of the run file: '$(highest_level 9)'"
+
 # --- doctor.sh --------------------------------------------------------------
 
 # A bin directory with fake tools, as tests/doctor-test.sh builds it: git and
@@ -575,6 +614,16 @@ grep -Fq "the reviewer is selected by --agent or --model on the command line" "$
 run_review --agent codex --model model-cli || { cat "$repo_review.out" >&2; fail "a reviewer with the provider the implementer is configured with, but did not run with, was refused"; }
 started "$repo_review" codex model-cli "the review with the provider the implementer did not run with"
 [[ -f "$repo_review/.agents/reviews/feature-7-login-review-03.json" ]] || fail "the review with the provider the implementer did not run with wrote no artifact"
+
+# After a consolidation the copy of the feature holds the sessions that the
+# run files still hold: the refusal counts each session once.
+mkdir -p "$repo_review/.agents/records"
+cat "$repo_review/.agents/run/records/run-i1.jsonl" "$repo_review/.agents/run/records/run-i2.jsonl" >"$repo_review/.agents/records/feature-7.jsonl"
+: >"$repo_review.log"
+if run_review; then fail "a review started although the implementer ran with the reviewer's provider (consolidated records)"; fi
+grep -Fq "hold 2 sessions of the implementer with claude" "$repo_review.out" ||
+  fail "the sessions were not counted once after the consolidation: $(grep -Fo 'hold [0-9]* sessions' "$repo_review.out")"
+[[ ! -s "$repo_review.log" ]] || fail "the reviewer was called although the implementer ran with its provider (consolidated records)"
 
 # An invalid line of a role that the review does not start (an unsupported
 # provider, an invalid model, or a refused combination on a level line of the

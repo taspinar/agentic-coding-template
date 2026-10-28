@@ -485,14 +485,17 @@ records_agent_call() {
 # records_feature_events <issue> [jq-options...] <jq-program>
 # Runs <jq-program> over the array of the events of feature <issue>, with
 # the --arg options given before it, and prints its raw output: the events
-# of the run files and of the copy of the feature whose run is one whose
-# start names the feature; the runs of another feature or of a planning
-# never count. Nothing when there is no record or no jq.
+# of the runs whose start names the feature; the runs of another feature or
+# of a planning never count. Every run counts once: it is read from its own
+# file while that exists, and from the copy of the feature
+# (.agents/records/feature-<issue>.jsonl) only when its file is gone, as
+# report.jq does, so that a run that both hold after a consolidation is not
+# counted twice. Nothing when there is no record or no jq.
 records_feature_events() {
   local issue="$1"
   local program
   local dir
-  local primary
+  local copy
   local files=()
   local file
 
@@ -501,15 +504,23 @@ records_feature_events() {
   set -- "${@:1:$#-1}"
   command -v jq >/dev/null 2>&1 || return 0
   dir="$(records_run_dir)" || return 0
-  primary="$(records_primary)"
-  for file in "$dir"/*.jsonl "$primary/.agents/records/feature-$issue.jsonl"; do
+  copy="$(records_primary)/.agents/records/feature-$issue.jsonl"
+  for file in "$dir"/*.jsonl; do
     [[ -f "$file" ]] && files+=("$file")
   done
-  [[ "${#files[@]}" -gt 0 ]] || return 0
-  cat "${files[@]}" 2>/dev/null | jq -R 'fromjson? | objects' 2>/dev/null |
-    jq -rs --arg subject "$issue" "$@" '
-      ([.[] | select(.type == "run-start" and .kind == "feature" and (.subject | tostring) == $subject) | .run] | unique) as $runs
-      | [.[] | select(.run as $run | any($runs[]; . == $run))]
+  [[ "${#files[@]}" -gt 0 || -f "$copy" ]] || return 0
+  # Every event with its source before it: 0 for a run file, 1 for the copy.
+  {
+    [[ "${#files[@]}" -eq 0 ]] || cat "${files[@]}" 2>/dev/null | jq -c -R 'fromjson? | objects | [0, .]' 2>/dev/null
+    [[ ! -f "$copy" ]] || jq -c -R 'fromjson? | objects | [1, .]' <"$copy" 2>/dev/null
+  } | jq -rs --arg subject "$issue" "$@" '
+      def starts($events): [$events[] | select(.type == "run-start" and .kind == "feature" and (.subject | tostring) == $subject) | .run] | unique;
+      map(select(.[0] == 0) | .[1]) as $from_files
+      | map(select(.[0] == 1) | .[1]) as $from_copy
+      | starts($from_files) as $runs_in_files
+      | [starts($from_copy)[] | select(. as $run | any($runs_in_files[]; . == $run) | not)] as $runs_in_copy_only
+      | [$from_files[] | select(.run as $run | any($runs_in_files[]; . == $run))]
+        + [$from_copy[] | select(.run as $run | any($runs_in_copy_only[]; . == $run))]
       | '"$program" 2>/dev/null || true
 }
 
