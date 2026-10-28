@@ -90,7 +90,15 @@ fi
 
 review_data_require_jq
 
-agent_resolve "$root" triage-implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+# The agent of the triage implementer by the risk level of the feature as it
+# is now, never below the level an earlier session of the feature ran at
+# (lib/agent.sh).
+apply_base="$(git -C "$root" config --get "branch.$(git -C "$root" branch --show-current).workflow-base" || true)"
+agent_computed="$(agent_computed_level "$root" "${apply_base:-main}")"
+agent_selected="$(agent_feature_level "$(records_branch_issue)" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}")"
+agent_level="${agent_selected%%$'\t'*}"
+agent_level_why="${agent_selected#*$'\t'}"
+agent_resolve "$root" triage-implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
@@ -295,7 +303,9 @@ have resolved part of these findings: inspect the working tree and the diff
 first, keep what is done, and finish the rest. The scope is unchanged."
 fi
 
-echo "Starting $agent implementation agent..."
+echo "Starting $agent implementation agent ($model)..."
+echo "  Level:    $agent_level ($agent_level_why)"
+echo "  Selected: by $(agent_selection_text)"
 echo
 
 final_message="$root/.agents/run/$source_issue-fixes.md"

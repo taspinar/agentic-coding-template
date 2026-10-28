@@ -30,7 +30,7 @@ the website describes the current template.
 | Path | Purpose |
 |---|---|
 | `AGENTS.md` | Durable working rules for every agent: source precedence, Definition of Done, boundaries, branch policy |
-| `.agents/agents.conf` | Provider and model per workflow role |
+| `.agents/agents.conf` | Provider and model per workflow role, and per risk level of a feature for its roles |
 | `.agents/attribution.conf` | Whether commits and pull requests may name an agent as a co-author or as the tool that generated them: `allowed` (the previous behaviour) or `disabled`, which the instructions, the Claude sessions the scripts start, and a check in `finish-feature.sh` and `publish-feature.sh` follow |
 | `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |

@@ -238,15 +238,6 @@ if [[ "$(jq -r '.kind // "feature"' "$review_path" 2>/dev/null)" == "planning" ]
   fail "this is a planning review; it is not triaged. Handle it with ./scripts/revise-planning.sh and review again with ./scripts/review-planning.sh."
 fi
 
-if [[ -n "$owner_decisions" ]]; then
-  agent="owner"
-  model="owner-directed"
-else
-  agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
-  agent="$AGENT_PROVIDER"
-  model="$AGENT_MODEL"
-fi
-
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI 'gh' is not installed."
 gh auth status >/dev/null 2>&1 || fail "GitHub CLI is not authenticated. Run: gh auth login"
 
@@ -281,6 +272,24 @@ if [[ "$risk_status" -le 2 ]]; then
   [[ "$triage_mode" == "light" ]] || triage_mode="full"
   triage_mode_reason="$(printf '%s\n' "$risk_output" | sed -n 's/^refused: \([a-z]*: triage: .*\)$/\1/p' | sed -n 1p)"
   [[ -n "$triage_mode_reason" ]] || triage_mode_reason="the project policy for a $risk_level-risk feature"
+fi
+
+# The triage agent by the same level, never below the level an earlier
+# session of the feature ran at (lib/agent.sh); an owner-directed triage
+# starts no agent.
+agent_level=""
+agent_level_why=""
+if [[ -n "$owner_decisions" ]]; then
+  agent="owner"
+  model="owner-directed"
+else
+  agent_computed="$(agent_computed_level "$root" "${risk_base:-main}")"
+  agent_selected="$(agent_feature_level "$(records_branch_issue)" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}")"
+  agent_level="${agent_selected%%$'\t'*}"
+  agent_level_why="${agent_selected#*$'\t'}"
+  agent_resolve "$root" triage "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
+  agent="$AGENT_PROVIDER"
+  model="$AGENT_MODEL"
 fi
 
 source_issue_context="$(gh issue view "$source_issue" \
@@ -368,6 +377,8 @@ else
   echo "  Review: $review_relative"
   echo "  Agent:  $agent"
   echo "  Model:  $model"
+  echo "  Level:  $agent_level ($agent_level_why)"
+  echo "  Selected by $(agent_selection_text)"
 fi
 echo "  Triage mode: $triage_mode ($triage_mode_reason)"
 if [[ "$historical" -eq 1 ]]; then
