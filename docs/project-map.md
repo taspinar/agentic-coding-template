@@ -64,7 +64,7 @@ the website describes the current template.
 
 | Script | Purpose |
 |---|---|
-| `scripts/doctor.sh` | Checks the local prerequisites, and reports the attribution preference and whether the clients can be made to follow it |
+| `scripts/doctor.sh` | Checks the local prerequisites: the tools, the agent configuration, the Git commit identity, whether a Codex role with write access can write the runtime directories under `.agents/` inside its sandbox (one real `codex exec` session in a scratch repository), and reports the attribution preference and whether the clients can be made to follow it |
 | `scripts/check-docs.sh` | Checks that the tracked Markdown files name files that exist: relative links, and paths in backticks into a tracked directory. `--later` names paths that come later. The template runs it in its verification; a project can add it to `scripts/verify.conf` |
 | `scripts/verify.sh` | Runs the checks in `scripts/verify.conf`, and the workflow self-tests when a workflow file changed or with `--all`; records a pass and skips a repeated run with `--reuse`; used by humans, agents, and CI. `--only <group>` runs the checks of named groups for a CI with parallel jobs; such a partial run records nothing. A check declared as a budget (`<name> [<group>] budget: <command>`) is a measurement: over its target it is `BUDGET`, with its output, not `FAIL`, and the verification still passes |
 | `scripts/start-planning.sh` | Project Grill, requirements approval, and project planning in a planning worktree |
@@ -95,7 +95,7 @@ the website describes the current template.
 
 | Path | Purpose |
 |---|---|
-| `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write`, `unattended`, or `read-only` profile |
+| `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write`, `unattended`, or `read-only` profile; for Codex, the runtime directories under `.agents/` that a write session may write (`AGENT_CODEX_WRITABLE_DIRS`), opened as writable roots of its sandbox and created before the session; `tests/agent-sandbox-test.sh` checks that with the real Codex CLI |
 | `scripts/lib/attribution.sh` | The attribution preference of `.agents/attribution.conf`, and the check of commits and texts for agent `Co-authored-by` trailers and generated attribution text |
 | `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
@@ -150,5 +150,15 @@ the website describes the current template.
 | `.agents/handoffs/` | Per Issue, the implementer's continuation note for a session that resumes the work (`start-feature.sh <issue> --resume`) | No |
 | `.agents/lessons/` | Recurring agent failures and the rules learned from them | Yes |
 | `tests/` | Integration tests of the workflow scripts, run by `verify.sh` when a workflow file changed, and always in CI | Yes |
+
+A Codex session with write access (the `write` and the `unattended` profile)
+may write only `.agents/completion/`, `.agents/handoffs/`,
+`.agents/summaries/`, `.agents/manual-steps/`, and `.agents/experience/` of
+these: Codex 0.164 and later mount `.agents/` read-only in the sandbox, and
+`scripts/lib/agent.sh` opens exactly the directories that the implementer and
+the triage-implementer have to write, all ignored by Git. The policies, the
+prompts, the schemas, the plans, the reviews, the triage, `.agents/run/`,
+`.agents/verification/`, `.git/`, and `.codex/` stay read-only for the
+agent. See "Codex and `.agents/`" in `docs/development.md`.
 | `documentation/` | The documentation site of the template, published on GitHub Pages: hand-written HTML, one style sheet, two scripts (`site.js` for the menu, the theme, and the dialog; `run.js` for the walkthrough of the drawing on the workflow page), `check.sh`, which checks its links and the scripts it names against the repository, and `skill-collections.md`, the inventory of skill collections that the research page links to. The template's own; not synced to a project | Delete in a project |
 | `.github/workflows/pages.yml` | Publishes `documentation/` and nothing else, only in a repository that sets the variable `PUBLISH_DOCUMENTATION` to `true`. The template's own; not synced to a project | Delete in a project |

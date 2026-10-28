@@ -31,6 +31,19 @@ AGENT_LEVELS="low medium high"
 # A reviewing role and the role whose work it reviews, which should use
 # different providers; doctor.sh checks the resolved pair.
 AGENT_REVIEW_PAIRS="reviewer:implementer planning-reviewer:project-planner"
+# The roles that run with the 'write' or the 'unattended' profile; doctor.sh
+# checks the Codex sandbox when one of them uses Codex.
+AGENT_WRITE_ROLES="project-grill project-planner implementer triage-implementer"
+# The directories under .agents/ that a Codex write session may write, relative
+# to the work directory. Codex 0.164 mounts .agents/, .git/, and .codex/
+# read-only in its workspace-write sandbox, also inside the worktree it may
+# write otherwise. The implementer and the triage-implementer have to write
+# these five (.agents/prompts/implementer.md, triage-implementer.md): the
+# completion record, the handoff note, the summary, the manual steps, and the
+# experience notes, all of which Git ignores. Nothing else under .agents/ is
+# opened: the policies, the prompts, the schemas, the plans, the reviews, the
+# triage, the run files, and agents.conf stay as the sandbox leaves them.
+AGENT_CODEX_WRITABLE_DIRS=".agents/completion .agents/handoffs .agents/summaries .agents/manual-steps .agents/experience"
 
 agent_fail() {
   echo "Error: $*" >&2
@@ -349,6 +362,35 @@ agent_level_rank() {
   esac
 }
 
+# agent_codex_writable_roots <workdir>
+# Prints the configuration value that opens AGENT_CODEX_WRITABLE_DIRS of
+# <workdir> in Codex's workspace-write sandbox,
+# 'sandbox_workspace_write.writable_roots=["<workdir>/.agents/completion", ...]',
+# after creating every directory: a root that does not exist makes every
+# command of the session fail ("bwrap: Can't create file ..."), and the
+# session cannot create it itself inside the read-only .agents/. The paths
+# are TOML strings, so a backslash and a double quote in them are escaped.
+# Fails when a directory cannot be created.
+agent_codex_writable_roots() {
+  local workdir
+  local dir
+  local path
+  local roots=""
+
+  workdir="$(cd "$1" && pwd -P)" || return 1
+  for dir in $AGENT_CODEX_WRITABLE_DIRS; do
+    mkdir -p "$workdir/$dir" || {
+      echo "Error: could not create $workdir/$dir, which a Codex session has to be able to write." >&2
+      return 1
+    }
+    path="$workdir/$dir"
+    path="${path//\\/\\\\}"
+    path="${path//\"/\\\"}"
+    roots+="${roots:+,}\"$path\""
+  done
+  printf 'sandbox_workspace_write.writable_roots=[%s]' "$roots"
+}
+
 # agent_session_notice <provider>
 # Tells the user how an interactive session behaves and how the calling
 # script continues, before the agent's own interface takes over the terminal.
@@ -376,7 +418,11 @@ agent_session_notice() {
 #   write      Interactive session that may modify the work directory and
 #              use the network. What goes beyond that needs the user's
 #              permission: Claude asks before it runs a shell command, Codex
-#              before a command leaves its work-directory sandbox.
+#              before a command leaves its work-directory sandbox. That
+#              sandbox mounts .agents/, .git/, and .codex/ read-only (Codex
+#              0.164): a Codex session of this profile and of 'unattended'
+#              gets AGENT_CODEX_WRITABLE_DIRS opened as writable roots, the
+#              directories created first, and nothing else under .agents/.
 #              When the project disables agent attribution
 #              (.agents/attribution.conf), a Claude session of this profile
 #              and of 'unattended' is started with the setting that turns off
@@ -539,6 +585,7 @@ agent_run_session() {
   local codex_schema=()
   local claude_settings=()
   local attribution
+  local codex_roots=""
   local claude_read_only=(
     --print
     --restricted
@@ -576,6 +623,13 @@ agent_run_session() {
     fi
   fi
 
+  # The runtime directories a Codex session writes are opened in its sandbox
+  # and exist before it starts; without them the session cannot record its
+  # work (see AGENT_CODEX_WRITABLE_DIRS).
+  if [[ "$provider" == "codex" && "$profile" != "read-only" ]]; then
+    codex_roots="$(agent_codex_writable_roots "$workdir")" || return 1
+  fi
+
   if [[ "$profile" == "unattended" ]]; then
     echo "An unattended $provider session starts now. It asks nothing and ends by itself;"
     echo "this can take a long time. Its final message is stored in:"
@@ -595,9 +649,11 @@ agent_run_session() {
         # so it can install dependencies and run builds; its workspace sandbox
         # blocks the network by default. For a command the sandbox blocks,
         # Codex asks the user instead of failing. Without a sandbox Codex has
-        # no policy that asks per command, so that is not used.
+        # no policy that asks per command, so that is not used. The runtime
+        # directories under .agents/ are writable roots (codex_roots).
         codex \
           -c sandbox_workspace_write.network_access=true \
+          -c "$codex_roots" \
           --sandbox workspace-write \
           --ask-for-approval on-request \
           --model "$model" \
@@ -624,6 +680,7 @@ agent_run_session() {
         codex exec \
           --ignore-user-config \
           -c sandbox_workspace_write.network_access=true \
+          -c "$codex_roots" \
           --sandbox workspace-write \
           --disable apps \
           --disable browser_use \
