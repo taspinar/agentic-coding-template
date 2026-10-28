@@ -285,17 +285,19 @@ that keeps no run records (see "Run records"), the level is computed anew at
 every session.
 
 `doctor.sh` validates the level lines like the plain ones: an unknown level, a
-duplicate, a malformed line, or an unsupported provider is reported, a CLI
-that only a level line needs is required, and every script refuses such a
-file. It also warns when a reviewing role and the role whose work it reviews
-resolve to the same provider, for the plain lines and for every level that
-either side has a line for, and when a role that never runs with a level (the
-planning roles and the analyst) has a level line. The reviewer's independence
-is enforced where the reviewer starts: `review-feature.sh` takes the
-implementer's provider from the run records of the feature ("Run records"),
-which hold every session of the implementer with the provider it ran with,
-also a session that `--agent` on the command line gave another provider than
-the configuration, and refuses, before it calls any agent, a reviewer that
+duplicate, a malformed line, an unsupported provider, or an invalid model is
+reported with its line, on any line of the file, also one of a role that the
+script does not start; a CLI that only a level line needs is required; and
+every script refuses such a file before it resolves a role. It also warns
+when a reviewing role and the role whose work it reviews resolve to the same
+provider, for the plain lines and for every level that either side has a
+line for, and when a role that never runs with a level (the planning roles
+and the analyst) has a level line. The reviewer's independence is enforced
+where the reviewer starts: `review-feature.sh` takes the implementer's
+provider from the run records of the feature ("Run records"), which hold
+every session of the implementer with the provider it ran with, also a
+session that `--agent` on the command line gave another provider than the
+configuration, and refuses, before it calls any agent, a reviewer that
 resolves to a provider the implementer ran with. Without a recorded session
 (a project that keeps no run records, or work done by hand) it resolves the
 implementer's provider for the same level (`implementer@<level>`, or the

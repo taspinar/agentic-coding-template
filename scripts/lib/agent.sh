@@ -118,11 +118,17 @@ agent_blocked_reason() {
 }
 
 # agent_lookup <root> <role> [level]
-# Validates the complete configuration, the level lines like the plain ones,
-# and sets AGENT_CONFIG_PROVIDER and AGENT_CONFIG_MODEL from the plain line of
-# the role, AGENT_LEVEL_PROVIDER and AGENT_LEVEL_MODEL from its line for
-# <level>, and AGENT_CONFIG_LEVELS to the levels the role has a line for. What
-# has no line, or the whole file, stays empty.
+# Validates the complete configuration while it reads the file: the structure
+# of every line, and the provider and the model of every line, the level
+# lines like the plain ones, whether or not the line is the one asked for.
+# An invalid line of any role fails before a role is resolved. Only the CLI
+# of a provider is not checked here: a missing CLI is reported for the
+# provider that is selected (agent_validate), and doctor.sh for the
+# providers that the file needs. Sets AGENT_CONFIG_PROVIDER and
+# AGENT_CONFIG_MODEL from the plain line of the role, AGENT_LEVEL_PROVIDER
+# and AGENT_LEVEL_MODEL from its line for <level>, and AGENT_CONFIG_LEVELS
+# to the levels the role has a line for. What has no line, or the whole
+# file, stays empty.
 agent_lookup() {
   local root="$1"
   local role="$2"
@@ -136,6 +142,8 @@ agent_lookup() {
   local entry_role
   local entry_level
   local entry_key
+  local entry_provider
+  local entry_model
 
   AGENT_CONFIG_PROVIDER=""
   AGENT_CONFIG_MODEL=""
@@ -154,6 +162,8 @@ agent_lookup() {
       agent_fail "malformed entry on line $line_number of $config; expected '<role>: <provider> <model>' or '<role>@<level>: <provider> <model>'."
     entry_role="${BASH_REMATCH[1]}"
     entry_level="${BASH_REMATCH[3]}"
+    entry_provider="${BASH_REMATCH[4]}"
+    entry_model="${BASH_REMATCH[5]}"
     [[ " $AGENT_ROLES " == *" $entry_role "* ]] ||
       agent_fail "unknown role '$entry_role' on line $line_number of $config. Known roles: $AGENT_ROLES"
     [[ -z "$entry_level" || " $AGENT_LEVELS " == *" $entry_level "* ]] ||
@@ -162,43 +172,57 @@ agent_lookup() {
     [[ "$seen" != *" $entry_key "* ]] ||
       agent_fail "role '$entry_key' is configured more than once in $config."
     seen+="$entry_key "
+    agent_check_pair "$entry_provider" "$entry_model" " for role '$entry_key' on line $line_number of $config"
 
     [[ "$entry_role" == "$role" ]] || continue
     if [[ -z "$entry_level" ]]; then
-      AGENT_CONFIG_PROVIDER="${BASH_REMATCH[4]}"
-      AGENT_CONFIG_MODEL="${BASH_REMATCH[5]}"
+      AGENT_CONFIG_PROVIDER="$entry_provider"
+      AGENT_CONFIG_MODEL="$entry_model"
     else
       AGENT_CONFIG_LEVELS+="${AGENT_CONFIG_LEVELS:+ }$entry_level"
       if [[ "$entry_level" == "$level" ]]; then
-        AGENT_LEVEL_PROVIDER="${BASH_REMATCH[4]}"
-        AGENT_LEVEL_MODEL="${BASH_REMATCH[5]}"
+        AGENT_LEVEL_PROVIDER="$entry_provider"
+        AGENT_LEVEL_MODEL="$entry_model"
       fi
     fi
   done <"$config"
 }
 
-# agent_validate <provider> <model>
-agent_validate() {
+# agent_check_pair <provider> <model> [where]
+# Fails unless the provider is supported, the model is well-formed, and the
+# combination is one the provider accepts. <where> names the source of the
+# pair in the message, for a line of the configuration; the command line
+# and the resolved pair give none. Whether the CLI of the provider is
+# installed is not checked here: that is required only of a provider that
+# is selected (agent_validate) or that the configuration needs (doctor.sh).
+agent_check_pair() {
   local provider="$1"
   local model="$2"
+  local where="${3:-}"
   local model_pattern='^[A-Za-z0-9][A-Za-z0-9._:/+@-]*$'
 
   case "$provider" in
     codex | claude) ;;
-    *) agent_fail "unsupported agent '$provider'. Supported agents: codex, claude." ;;
+    *) agent_fail "unsupported agent '$provider'$where. Supported agents: codex, claude." ;;
   esac
 
   [[ "$model" =~ $model_pattern ]] ||
-    agent_fail "model must use only letters, numbers, '.', '_', ':', '/', '+', '@', or '-': $model"
+    agent_fail "model must use only letters, numbers, '.', '_', ':', '/', '+', '@', or '-': $model$where"
 
   case "$provider:$model" in
     codex:fable | claude:astra)
-      agent_fail "unsupported agent/model combination: $provider + $model."
+      agent_fail "unsupported agent/model combination: $provider + $model$where."
       ;;
   esac
+}
 
-  command -v "$provider" >/dev/null 2>&1 ||
-    agent_fail "'$provider' command not found. Install the $provider CLI or select another agent."
+# agent_validate <provider> <model>
+# Checks the pair that was selected for a role (agent_check_pair), and that
+# the CLI of its provider is installed.
+agent_validate() {
+  agent_check_pair "$1" "$2"
+  command -v "$1" >/dev/null 2>&1 ||
+    agent_fail "'$1' command not found. Install the $1 CLI or select another agent."
 }
 
 # agent_resolve <root> <role> [provider-override] [model-override] [level]

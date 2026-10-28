@@ -176,6 +176,14 @@ grep -Eq '^WARNING +codex' "$tmp/out.log" || fail "unused missing agent was not 
 # Invalid agent configuration fails.
 printf 'implementer claude model-a\n' >"$config"
 expect_failure "$bin" "agent configuration is invalid"
+# Also an unsupported provider or an invalid model on the plain line of a
+# role, reported with its line.
+printf 'implementer: claude model-a\nreviewer: copilot model-b\n' >"$config"
+expect_failure "$bin" "agent configuration is invalid"
+grep -Fq "unsupported agent 'copilot' for role 'reviewer' on line 2" "$tmp/out.log" || fail "the unsupported provider was not named with its line: $(cat "$tmp/out.log")"
+printf 'implementer: claude model-a\nreviewer: codex --fallback\n' >"$config"
+expect_failure "$bin" "agent configuration is invalid"
+grep -Fq "for role 'reviewer' on line 2" "$tmp/out.log" || fail "the invalid model was not named with its line: $(cat "$tmp/out.log")"
 
 
 # Agent attribution: the preference is reported; an unconfigured project is
