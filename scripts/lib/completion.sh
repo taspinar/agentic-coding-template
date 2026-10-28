@@ -148,7 +148,9 @@ completion_errors() {
 # Prints the work that a handoff note lists under 'Remaining', one line per
 # line of the note, and nothing when there is none. The implementer reduces
 # the note to one line when the Issue is complete, so text here means that
-# work is left, whatever the completion record says.
+# work is left, whatever the completion record says. A line that is only a
+# none-word, or a label followed by one ("FIX_NOW findings: none."), says
+# that nothing is left and is not work.
 handoff_remaining() {
   [[ -f "$1" ]] || return 0
   awk '
@@ -156,6 +158,8 @@ handoff_remaining() {
       gsub(/^[[:space:]*:>-]+|[[:space:]]+$/, "", text)
       if (text == "") return
       if (tolower(text) ~ /^(none|nothing|n\/a|no remaining|nothing remains|-)[[:space:].!]*$/) return
+      # A labelled line that says a category has nothing left: "FIX_NOW findings: none."
+      if (tolower(text) ~ /^[^:]+:[[:space:]*]*(none|nothing|n\/a|no|-)[[:space:].!*]*$/) return
       print text
     }
     # Another part of the note ends the list.
