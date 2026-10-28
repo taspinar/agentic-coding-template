@@ -40,6 +40,13 @@ result of the merged branch): the record would state it as shown. The owner's
 approval is never recorded as met by the implementer (the scripts refuse it);
 the merge approval gate decides it from the diff and the review.
 
+The implementer decides first whether a feature is clear or needs the
+owner's decisions (`.agents/prompts/implementer.md`, "Clarification"). When
+its handoff note says `Clarification: clear`, do not report missing
+clarification, unless the result shows a decision that the Issue, the
+requirements, the architecture, and the ADRs leave open and that the
+implementer settled without saying so.
+
 A feature that was committed on purpose as partial work says so in its
 record; then review what is there and report what the record leaves unsaid.
 

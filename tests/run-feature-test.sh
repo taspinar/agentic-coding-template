@@ -674,6 +674,59 @@ for note in "" "**Open questions:** none blocking."; do
   grep -Fq "holds no open question" <<<"$(log_of "$repo")" || fail "the ignored BLOCKED line is not in the log of the feature"
 done
 
+# The clarification step of the implementer (.agents/prompts/implementer.md,
+# "Clarification") uses the same path. A feature that needs the owner's
+# decisions: the first session changes nothing, records blocked with its two
+# questions, and the run stops with status 3, with nothing reviewed or
+# committed. After the owner's answers in the handoff note, the same command
+# implements and publishes.
+repo="$(setup_repo clarification)"
+cat >"$repo.control/implementer-1.sh" <<'SESSION'
+mkdir -p .agents/handoffs .agents/completion
+printf '%s\n' "**Clarification:** needs clarification." "" "**Open questions:**" \
+  "- How many players share a room? Settles the room model; options 2 or 2-8; recommended 2-8." \
+  "- Does a player reconnect into the same room? Settles the persistence; recommended yes." \
+  >".agents/handoffs/$RUN_ISSUE.md"
+printf '{"schema": "completion/v1", "status": "blocked", "criteria": [{"criterion": "The feature file exists", "status": "not_met", "evidence": "not started; two questions for the owner"}], "remaining": ["The owner decides the room size and reconnection"]}\n' \
+  >".agents/completion/$RUN_ISSUE.json"
+reply="BLOCKED: two decisions of the owner settle the room model"
+SESSION
+run_feature "$repo" 2 thing
+expect_stopped "$repo" 3 "the implementer needs a decision of yours"
+expect_sessions "$repo" 1 0 0 0
+[[ -z "$(git -C "$repo-2-thing" status --porcelain)" ]] || fail "the session that asked changed the repository"
+[[ "$(git -C "$repo-2-thing" rev-list --count main..HEAD)" -eq 0 ]] || fail "the session that asked was committed"
+[[ "$(grep -c '^- .*?' "$repo-2-thing/.agents/handoffs/2.md")" -eq 2 ]] || fail "the two questions are not in the handoff note"
+sleep 1
+printf '%s\n' "**Clarification:** answered by the owner." "" "**Open questions:** none." "" \
+  "Answers: rooms of 2 to 8 players; a player reconnects into the same room." >"$repo-2-thing/.agents/handoffs/2.md"
+run_feature "$repo" 2
+expect_published "$repo"
+expect_sessions "$repo" 2 1 0 0
+
+# A clear feature runs as before: the implementer records the step in its
+# handoff note and implements in one session. The clarification line is
+# neither remaining work nor an open question, also right after the list of
+# what remains.
+repo="$(setup_repo clarification-clear)"
+printf '%s\n' "eval \"\$default\"; mkdir -p .agents/handoffs; printf '**Remaining:** none.\n**Clarification:** clear, the Issue and the ADRs settle every decision.\n' >.agents/handoffs/\$RUN_ISSUE.md" \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -Fq "**Clarification:** clear" "$repo-2-thing/.agents/handoffs/2.md" || fail "the clear feature does not show the step in its handoff note"
+
+# The step cannot stall a run silently: a session that ends with BLOCKED but
+# leaves "Open questions" empty, with the clarification line after it, has
+# nothing for the owner to answer, and the run goes on.
+repo="$(setup_repo clarification-without-question)"
+printf '%s\n' "eval \"\$default\"; mkdir -p .agents/handoffs; printf '**Open questions:**\n\n**Clarification:** needs clarification.\n' >.agents/handoffs/\$RUN_ISSUE.md; reply=\"BLOCKED: unclear\"" \
+  >"$repo.control/implementer.sh"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+grep -Fq "holds no open question" <<<"$(log_of "$repo")" || fail "the ignored BLOCKED line is not in the log of the feature"
+
 # Reading the Issue fails on the connection before a worktree exists, more
 # often than start-feature.sh tries: the run tries the start again, and goes
 # on.

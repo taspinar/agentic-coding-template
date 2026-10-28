@@ -157,6 +157,13 @@ open_question() {
     }
     found && /^[[:space:]]*$/ { if (text != "") exit; next }
     found && /^#/ { exit }
+    # Another part of the note, such as the clarification line, is no
+    # question.
+    found && tolower($0) ~ /^[[:space:]]*([-*][[:space:]]*)?\**(done|in progress|remaining( work)?|tried and rejected|clarification)\**[[:space:]]*:/ {
+      if (text != "") exit
+      found = 0
+      next
+    }
     found { text = text " " $0 }
     END {
       gsub(/^[[:space:]*:-]+|[[:space:].]+$/, "", text)

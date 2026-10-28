@@ -53,7 +53,10 @@ flowchart TD
   revise["revise-planning.sh<br/>decisions, your approval, revision"]
   finish["finish-planning.sh<br/>checks, your final approval"]
 
-  start --> review
+  start --> clarify
+  clarify -- needs clarification: questions, blocked --> answer
+  answer --> clarify
+  clarify -- clear: implement --> review
   review -- findings --> revise
   revise -- review again --> review
   review -- no findings --> finish
@@ -125,6 +128,8 @@ All feature steps run in the feature worktree (`feature/<issue>-<slug>`).
 ```mermaid
 flowchart TD
   start["start-feature.sh<br/>own worktree, implementer writes"]
+  clarify{"clear or needs<br/>clarification?"}
+  answer["you answer in the handoff note<br/>or on the Issue, then --resume"]
   review["review-feature.sh<br/>independent review, read-only"]
   triage["triage-review.sh<br/>your approval, report on the Issue"]
   apply["apply-triage.sh<br/>fix only FIX_NOW findings"]
@@ -141,8 +146,18 @@ flowchart TD
   publish -- a check fails: fix --> review
 
   classDef feat fill:#EEEDFE,stroke:#534AB7,color:#3C3489
-  class start,review,triage,apply,finish,publish feat
+  class start,clarify,answer,review,triage,apply,finish,publish feat
 ```
+
+- The implementer's first step decides whether the feature is clear or needs
+  your decisions (`.agents/prompts/implementer.md`, "Clarification"). A clear
+  feature is implemented at once, and its handoff note says
+  `Clarification: clear`. Only a decision that materially affects scope, user
+  experience, a public interface, the data model, the architecture, security,
+  backward compatibility, or the acceptance criteria is asked: then the
+  session changes nothing, writes its questions under "Open questions" in the
+  handoff note, and records `blocked`. It is the existing blocked path, not a
+  separate agent or artifact (`docs/development.md`, "Clarifying a feature").
 
 - Fixes change the code, so the review becomes stale and the next step is a new
   review round. A passed newer round confirms the fixes of earlier rounds. A
