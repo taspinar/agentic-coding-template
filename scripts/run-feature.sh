@@ -447,7 +447,8 @@ step_once() {
 # record. Sets risk_level, and what the level requires of the rounds by the
 # risk policy: risk_verification ('full', or 'groups <group> ...') and
 # risk_review ('full', 'delta', or 'none'), and risk_triage ('full' or
-# 'light'; triage-review.sh derives it again itself). When the level cannot
+# 'light'; triage-review.sh derives it again itself). The workflow profile
+# of the policy is printed and recorded with the level. When the level cannot
 # be determined, the strictest requirements apply. finish-feature.sh
 # enforces the level again before the commit. A value of the policy that is
 # refused, such as 'high: triage: light', is printed with the reasons and
@@ -480,7 +481,8 @@ report_risk() {
   echo
   echo "run-feature.sh: risk level $1: $risk_level"
   printf '%s\n' "$output" | sed '1d; s/^/  /'
-  records_risk "$1" "$risk_level" "$(printf '%s\n' "$output" | sed -n 's/^- //p')" 2>/dev/null || true
+  records_risk "$1" "$risk_level" "$(printf '%s\n' "$output" | sed -n 's/^- //p')" \
+    "$(printf '%s\n' "$output" | sed -n 's/^profile: //p' | sed -n 1p | sed 's/;.*//')" 2>/dev/null || true
   refused="$(printf '%s\n' "$output" | sed -n 's/^refused: \([a-z]*: triage: .*\)$/\1/p' | sed -n 1p)"
   if [[ -n "$refused" ]]; then
     echo "run-feature.sh: $refused"

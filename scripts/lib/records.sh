@@ -720,11 +720,13 @@ records_artifact() {
   records_emit artifact --arg kind "$1" --arg path "$2" '{kind: $kind, path: $path}'
 }
 
-# records_risk <when> <level> <reasons>: the risk level of the feature and
-# its reasons, one per line, at a moment of the run.
+# records_risk <when> <level> <reasons> [<profile>]: the risk level of the
+# feature and its reasons, one per line, at a moment of the run, and the
+# workflow profile of the risk policy ('light', 'standard', or 'none').
 records_risk() {
-  records_emit risk --arg when "$1" --arg level "$2" --arg reasons "$3" \
-    '{when: $when, level: $level, reasons: ($reasons | split("\n") | map(select(length > 0)))}'
+  records_emit risk --arg when "$1" --arg level "$2" --arg reasons "$3" --arg profile "${4:-}" \
+    '{when: $when, level: $level, reasons: ($reasons | split("\n") | map(select(length > 0)))}
+     + (if $profile == "" then {} else {profile: $profile} end)'
 }
 
 records_note() {

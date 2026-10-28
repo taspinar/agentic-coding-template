@@ -1,0 +1,23 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "b9a2863a1b70cc89da60c532a566bdb55662bc08",
+  "commit": {
+    "branch": "feature/169-add-light-and-standard",
+    "parent": "f952dc4d0c1e2ceddfd1c53109b8b7137d306607",
+    "base": "f952dc4d0c1e2ceddfd1c53109b8b7137d306607"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS WITH MINOR FINDINGS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "scripts/check-risk.sh: the file defines or carries out the workflow and its gate",
+    "scripts/finish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/lib/risk.sh: the file defines or carries out the workflow and its gate",
+    "scripts/publish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/run-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The change extends the shared risk policy engine and its output, run records, and reporting, which other feature workflows rely on. The profile presets remain within that shared engine and retain the existing verification, review, triage, completion, and merge approval mechanisms. "
+  ],
+  "explanation": "Issue #169: Add Light and Standard workflow profiles without duplicating ACT or weakening risk controls. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

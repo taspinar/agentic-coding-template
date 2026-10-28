@@ -1276,6 +1276,68 @@ if grep -Fq "## Triage mode" "$repo.control/triage-1.context"; then fail "the tr
 if grep -Fq "light triage" <<<"$(log_of "$repo")"; then fail "the log names a light triage under the shipped policy"; fi
 grep -Fq "Triage mode: full (" "$repo.control/pr-body" || fail "the pull request does not name the full triage"
 
+# Workflow profiles. The same fake feature runs under no profile (the
+# shipped policy), 'profile: standard', and 'profile: light'. A
+# documentation-only feature is medium and reviewed without a profile and
+# under standard; under light it is low and is committed without a reviewer
+# (the review session is removed). A medium feature whose review has only a
+# minor finding and a suggestion is triaged as the mode says: the fake
+# triage agent fixes the minor finding unless it is told the light mode,
+# so under light the fix session and the reviews after it are removed. What
+# remains under every profile: the implementer, the full verification
+# before the commit, the commit and pull request, and the merge approval
+# gate. The profile is named in the output, the commit, the pull request,
+# the run record, and the run report.
+docs_only='mkdir -p docs .agents/summaries
+printf "feature\n" >>docs/feature.md
+printf -- "- Adds the feature page.\n" >".agents/summaries/$RUN_ISSUE.md"
+completion complete
+reply="The page is written."'
+triage_by_mode='if grep -Fq "## Triage mode" "$RUN_CONTROL/triage-$count.context"; then '"$defer_and_accept"'; else '"$fix_minor"'; fi'
+for profile in none standard light; do
+  if [[ "$profile" == "none" ]]; then
+    policy="$(cat "$source_root/.agents/policies/risk.conf")"
+  else
+    policy="$(printf 'profile: %s\ndefault: medium' "$profile")"
+  fi
+  repo="$(RISK_CONF="$policy" setup_repo "profile-$profile-docs")"
+  printf '%s\n' "$docs_only" >"$repo.control/implementer.sh"
+  run_feature "$repo" 2 thing
+  expect_published "$repo"
+  grep -Fq "  profile: $profile" "$repo.out" || fail "run-feature.sh does not name the profile $profile"
+  grep -Fqx -- "- profile: $profile" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not name the profile $profile"
+  grep -Fqx -- "- profile: $profile" "$repo.control/pr-body" || fail "the pull request does not name the profile $profile"
+  jq -e -s --arg profile "$profile" 'map(select(.type == "risk")) | length > 0 and all(.profile == $profile)' \
+    "$repo"/.agents/run/records/*.jsonl >/dev/null || fail "the run record does not name the profile $profile"
+  (cd "$repo" && "$source_root/scripts/report-runs.sh" 2) | grep -Fqx "| Workflow profile | $profile |" || fail "the run report does not show the profile $profile"
+  if [[ "$profile" == "light" ]]; then
+    expect_sessions "$repo" 1 0 0 0
+    grep -Fqx "Risk: low" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "light did not make the documentation-only feature low"
+    grep -Fq "Review: not reviewed: Low risk by project policy" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+      fail "the documentation-only feature under light was not committed without a review"
+    grep -Fq "MERGE APPROVAL REQUIRED" "$repo.out" || fail "the unreviewed feature under light did not need the owner's approval"
+  else
+    expect_sessions "$repo" 1 1 0 0
+    grep -Fqx "Risk: medium" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the documentation-only feature is not medium under $profile"
+  fi
+  [[ -f "$repo-2-thing/.agents/verification/passed" ]] || fail "the feature under $profile was committed without a recorded verification"
+
+  repo="$(RISK_CONF="$policy" setup_repo "profile-$profile-medium")"
+  printf '%s\n' "$minor_and_suggestion" >"$repo.control/reviewer-1.sh"
+  printf '%s\n' "$triage_by_mode" >"$repo.control/triage.sh"
+  run_feature "$repo" 2 thing
+  expect_published "$repo"
+  grep -Fqx "Risk: medium" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the code feature is not medium under $profile"
+  if [[ "$profile" == "light" ]]; then
+    expect_sessions "$repo" 1 1 1 0
+    grep -Fq "Triage mode: light (the profile light of .agents/policies/risk.conf of the base gives 'medium: triage: light')" "$repo.control/pr-body" ||
+      fail "the pull request does not say that the light triage comes from the profile"
+  else
+    expect_sessions "$repo" 1 3 1 1
+    grep -Fq "Triage mode: full (" "$repo.control/pr-body" || fail "the pull request does not name the full triage under $profile"
+  fi
+done
+
 # A pull request that cannot be opened stops the run after the commit; the
 # next run only publishes.
 repo="$(setup_repo publish-fails)"

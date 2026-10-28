@@ -352,7 +352,9 @@ hand. `tests/agent-test.sh`, `tests/agent-levels-test.sh`, and
 `tests/doctor-test.sh` set them on purpose.
 Other variables, such as `CLAUDE*`, are not changed.
 
-Agents run with one of three permission profiles. The profile follows from
+Agents run with one of three permission profiles, which are unrelated to
+the workflow profiles of the risk policy ("Workflow profiles"). The
+permission profile follows from
 the role and from how the script is run, not from the provider or model: a
 reviewing role is always read-only; a writing role gets `write`, or
 `unattended` when you run the step with `--unattended`, as described under
@@ -1909,6 +1911,7 @@ tests: tests test
 | `default` | The level of a path that no class names |
 | `tests` | The test files. A change to an existing one escalates to `high`; without the key, `tests test` |
 | `manifests` | The dependency and toolchain manifests. A change to an existing one escalates to `high` |
+| `profile` | The workflow profile, `light` or `standard`: a named preset of the other keys (see "Workflow profiles" below). Without the key, none |
 
 The template ships the file with `default: medium`, the paths that the merge
 approval gate protects as the `high` class (the ADRs, the CI workflows, the
@@ -1971,7 +1974,10 @@ the reviewer the level and its reasons and stores them in the review artifact
 `Risk:`. `publish-feature.sh` computes the level again for the pull request
 description and names the commit's level when the two differ.
 `run-feature.sh` prints the level once the worktree exists and before each
-review round, and the run record notes it (`risk` events). The merge approval
+review round, and the run record notes it (`risk` events). Each of them names
+the workflow profile of the policy next to the level (`profile: light`,
+`profile: standard`, or `profile: none`), and `report-runs.sh` shows it per
+feature. The merge approval
 gate is unchanged: a `high` level grants nothing, and a protected path keeps
 needing your approval.
 
@@ -1982,8 +1988,9 @@ To ask, in a feature worktree or in CI:
 ./scripts/check-risk.sh develop    # against another base
 ```
 
-The first line is `risk: <level>`, then one reason per line, then what the
-level requires of the review rounds (`verification: ...`, `review: ...`, and
+The first line is `risk: <level>`, then one reason per line, then the
+workflow profile (`profile: ...`), then what the level requires of the
+review rounds (`verification: ...`, `review: ...`, `triage: ...`, and
 `refused: ...` for a value of the policy that is not accepted). It exits 0
 for `low`, 1 for `medium`, 2 for `high`, and 3 on a usage error, so a CI
 step can branch on it.
@@ -2003,9 +2010,9 @@ The risk policy also says what a level requires of the rounds of
 | `<level>: triage: full` | The findings of a review round are triaged as the triage contract says, with nothing added: the triage agent decides `FIX_NOW`, `DEFER`, or `ACCEPT` for every finding |
 | `<level>: triage: light` | The light triage of suggestions and minor findings (see "Light triage" below). Only `low` and `medium` may have it; `high: triage: light` is refused, and the full triage applies |
 
-The template ships `verification: full`, `review: delta`, and `triage: full`
-for every level, which is exactly what the workflow did before it knew the
-levels: the full verification before each round, a review of the changes
+The template writes no requirement line, so every level gets
+`verification: full`, `review: delta`, and `triage: full`, which is exactly
+what the workflow did before it knew the levels: the full verification before each round, a review of the changes
 when it can build on the round before, a complete review last, and the
 triage as the contract says. A level without a line gets the same. Of the
 base refs the rules are read from (the local base and `origin/<base>`), the
@@ -2167,6 +2174,95 @@ leaves out are of two kinds, and the rule differs:
   verification record and the run records are left out the same way and
   bound the same way: the record names the tree it passed for, and
   `verify.sh --reuse` reuses it for that tree only.
+
+### Workflow profiles
+
+A workflow profile is one line of the risk policy that names a preset of
+the policy: `profile: light` or `profile: standard` in
+`.agents/policies/risk.conf`. It is not a second mechanism: the preset
+supplies the lines of the keys that the file does not write (the classes,
+the `default`, the test files, and the `<level>: <kind>` requirements of
+"What each level requires"), and a line that the project writes always wins
+over it. The presets live in one place, `risk_profile_preset` in
+`scripts/lib/risk.sh`, and everything after it is the same implementation:
+the same classification, escalations, requirements, completion records,
+fingerprints, verification reuse, reviews, triage, and merge approval gate.
+
+| Profile | What the preset supplies |
+|---|---|
+| none (no `profile:` line) | Nothing: the lines of the file are the policy, as before the profiles existed |
+| `standard` | The policy the template ships: `default: medium`, the `high` class of the workflow and its gate, `tests: tests test`, and `verification: full`, `review: delta`, `triage: full` for every level |
+| `light` | The same, and a `low` class of the documentation and process files (`docs/` outside `docs/decisions` and the planning documents, `.agents/plans`, `.agents/handoffs`, `.agents/summaries`, and the top-level Markdown files but `AGENTS.md`), `low: review: none`, `low: triage: light`, and `medium: triage: light` |
+
+**Three things with similar names.** A workflow profile decides what a
+`low` and a `medium` feature cost. The risk level is computed from the
+change ("The risk level of a feature"), never from the profile: the profile
+selects no level, and no profile turns an escalation off. The permission
+profiles of the agents (`write`, read-only, `unattended`, see "Configuring
+agents") decide what an agent session may do, and are unrelated to both.
+
+**What light removes, and what stays.** For a documentation-only feature,
+which is `low` under `light`, the run has no reviewer session and no triage
+session: `run-feature.sh` verifies it as a step and commits it as under
+"Low without a review". For a `medium` feature whose review has only minor
+findings and suggestions, the light triage prefers to defer or accept them,
+and the round ends without a fix session and without the reviews after it
+("Light triage"). `tests/run-feature-test.sh` runs the same fake features
+under no profile, `standard`, and `light` and compares the sessions: one
+implementer and one reviewer for the documentation, against one implementer
+under `light`; one implementer, three reviews, one triage, and one fix
+session for the medium feature, against one implementer, one review, and one
+triage under `light`. What stays under every profile: the implementer and its
+completion record, the full verification before the commit, the commit and
+the pull request with their evidence, CI, and the merge approval gate, which
+needs your approval for a feature without a review and for every protected
+path.
+
+**High is never lighter.** No preset changes the `high` class, the
+escalations, or what `high` requires; `high: review: none` and
+`high: triage: light` stay refused whatever the profile. A `high` feature
+under `light` gets the full workflow, and `check-risk.sh` says so:
+`profile: light; the level is high, so the profile does not apply`.
+
+**Selecting a profile cannot lower the protection of the feature that
+selects it.** The policy is read from the base branch, like every rule: a
+feature that adds or changes the `profile:` line is classified by the
+profile of the base, and is `high` because it changed the policy. The new
+profile applies to the features after it is merged, which needs your
+approval because the policy is a protected path. A value that is not a
+profile (`profile: lite`) is reported as refused, and the preset of
+`standard` applies, never less. Of the base refs the rules are read from,
+each ref's profile applies to its own rules, and the strictest requirement
+counts, as for every requirement; the output then names the profile of each
+ref.
+
+**Clarification.** A profile changes nothing about clarification. No
+profile adds an interview to a feature, so clear work is not asked
+anything; an implementer that cannot continue without your decision records
+the question under "Open questions" in the handoff note and stops with
+`BLOCKED:` ("Running feature steps without questions"), under every profile.
+A targeted clarification gate before feature planning is the subject of its
+own Issue (#16); a profile neither replaces nor skips it.
+
+**Existing projects.** A project whose policy has no `profile:` line keeps
+exactly its behavior and is reported as `profile: none`, not as
+`standard`. Nothing migrates by itself.
+
+**Migration.** Set or change the one line in `.agents/policies/risk.conf`
+and merge it, for example from `light` to `standard` when the project grows:
+
+```text
+profile: standard
+```
+
+Nothing else changes. The Issues, the history, the completion records, the
+reviews, and the recorded verifications stay valid: the profile is not part
+of the content fingerprint's rules, and a feature in progress is classified
+again by the policy of the base when its scripts next run, as after any
+change of the policy. A line the project writes wins over the preset, so a
+copy of the policy from before the profiles that writes out every
+requirement line keeps those lines under any profile: remove the lines that
+the profile should supply.
 
 ## Run records
 

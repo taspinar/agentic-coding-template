@@ -518,6 +518,149 @@ git -C "$repo" stash pop -q
 expect_level "$repo" medium "a code change is medium"
 [[ "$(requirement_of "$repo" triage)" == "full" ]] || fail "the stricter triage mode of origin did not count: $(cat "$repo.out")"
 
+# Workflow profiles: 'profile: light | standard' names a preset of the
+# policy, which supplies the lines the file does not write. Without the key
+# nothing is added: the shipped file and a project's own lines behave as
+# before, and the output says 'profile: none'.
+profile_of() {
+  sed -n 's/^profile: //p' "$1.out" | sed -n 1p
+}
+expect_requirements() {
+  local repo="$1"
+
+  [[ "$(requirement_of "$repo" verification) | $(requirement_of "$repo" review) | $(requirement_of "$repo" triage)" == "$2" ]] ||
+    fail "expected the requirements '$2': $3: $(cat "$repo.out")"
+}
+repo="$(setup_repo profile-legacy template)"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "the shipped policy without a profile classifies a documentation change as medium"
+[[ "$(profile_of "$repo")" == "none" ]] || fail "the shipped policy is not reported as 'profile: none': $(cat "$repo.out")"
+expect_requirements "$repo" "full | delta | full" "the shipped policy without a profile"
+repo="$(setup_repo profile-legacy-own "$requirements_policy")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" low "a project's own classes apply without a profile"
+[[ "$(profile_of "$repo")" == "none" ]] || fail "a project's own policy was labelled with a profile: $(cat "$repo.out")"
+expect_requirements "$repo" "full | none | full" "a project's own lines without a profile"
+
+# The preset of standard is the shipped policy: the same classes, and the
+# requirements a level without a line gets.
+shipped_lines="$(grep -Ev '^(#|$)' "$source_root/.agents/policies/risk.conf" | sort)"
+standard_classes="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset standard | grep -Ev '^[a-z]+: (verification|review|triage):' | sort)"
+[[ "$shipped_lines" == "$standard_classes" ]] ||
+  fail "the classes of the standard preset differ from the shipped policy: $(diff <(printf '%s\n' "$shipped_lines") <(printf '%s\n' "$standard_classes"))"
+light_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset light | grep -E '^(high|default|tests):')"
+standard_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset standard | grep -E '^(high|default|tests):')"
+[[ "$light_high" == "$standard_high" ]] || fail "the light preset changes the default, the high class, the test files, or what high requires"
+repo="$(setup_repo profile-standard "profile: standard")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" medium "standard classifies a documentation change as medium"
+[[ "$(profile_of "$repo")" == "standard" ]] || fail "'profile: standard' was not reported: $(cat "$repo.out")"
+expect_requirements "$repo" "full | delta | full" "standard"
+repo="$(setup_repo profile-standard-gate "profile: standard")"
+printf '\n# changed\n' >>"$repo/scripts/finish-feature.sh"
+expect_level "$repo" high "standard keeps the high class of the gate"
+expect_reason "$repo" "scripts/finish-feature.sh: listed as high in .agents/policies/risk.conf" "the high class of the preset was not applied"
+
+# light: documentation and process files are low, are not reviewed, and get
+# the light triage; medium gets the light triage; the ADRs, the planning
+# documents, AGENTS.md, and Markdown below the top level are not low.
+repo="$(setup_repo profile-light-docs "profile: light")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+printf '# Read me\n' >"$repo/README.md"
+mkdir -p "$repo/.agents/plans"
+printf '# Plan\n' >"$repo/.agents/plans/5-thing.md"
+expect_level "$repo" low "light classifies documentation and process files as low"
+expect_reason "$repo" "docs/guide.md: listed as low in .agents/policies/risk.conf" "the low class of light was not given as the reason"
+[[ "$(profile_of "$repo")" == "light" ]] || fail "'profile: light' was not reported: $(cat "$repo.out")"
+expect_requirements "$repo" "full | none | light" "a low feature under light"
+for path in docs/decisions/0001-thing.md docs/roadmap.md docs/architecture.md AGENTS.md src/notes.md; do
+  repo="$(setup_repo "profile-light-not-low-$(basename "$path" .md)" "profile: light")"
+  mkdir -p "$repo/$(dirname "$path")"
+  printf '# Changed\n' >"$repo/$path"
+  check "$repo"
+  [[ "$(sed -n 1p "$repo.out")" != "risk: low" ]] || fail "light made $path low: $(cat "$repo.out")"
+done
+repo="$(setup_repo profile-light-adr "profile: light")"
+mkdir -p "$repo/docs/decisions"
+printf '# ADR\n' >"$repo/docs/decisions/0001-thing.md"
+expect_level "$repo" high "an ADR stays high under light"
+repo="$(setup_repo profile-light-code "profile: light")"
+printf 'print("y")\n' >>"$repo/src/code.py"
+expect_level "$repo" medium "light classifies a code change as medium"
+expect_requirements "$repo" "full | delta | light" "a medium feature under light"
+
+# Escalation: a high-risk feature under light gets the full workflow, and
+# the output says that the profile does not apply.
+repo="$(setup_repo profile-light-high "profile: light")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+printf '\n# changed\n' >>"$repo/scripts/finish-feature.sh"
+expect_level "$repo" high "a change to the gate is high under light"
+[[ "$(profile_of "$repo")" == "light; the level is high, so the profile does not apply" ]] ||
+  fail "the output does not say that light does not apply to a high-risk feature: $(cat "$repo.out")"
+expect_requirements "$repo" "full | delta | full" "a high feature under light"
+repo="$(setup_repo profile-light-test-changed "profile: light")"
+printf 'exit 1\n' >>"$repo/tests/unit-test.sh"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" high "a changed test file escalates under light"
+expect_requirements "$repo" "full | delta | full" "an escalated feature under light"
+repo="$(setup_repo profile-light-check-changed "profile: light")"
+printf 'lint: true\nunit: echo skipped\n' >"$repo/scripts/verify.conf"
+expect_level "$repo" high "a changed check escalates under light"
+
+# A line the project writes wins over the preset, and the limits of the
+# requirements still hold: 'high: triage: light' is refused under light too.
+repo="$(setup_repo profile-light-own-line "$(printf 'profile: light\nlow: review: delta\nhigh: triage: light\nhigh: src/auth')")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+expect_level "$repo" low "the low class of light applies next to the project's lines"
+expect_requirements "$repo" "full | delta | light" "the project's 'low: review: delta' under light"
+repo="$(setup_repo profile-light-own-high "$(printf 'profile: light\nhigh: triage: light\nhigh: src/auth')")"
+mkdir -p "$repo/src/auth"
+printf 'login\n' >"$repo/src/auth/login.py"
+expect_level "$repo" high "the project's own high class applies under light"
+expect_requirements "$repo" "full | delta | full" "the project's 'high: triage: light' under light"
+expect_reason "$repo" "refused: high: triage: light is refused" "the refused 'high: triage: light' was not reported under light"
+
+# A value that is not a profile is refused and gives the preset of standard,
+# never less: the high class of the gate stays.
+repo="$(setup_repo profile-unknown "profile: lite")"
+printf '\n# changed\n' >>"$repo/scripts/finish-feature.sh"
+expect_level "$repo" high "a policy with an unknown profile keeps the high class of standard"
+[[ "$(profile_of "$repo")" == "standard; the level is high, so the profile does not apply" ]] ||
+  fail "an unknown profile does not give standard: $(cat "$repo.out")"
+expect_reason "$repo" "refused: profile: lite is not a profile in .agents/policies/risk.conf of main (light or standard); the preset of standard applies" \
+  "the unknown profile was not reported as refused"
+
+# Unsafe downgrade: a feature that selects light, or adds documentation to
+# its low class, is classified by the profile of the base and is high
+# because it changed the policy; the profile of its own file never counts.
+for base_policy in template "profile: standard"; do
+  repo="$(setup_repo "profile-downgrade-$([[ "$base_policy" == template ]] && echo none || echo standard)" "$base_policy")"
+  printf 'profile: light\n' >>"$repo/.agents/policies/risk.conf"
+  printf 'More.\n' >>"$repo/docs/guide.md"
+  expect_level "$repo" high "a feature that selects light is high"
+  expect_reason "$repo" ".agents/policies/risk.conf: the risk policy itself is changed" "the changed policy was not given as the reason"
+  [[ "$(profile_of "$repo")" == "$([[ "$base_policy" == template ]] && echo none || echo "standard; the level is high, so the profile does not apply")" ]] ||
+    fail "the profile of the feature's own file was applied: $(cat "$repo.out")"
+  expect_requirements "$repo" "full | delta | full" "a feature that selects light"
+done
+
+# The profile of each base ref applies, and of the refs the strictest
+# requirement counts: light on the local base and standard on origin gives
+# the requirements of standard, and the output names both.
+repo="$(setup_repo profile-refs "profile: light")"
+printf 'More.\n' >>"$repo/docs/guide.md"
+git -C "$repo" stash -q
+git -C "$repo" switch -q -c ahead main
+printf 'profile: standard\n' >"$repo/.agents/policies/risk.conf"
+git -C "$repo" commit -qam "Origin moves to standard"
+git -C "$repo" update-ref refs/remotes/origin/main ahead
+git -C "$repo" switch -q feature/5-thing
+git -C "$repo" branch -q -D ahead
+git -C "$repo" stash pop -q
+expect_level "$repo" medium "a documentation change is medium by the standard of origin"
+[[ "$(profile_of "$repo")" == "light on main, standard on origin/main" ]] || fail "the profiles of both refs were not named: $(cat "$repo.out")"
+expect_requirements "$repo" "full | delta | full" "light and standard on the refs"
+
 # Refusals.
 repo="$(setup_repo refusals template)"
 check "$repo" --fail-on-protected

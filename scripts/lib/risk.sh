@@ -39,6 +39,16 @@
 # for low and medium only. Of the refs the rules come from, the strictest
 # requirement counts, and a value that is not accepted counts as the
 # strictest and is reported.
+#
+# A workflow profile, 'profile: light' or 'profile: standard' in the policy,
+# names a preset of these lines (risk_profile_preset): it supplies the lines
+# of the keys that the file of the project does not write, and a line the
+# project writes always wins. A policy without the key gets exactly its own
+# lines. A profile never changes the escalations, the high class it shares
+# with the template, or what high requires, and it is read from the base like
+# every rule, so a feature that changes it is classified by the profile of
+# the base, and is high because it changed the policy. It is not an agent's
+# permission profile (lib/agent.sh) and not a risk level.
 
 if ! declare -F guardrails_rules_refs >/dev/null; then
   source "${BASH_SOURCE[0]%/*}/guardrails.sh"
@@ -64,6 +74,21 @@ RISK_REQUIREMENT_KINDS="verification|review|triage"
 RISK_DEFAULT_VERIFICATION="full"
 RISK_DEFAULT_REVIEW="delta"
 RISK_DEFAULT_TRIAGE="full"
+# The workflow profiles. Both presets share the template's default, its high
+# class (the files of the workflow and its gate, as .agents/policies/risk.conf
+# ships them), its test files, and what high requires; standard is exactly
+# the shipped policy. light adds the low class of the documentation and
+# process files outside the ADRs, the planning documents (lib/planning.sh),
+# and AGENTS.md, lets a low feature go without a review, and gives low and
+# medium the light triage.
+RISK_PROFILES="light standard"
+RISK_PROFILE_HIGH=(docs/decisions .github/workflows .github/CODEOWNERS .agents/policies .agents/prompts/reviewer.md .agents/schemas .agents/agents.conf
+  scripts/check-guardrails.sh scripts/lib/guardrails.sh scripts/check-risk.sh scripts/lib/risk.sh scripts/lib/agent.sh scripts/lib/review-data.sh
+  scripts/lib/review-run.sh scripts/lib/fingerprint.sh scripts/review-feature.sh scripts/finish-feature.sh scripts/publish-feature.sh scripts/run-feature.sh
+  scripts/verify.conf scripts/verify-workflow.conf)
+RISK_PROFILE_LIGHT_LOW=(docs ":(glob)*.md" .agents/plans .agents/handoffs .agents/summaries
+  ":(exclude)docs/decisions" ":(exclude)docs/PROJECT_DESCRIPTION.md" ":(exclude)docs/PROJECT_REQUIREMENTS.md" ":(exclude)docs/PLANNING_APPROVAL.md"
+  ":(exclude)docs/architecture.md" ":(exclude)docs/roadmap.md" ":(exclude)docs/changes" ":(exclude)AGENTS.md")
 
 # risk_is_level <text>
 risk_is_level() {
@@ -97,12 +122,98 @@ risk_config_exists() {
   git -C "$1" cat-file -e "$2:$RISK_CONFIG" 2>/dev/null
 }
 
-# risk_config_lines <root> <ref> <key>
-# Prints the value of every line of the policy of <ref> that has the key, as
-# written, one line each; nothing when the file or the key is absent.
-risk_config_lines() {
+# risk_profile_preset <profile>
+# Prints the lines of the preset of a workflow profile, in the format of the
+# policy; nothing for a word that is not a profile.
+risk_profile_preset() {
+  local low_review="$RISK_DEFAULT_REVIEW"
+  local low_triage="$RISK_DEFAULT_TRIAGE"
+  local medium_triage="$RISK_DEFAULT_TRIAGE"
+
+  case "$1" in
+    standard) ;;
+    light)
+      low_review="none"
+      low_triage="light"
+      medium_triage="light"
+      ;;
+    *) return 0 ;;
+  esac
+  echo "default: $RISK_BUILTIN_DEFAULT"
+  echo "high: ${RISK_PROFILE_HIGH[*]}"
+  echo "tests: ${RISK_BUILTIN_TESTS[*]}"
+  [[ "$1" != "light" ]] || echo "low: ${RISK_PROFILE_LIGHT_LOW[*]}"
+  echo "low: verification: $RISK_DEFAULT_VERIFICATION"
+  echo "low: review: $low_review"
+  echo "low: triage: $low_triage"
+  echo "medium: verification: $RISK_DEFAULT_VERIFICATION"
+  echo "medium: review: $RISK_DEFAULT_REVIEW"
+  echo "medium: triage: $medium_triage"
+  echo "high: verification: $RISK_DEFAULT_VERIFICATION"
+  echo "high: review: $RISK_DEFAULT_REVIEW"
+  echo "high: triage: $RISK_DEFAULT_TRIAGE"
+}
+
+# risk_profile_written <root> <ref>
+# Prints the value of the first 'profile:' line of the policy of <ref>, as
+# written, with single spaces; nothing without the file or the line.
+risk_profile_written() {
   git -C "$1" show "$2:$RISK_CONFIG" 2>/dev/null |
-    sed -n "s/^$3:[[:space:]]*//p" || true
+    sed -n 's/^profile:[[:space:]]*//p' | sed -n 1p | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//' || true
+}
+
+# risk_profile_applied <written>
+# Prints the profile whose preset applies for a written value: 'none' for no
+# value, the profile for one of RISK_PROFILES, and 'standard' for any other
+# word, so that a value that is not accepted never gives less than the
+# shipped policy.
+risk_profile_applied() {
+  if [[ -z "$1" ]]; then
+    echo "none"
+  elif [[ " $RISK_PROFILES " == *" $1 "* ]]; then
+    echo "$1"
+  else
+    echo "standard"
+  fi
+}
+
+# risk_config_effective <root> <ref>
+# Prints the policy of <ref> as the rules apply it: the lines of the file,
+# then the lines of the preset of its profile whose key the file does not
+# write. The key of a requirement line is '<level>: <kind>', of any other
+# line the word before the first colon. Nothing without the file.
+risk_config_effective() {
+  local text
+  local profile
+
+  text="$(git -C "$1" show "$2:$RISK_CONFIG" 2>/dev/null)" || return 0
+  profile="$(risk_profile_applied "$(risk_profile_written "$1" "$2")")"
+  { printf '%s\n' "$text"; echo "--preset--"; risk_profile_preset "$profile"; } |
+    awk -v kinds="$RISK_REQUIREMENT_KINDS" '
+      function key(line, k) {
+        if (match(line, "^(low|medium|high):[[:space:]]*(" kinds "):")) {
+          k = substr(line, 1, RLENGTH)
+          gsub(/[[:space:]]/, "", k)
+          return k
+        }
+        return substr(line, 1, index(line, ":") - 1)
+      }
+      $0 == "--preset--" { preset = 1; next }
+      !preset { print; if ($0 ~ /^[a-z]+:/) written[key($0)] = 1; next }
+      !(key($0) in written) { print }'
+}
+
+# risk_config_lines <root> <ref> <key> [raw]
+# Prints the value of every line of the policy of <ref> that has the key, as
+# written, one line each; nothing when the file or the key is absent. The
+# lines of the preset of its profile count unless the fourth argument is
+# 'raw'.
+risk_config_lines() {
+  if [[ "${4:-}" == "raw" ]]; then
+    git -C "$1" show "$2:$RISK_CONFIG" 2>/dev/null
+  else
+    risk_config_effective "$1" "$2"
+  fi | sed -n "s/^$3:[[:space:]]*//p" || true
 }
 
 # risk_config_values <root> <ref> <key>
@@ -115,12 +226,13 @@ risk_config_values() {
     grep -Ev "^($RISK_REQUIREMENT_KINDS):" | tr -s '[:space:]' '\n' | grep . || true
 }
 
-# risk_requirement_value <root> <ref> <level> <kind>
+# risk_requirement_value <root> <ref> <level> <kind> [raw]
 # Prints the requirement of <kind> ('verification' or 'review') for <level>
 # in the policy of <ref>, as written, with single spaces; nothing when the
-# file or the line is absent. The first such line counts.
+# file or the line is absent. The first such line counts. With 'raw', a line
+# of the preset of the profile does not count.
 risk_requirement_value() {
-  risk_config_lines "$1" "$2" "$3" |
+  risk_config_lines "$1" "$2" "$3" "${5:-}" |
     sed -n "s/^$4:[[:space:]]*//p" | sed -n 1p | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
 }
 
@@ -268,11 +380,64 @@ risk_triage_mode() {
     written="$(risk_requirement_value "$1" "$ref" "$3" triage)"
     [[ -z "$written" ]] || break
   done
-  if [[ -n "$written" ]]; then
+  if [[ -n "$written" && -z "$(risk_requirement_value "$1" "$ref" "$3" triage raw)" ]]; then
+    echo "the profile $(risk_profile_applied "$(risk_profile_written "$1" "$ref")") of $RISK_CONFIG of the base gives '$3: triage: $mode'"
+  elif [[ -n "$written" ]]; then
     echo "$RISK_CONFIG of the base says '$3: triage: $mode'"
   else
     echo "the default; $RISK_CONFIG of the base has no '$3: triage:' line"
   fi
+}
+
+# risk_profile <root> <rules-refs>
+# Prints the workflow profile of the rules on the first line: 'light',
+# 'standard', or 'none' when the refs agree, otherwise '<profile> on <ref>'
+# for each ref, separated by commas (each ref's preset applies, and of the
+# refs the strictest requirement counts). Every line after it names a value
+# of 'profile:' that is not a profile.
+risk_profile() {
+  local ref
+  local written
+  local applied
+  local names=""
+  local per_ref=""
+  local problems=""
+
+  for ref in $2; do
+    written="$(risk_profile_written "$1" "$ref")"
+    applied="$(risk_profile_applied "$written")"
+    if [[ -n "$written" && "$applied" != "$written" ]]; then
+      problems+="profile: $written is not a profile in $RISK_CONFIG of $ref (${RISK_PROFILES// / or }); the preset of standard applies"$'\n'
+    fi
+    names+="$applied"$'\n'
+    per_ref+="${per_ref:+, }$applied on $ref"
+  done
+  if [[ -z "$names" ]]; then
+    echo "none"
+  elif [[ "$(printf '%s' "$names" | sort -u | grep -c .)" -eq 1 ]]; then
+    printf '%s' "$names" | sed -n 1p
+  else
+    echo "$per_ref"
+  fi
+  printf '%s' "$problems"
+}
+
+# risk_profile_note <root> <rules-refs> <level>
+# Prints the profile of the rules for the output of the scripts on the first
+# line: the profile, and for a high-risk feature under a profile that it
+# does not apply; then one line per refused value, as risk_profile.
+risk_profile_note() {
+  local lines
+  local profile
+
+  lines="$(risk_profile "$1" "$2")"
+  profile="$(printf '%s\n' "$lines" | sed -n 1p)"
+  if [[ "$3" == "high" && "$profile" != "none" ]]; then
+    echo "$profile; the level is high, so the profile does not apply"
+  else
+    echo "$profile"
+  fi
+  printf '%s\n' "$lines" | sed 1d
 }
 
 # risk_default <root> <rules-refs>
