@@ -94,8 +94,9 @@ else
 fi
 
 # Providers that .agents/agents.conf assigns to a role are required, on its
-# plain line and on its lines per risk level ('<role>@<level>'), which are
-# validated like the plain ones.
+# plain line and on its lines per risk level ('<role>@<level>'). The file is
+# validated as a whole by agent_lookup: an unsupported provider or model on
+# any line, also of a role that is not started, makes it invalid.
 codex_roles=""
 claude_roles=""
 # configured_provider <role> [level]: the provider the role resolves to for
@@ -118,21 +119,12 @@ if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
       case "$AGENT_CONFIG_PROVIDER" in
         codex) codex_roles+=" $role" ;;
         claude) claude_roles+=" $role" ;;
-        "") ;;
-        *)
-          missing "role '$role' uses unsupported agent '$AGENT_CONFIG_PROVIDER'" \
-            "Use 'codex' or 'claude' in .agents/agents.conf."
-          ;;
       esac
       for level in $role_levels; do
         agent_lookup "$root" "$role" "$level"
         case "$AGENT_LEVEL_PROVIDER" in
           codex) codex_roles+=" $role@$level" ;;
           claude) claude_roles+=" $role@$level" ;;
-          *)
-            missing "role '$role@$level' uses unsupported agent '$AGENT_LEVEL_PROVIDER'" \
-              "Use 'codex' or 'claude' in .agents/agents.conf."
-            ;;
         esac
       done
       if [[ -n "$role_levels" && " $AGENT_FEATURE_ROLES " != *" $role "* ]]; then

@@ -349,6 +349,17 @@ MOCK_AGENT_EXIT=9 expect_no_triage "$repo" "the triage agent failed" "$review"
 repo="$(setup_repo modifies)"
 MOCK_AGENT_ACTION="printf 'x\n' >'$repo/note.txt'" expect_no_triage "$repo" "the triage agent changed the working tree" "$review"
 
+# An invalid line of a role that the triage does not start is refused with
+# its line before the triage agent is resolved.
+repo="$(setup_repo invalid-config)"
+printf 'triage: claude model-t\nreviewer@high: copilot nope\n' >"$repo/.agents/agents.conf"
+expect_no_triage "$repo" "a level line of the reviewer names an unsupported provider" "$review"
+grep -Fq "unsupported agent 'copilot' for role 'reviewer@high' on line 2 of" "$repo.out" || fail "the invalid line of the reviewer was not named: $(cat "$repo.out")"
+[[ ! -e "$repo.log" ]] || fail "the triage agent was started although a level line of the reviewer is invalid"
+printf 'triage: claude model-t\nreviewer@high: codex fable\n' >"$repo/.agents/agents.conf"
+expect_no_triage "$repo" "a level line of the reviewer names a refused combination" "$review"
+grep -Fq "unsupported agent/model combination: codex + fable for role 'reviewer@high' on line 2 of" "$repo.out" || fail "the refused combination of the reviewer was not named: $(cat "$repo.out")"
+
 # A review of content that changed since is stale and is not triaged.
 repo="$(setup_repo stale)"
 printf 'changed after the review\n' >>"$repo/AGENTS.md"
