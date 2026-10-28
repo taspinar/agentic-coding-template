@@ -280,10 +280,15 @@ implementer@high: claude fable
 When a script starts such a role it takes, in this order: `--agent` and
 `--model` on the command line; the line of the role and the effective level of
 the feature; the plain line of the role. Without a level line the plain line
-applies, so a configuration without one behaves as before; the template ships
-none. The level is the effective level as `check-risk.sh` computes it at the
-moment the role starts, raised to the highest level that the run records of
-the feature hold: the level can rise during a feature, so a later session may
+applies, so a configuration without one behaves as before. The template ships
+`implementer@high: claude fable`, `triage-implementer@high: claude fable`, and
+`reviewer@high: codex gpt-6-luna`, because its High-risk features converged
+with that implementer where a weaker model did not and the reviewer of the
+pair has to be the other provider; a project may change them, and a Medium or
+Low feature runs with the plain lines. The level is the effective level as
+`check-risk.sh` computes it at the moment the role starts, raised to the
+highest level that the run records of the feature hold: the level can rise
+during a feature, so a later session may
 use a stronger model, never a weaker one than a session that already ran at a
 higher level. `start-feature.sh` starts a new feature at the default of the
 risk policy of its base, since the feature has no changes yet, and a resumed
