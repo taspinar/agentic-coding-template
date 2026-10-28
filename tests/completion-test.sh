@@ -235,6 +235,16 @@ budget_for_not_met='{"schema": "completion/v1", "status": "partial", "criteria":
 ], "remaining": ["The optimization"]}'
 printf '%s\n' "$budget_for_not_met" >"$record"
 expect_gate "a budget named in the evidence of a criterion that is not met" partial
+# The target for the duration of the checks of a file ('budget-seconds: <n>')
+# is a budget too: a record cannot cite it for a met criterion.
+printf 'budget-seconds: 600\npaths: scripts\nselftest: ./tests/x.sh\n' >"$root/scripts/verify-workflow.conf"
+[[ "$(completion_budget_checks "$root" | paste -sd, -)" == "budget-seconds,perf" ]] ||
+  fail "the target for the duration was not found: $(completion_budget_checks "$root" | paste -sd, -)"
+printf '%s\n' '{"schema": "completion/v1", "status": "complete", "criteria": [
+  {"criterion": "The suite is fast", "status": "met", "evidence": "verify.sh stays within budget-seconds"}
+], "remaining": []}' >"$record"
+expect_gate "evidence that cites the target for the duration" invalid \
+  "criterion 1 cites the budget check 'budget-seconds' as evidence of a met criterion"
 rm "$root/scripts/verify.conf" "$root/scripts/verify-workflow.conf"
 printf '%s\n' "$cites_budget" >"$record"
 expect_gate "the same record in a project without budget checks" complete

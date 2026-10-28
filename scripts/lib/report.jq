@@ -140,7 +140,15 @@ def report_subject($kind; $subject):
      by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
        run, command, seq, state, status,
        seconds: (if .end == null then null else .end - .start end),
-       input: ($c | input_of), output: ($c | output_of)})),
+       input: ($c | input_of), output: ($c | output_of),
+       # The verifications of the run that ran checks (a reused pass ran
+       # none; one recorded before the durations has none), each with the
+       # sum of its checks and its five slowest.
+       verifications: (.events | map(select(.type == "verification" and ((.checks // []) | type) == "array" and ((.checks // []) | length) > 0)
+         | {status, seconds,
+            checks_seconds: (.checks | map(.seconds | number_or_null // 0) | add),
+            slowest: (.checks | map(select((.seconds | number_or_null) != null)) | sort_by(-.seconds) | .[:5]
+                      | map({name, config, seconds, result}))}))})),
      rounds: {
        review: ($calls | map(select((.role == "reviewer" or .role == "planning-reviewer") and .status == 0)) | length),
        triage: ($calls | map(select(.role == "triage" and .status == 0)) | length),
@@ -247,6 +255,11 @@ def subject_markdown:
     end)
   + "\n### Runs\n\n| # | Command | State | Time | Input tokens | Output tokens |\n|---|---|---|---|---|---|\n"
   + (.by_run | map("| \(.seq // "–") | \(.command) | \(.state)\(if .status != null and .status != 0 then " (\(.status))" else "" end) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
+  + ([.by_run[] as $run | $run.verifications[] | {seq: $run.seq, command: $run.command} + .] as $verifications
+     | if ($verifications | length) == 0 then "" else
+      "\n### Slowest checks\n\nThe five slowest checks of each verification that ran its checks, with the sum of the durations of all of its checks.\n\n| # | Command | Verification | Checks | Slowest checks |\n|---|---|---|---|---|\n"
+      + ($verifications | map("| \(.seq // "–") | \(.command) | \(if .status == 0 then "passed" else "failed" end), \(.seconds | duration) | \(.checks_seconds | duration) | \(.slowest | map("\(.name) \(.seconds | duration)\(if .result == "fail" then " (failed)" else "" end)") | join(", ")) |\n") | add)
+    end)
   + "\n### Interventions\n\n"
   + (if (.interventions | length) == 0 then "None were recorded.\n" else
       (.interventions | map("- \(.what): \(.count)\n") | add) end)

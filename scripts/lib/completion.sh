@@ -34,7 +34,8 @@
 # evidence of a criterion cannot be a partial run of the checks
 # ('verify.sh --only'): such a run is not a verification. Nor can the
 # evidence of a met criterion be a budget check of scripts/verify.conf or
-# scripts/verify-workflow.conf ('<name> [<group>] budget: <command>'): a
+# scripts/verify-workflow.conf ('<name> [<group>] budget: <command>'), nor
+# the target for the duration of their checks ('budget-seconds: <n>'): a
 # budget is a measurement that never fails the verification, so it shows
 # nothing about a criterion.
 #
@@ -65,13 +66,15 @@ completion_record() {
 # completion_budget_checks <root>
 # Prints the names of the budget checks that the verification configuration
 # of the working tree at <root> declares, one per line, and nothing without
-# one. The syntax is that of scripts/verify.sh.
+# one, and 'budget-seconds' when a file declares a target for the duration of
+# its checks. The syntax is that of scripts/verify.sh.
 completion_budget_checks() {
   local file
 
   for file in "$1/scripts/verify.conf" "$1/scripts/verify-workflow.conf"; do
     [[ -f "$file" ]] || continue
     sed -nE 's/^([a-z0-9][a-z0-9-]*)([[:space:]]*\[[a-z0-9][a-z0-9-]*\])?[[:space:]]+budget:.*$/\1/p' "$file"
+    if grep -Eq '^budget-seconds:' "$file"; then echo "budget-seconds"; fi
   done | sort -u
 }
 

@@ -1,0 +1,20 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "78f9bac95c5cecfe3cc9ee3f3b5f0ec09ee31a3d",
+  "commit": {
+    "branch": "feature/219-measure-the-duration-of",
+    "parent": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1",
+    "base": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/run-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The feature adds shared verification behavior and persistent data formats: per-check duration records, a checks field in verification run events, and duration budgets consumed by workflow reporting and gates. These are interfaces used across verification, run reporting, completion, review, and feature execution. "
+  ],
+  "explanation": "Issue #219: Measure the duration of every check and put a budget on the workflow self-test suite. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

@@ -429,10 +429,12 @@ if [[ -z "$checks" && -z "$unverified_reason" && -n "$budget_results" ]]; then
     echo
     echo "## Budget results of the verification"
     echo
-    echo "The verification declares budget checks ('<name> [<group>] budget: <command>'"
-    echo "in scripts/verify.conf): each measures something against a target, and a"
-    echo "result over the target does not fail the verification. The results of the"
-    echo "verification this review rests on, with the output of each check:"
+    echo "The verification declares budgets: budget checks ('<name> [<group>] budget:"
+    echo "<command>') or a target for the duration of the checks of a file"
+    echo "('budget-seconds: <n>'), in scripts/verify.conf or scripts/verify-workflow.conf."
+    echo "Each measures something against a target, and a result over the target does"
+    echo "not fail the verification. The results of the verification this review rests"
+    echo "on, with the output of each:"
     echo
     printf '%s\n' "$budget_results" | verification_budget_report | sed 's/^budget /- budget /'
     echo

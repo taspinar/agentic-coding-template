@@ -221,13 +221,15 @@ report_budgets() {
     echo
     echo "## Budget exceeded ($(date -u +'%Y-%m-%dT%H:%M:%SZ'), recorded by run-feature.sh)"
     echo
-    echo "The verification passed, and a budget check of scripts/verify.conf exceeded its"
-    echo "target. A budget is a measurement, not a failure and not a repair order: do not"
-    echo "optimize for it in this feature unless the Issue asks for it, do not change the"
-    echo "budget, and do not cite the check as evidence in the completion record. The"
-    echo "measurement goes to the reviewer, the commit message, and the pull request;"
-    echo "the owner decides whether to change the budget (a line in scripts/verify.conf,"
-    echo "a change of its own) or to open an Issue for the optimization."
+    echo "The verification passed, and a budget of scripts/verify.conf or"
+    echo "scripts/verify-workflow.conf (a budget check, or 'budget-seconds' for the"
+    echo "duration of the checks) exceeded its target. A budget is a measurement, not a"
+    echo "failure and not a repair order: do not optimize for it in this feature unless"
+    echo "the Issue asks for it, do not change the budget, and do not cite it as evidence"
+    echo "in the completion record. The measurement goes to the reviewer, the commit"
+    echo "message, and the pull request; the owner decides whether to change the budget"
+    echo "(a line in that file, a change of its own) or to open an Issue for the"
+    echo "optimization."
     echo
     printf '%s\n' "$report" | sed 's/^budget /- budget /'
   } >>"$worktree/.agents/handoffs/$issue.md"
