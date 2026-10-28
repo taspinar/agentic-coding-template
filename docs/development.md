@@ -444,13 +444,16 @@ to a pull request description, Cursor a trailer of its own. Whether this
 project wants that is one setting in `.agents/attribution.conf`:
 
 ```text
-agent-attribution: allowed
+agent-attribution: disabled
 ```
 
+The template ships `disabled`: the work is published under the owner's own
+name, and the Git author stays the owner's identity. A project that wants its
+agents named changes the line to `allowed`.
+
 - `allowed`: agents attribute their work as their clients do, and nothing is
-  checked. The template ships this value, and a project without the file
-  behaves the same: it is what every project did before the setting existed,
-  so taking over the template changes nothing until you select `disabled`.
+  checked. A project without the file behaves the same: it is what every
+  project did before the setting existed.
 - `disabled`: no commit of a feature and no pull request description may name
   an agent. Three things follow it:
   - **The instructions.** `AGENTS.md` tells every agent to add no agent
