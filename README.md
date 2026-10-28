@@ -51,7 +51,8 @@ agent.
 
 Before the first run, set the agent and model of each role in
 `.agents/agents.conf`, say in `.agents/attribution.conf` whether commits and
-pull requests may name an agent, configure GitHub with
+pull requests may name an agent (the template ships `disabled`; change the
+line to `allowed` to name them), configure GitHub with
 [docs/repository-setup.md](docs/repository-setup.md), and delete
 `documentation/` and `.github/workflows/pages.yml`: they are the website of
 the template itself.
