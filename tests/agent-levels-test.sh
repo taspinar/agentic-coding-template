@@ -219,7 +219,8 @@ cp "$records_repo/.agents/run/records/run-g.jsonl" "$records_repo/.agents/record
 
 # A bin directory with fake tools, as tests/doctor-test.sh builds it: git and
 # gh answer the calls doctor.sh makes, jq is the real one, the agents are
-# empty programs.
+# empty programs; codex is not logged in, so doctor.sh skips the check of its
+# sandbox, which tests/doctor-test.sh covers.
 make_bin() {
   local bin="$tmp/$1"
   shift
@@ -235,6 +236,8 @@ case "\$*" in
   "remote get-url origin") exit 0 ;;
   "ls-remote --exit-code --heads origin main") exit 0 ;;
   "push --dry-run --quiet origin HEAD:refs/heads/doctor-push-check") exit 0 ;;
+  "config user.name") echo "Test User"; exit 0 ;;
+  "config user.email") echo "test@example.com"; exit 0 ;;
 esac
 echo "unexpected git call: \$*" >&2
 exit 97
@@ -257,6 +260,7 @@ exit 97
 FAKE
         ;;
       jq) printf '#!%s\nexec %q "$@"\n' "$bash_path" "$(command -v jq)" >"$bin/jq" ;;
+      codex) printf '#!%s\n[[ "$1" != login ]] || exit 1\nexit 0\n' "$bash_path" >"$bin/codex" ;;
       *) printf '#!%s\nexit 0\n' "$bash_path" >"$bin/$tool" ;;
     esac
     chmod +x "$bin/$tool"

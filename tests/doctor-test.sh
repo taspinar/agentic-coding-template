@@ -29,7 +29,8 @@ make_bin() {
   shift
 
   mkdir -p "$bin"
-  for tool in "$@"; do
+  # The sandbox check needs mkdir, rm and sleep whatever else is present.
+  for tool in mkdir rm sleep "$@"; do
     case "$tool" in
       git)
         cat >"$bin/git" <<FAKE
@@ -39,6 +40,9 @@ case "\$*" in
   "remote get-url origin") exit "\${MOCK_ORIGIN_EXIT:-0}" ;;
   "ls-remote --exit-code --heads origin main") exit "\${MOCK_MAIN_EXIT:-0}" ;;
   "push --dry-run --quiet origin HEAD:refs/heads/doctor-push-check") exit "\${MOCK_PUSH_EXIT:-0}" ;;
+  "config user.name") [[ -z "\${MOCK_GIT_NO_IDENTITY:-}" ]] || exit 1; echo "Test User"; exit 0 ;;
+  "config user.email") [[ -z "\${MOCK_GIT_NO_IDENTITY:-}" ]] || exit 1; echo "test@example.com"; exit 0 ;;
+  "-C "*" init -q") exit 0 ;;
 esac
 echo "unexpected git call: \$*" >&2
 exit 97
@@ -61,9 +65,45 @@ echo "unexpected gh call: \$*" >&2
 exit 97
 FAKE
         ;;
-      jq)
-        # The real jq: doctor.sh reads a settings file with it.
-        printf '#!%s\nexec %q "$@"\n' "$bash_path" "$(command -v jq)" >"$bin/jq"
+      jq | mkdir | rm | sleep)
+        # The real tools: doctor.sh reads a settings file with jq, lays out
+        # the scratch repository of the Codex sandbox check with mkdir and
+        # rm, and waits for the session with sleep.
+        printf '#!%s\nexec %q "$@"\n' "$bash_path" "$(command -v "$tool")" >"$bin/$tool"
+        ;;
+      codex)
+        # Answers 'login status' and 'exec'. For 'exec' it behaves as an
+        # obedient model: it runs the probe that the prompt names ('bash
+        # <path>') and writes the final message. MOCK_CODEX_DENIED names a
+        # directory of the scratch repository that the sandbox would refuse;
+        # MOCK_CODEX_NO_PROBE is a model that answers without running the
+        # command; MOCK_CODEX_HANG a session that never ends.
+        cat >"$bin/codex" <<FAKE
+#!$bash_path
+printf '%s\n' "\$*" >>"\${MOCK_CODEX_LOG:-/dev/null}"
+case "\$1" in
+  login) exit "\${MOCK_CODEX_LOGIN_EXIT:-0}" ;;
+  --version) echo "codex-cli 0.0.0-fake"; exit 0 ;;
+  exec) ;;
+  *) echo "unexpected codex call: \$*" >&2; exit 97 ;;
+esac
+if [[ -n "\${MOCK_CODEX_HANG:-}" ]]; then sleep 60; exit 0; fi
+output=""
+probe=""
+args=("\$@")
+for ((i = 0; i < \${#args[@]}; i++)); do
+  [[ "\${args[\$i]}" != "--output-last-message" ]] || output="\${args[\$((i + 1))]}"
+done
+prompt="\${args[\${#args[@]} - 1]}"
+[[ ! "\$prompt" =~ bash\ ([^[:space:]]+) ]] || probe="\${BASH_REMATCH[1]}"
+if [[ -z "\${MOCK_CODEX_NO_PROBE:-}" && -n "\$probe" ]]; then
+  [[ -z "\${MOCK_CODEX_DENIED:-}" ]] || $(command -v chmod) a-w "\${probe%/*}/\$MOCK_CODEX_DENIED"
+  "\$BASH" "\$probe" >/dev/null 2>&1 || true
+  [[ -z "\${MOCK_CODEX_DENIED:-}" ]] || $(command -v chmod) u+w "\${probe%/*}/\$MOCK_CODEX_DENIED"
+fi
+[[ -z "\$output" ]] || echo "done" >"\$output"
+exit "\${MOCK_CODEX_EXEC_EXIT:-0}"
+FAKE
         ;;
       *)
         printf '#!%s\nexit 0\n' "$bash_path" >"$bin/$tool"
@@ -84,10 +124,16 @@ attribution="$tmp/attribution.conf"
 printf 'agent-attribution: allowed\n' >"$attribution"
 claude_settings="$tmp/claude-settings.json"
 
+# The codex here is a fake, so the test runs also inside a Codex session,
+# which the real check skips (CODEX_SESSION_ID, CODEX_THREAD_ID): an
+# implementer's own run of verify.sh gets here.
 run_doctor() {
   PATH="$1" AGENT_CONFIG_FILE="$config" ATTRIBUTION_CONFIG_FILE="$attribution" \
-    ATTRIBUTION_CLAUDE_SETTINGS_FILE="$claude_settings" "$bash_path" "$script" >"$tmp/out.log" 2>&1
+    ATTRIBUTION_CLAUDE_SETTINGS_FILE="$claude_settings" TMPDIR="$tmp/scratch" DOCTOR_CODEX_TIMEOUT="${DOCTOR_CODEX_TIMEOUT:-20}" \
+    CODEX_SESSION_ID="${MOCK_CODEX_SESSION_ID:-}" CODEX_THREAD_ID= \
+    "$bash_path" "$script" >"$tmp/out.log" 2>&1
 }
+mkdir -p "$tmp/scratch"
 
 # Requires a non-zero exit with exactly one FAILED line, matching the pattern,
 # so a run that fails for another reason does not pass.
@@ -108,13 +154,92 @@ expect_failure() {
 
 # Everything available.
 bin="$(make_bin all git gh jq codex claude)"
+export MOCK_CODEX_LOG="$tmp/codex.log"
+: >"$MOCK_CODEX_LOG"
 run_doctor "$bin" || {
   cat "$tmp/out.log" >&2
   fail "complete environment was reported as a failure"
 }
 if grep -Eq '^(FAILED|WARNING)' "$tmp/out.log"; then
+  cat "$tmp/out.log" >&2
   fail "complete environment reported a problem"
 fi
+grep -Eq '^OK +git has a commit identity' "$tmp/out.log" || fail "the commit identity was not reported"
+
+# The Codex sandbox check: the implementer uses codex, so a real unattended
+# session ran in a scratch repository, with the writable roots of agent.sh,
+# and every runtime directory was writable.
+grep -Eq '^OK +codex can write the runtime directories under .agents/ inside its sandbox' "$tmp/out.log" ||
+  fail "the sandbox check did not report the writable runtime directories: $(cat "$tmp/out.log")"
+grep -q '^exec .*--sandbox workspace-write.*sandbox_workspace_write.writable_roots=\[' "$MOCK_CODEX_LOG" ||
+  grep -q '^exec .*sandbox_workspace_write.writable_roots=\[.*--sandbox workspace-write' "$MOCK_CODEX_LOG" ||
+  fail "the sandbox check did not run codex exec with the writable roots of agent.sh: $(cat "$MOCK_CODEX_LOG")"
+grep -q '^exec .*/doctor-codex-sandbox\.' "$MOCK_CODEX_LOG" || fail "the sandbox check did not run in a scratch repository"
+[[ -z "$(ls -A "$tmp/scratch")" ]] || fail "the sandbox check left its scratch repository behind: $(ls -A "$tmp/scratch")"
+# A directory the sandbox refuses fails the check, with its path.
+if [[ "$(id -u)" -ne 0 ]]; then
+  MOCK_CODEX_DENIED=.agents/summaries expect_failure "$bin" "codex cannot write .agents/summaries inside its sandbox"
+  grep -Fq "writable roots" "$tmp/out.log" || fail "the failed sandbox check does not name the mechanism"
+  [[ -z "$(ls -A "$tmp/scratch")" ]] || fail "the failed sandbox check left its scratch repository behind"
+fi
+# A model that answers without running the probe proves nothing: one more
+# session, then a failure that shows the answer.
+: >"$MOCK_CODEX_LOG"
+MOCK_CODEX_NO_PROBE=1 expect_failure "$bin" "codex did not write the runtime files under .agents/ inside its sandbox"
+grep -Fq "The session answered: done" "$tmp/out.log" || fail "the final message of the session was not shown"
+[[ "$(grep -c '^exec' "$MOCK_CODEX_LOG")" -eq 2 ]] || fail "a model that did not run the probe was not given a second session: $(cat "$MOCK_CODEX_LOG")"
+[[ -z "$(ls -A "$tmp/scratch")" ]] || fail "the failed sandbox check left its scratch repository behind"
+# Codex not logged in: a warning, and no session.
+: >"$MOCK_CODEX_LOG"
+MOCK_CODEX_LOGIN_EXIT=1 run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a codex that is not logged in was reported as a failure"; }
+grep -Eq '^WARNING +whether codex can write .* was not checked: codex is not logged in' "$tmp/out.log" ||
+  fail "a codex that is not logged in did not skip the sandbox check with a warning: $(cat "$tmp/out.log")"
+if grep -q '^exec' "$MOCK_CODEX_LOG"; then fail "a session was started although codex is not logged in"; fi
+# Inside a Codex session, which cannot start another one, the check is
+# skipped with a warning and no session.
+: >"$MOCK_CODEX_LOG"
+MOCK_CODEX_SESSION_ID=0123 run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "the doctor inside a Codex session was reported as a failure"; }
+grep -Eq '^WARNING +whether codex can write .* was not checked: this runs inside a Codex session' "$tmp/out.log" ||
+  fail "the sandbox check inside a Codex session was not skipped with a warning: $(cat "$tmp/out.log")"
+if grep -q '^exec' "$MOCK_CODEX_LOG"; then fail "a session was started inside a Codex session"; fi
+# A session that fails is a warning with its reason, not a failure of the host.
+MOCK_CODEX_EXEC_EXIT=3 MOCK_CODEX_NO_PROBE=1 run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a failed codex session was reported as a failure of the host"; }
+grep -Eq '^WARNING +whether codex can write .* the codex session failed \(status 3\)' "$tmp/out.log" ||
+  fail "a failed codex session was not reported as a warning: $(cat "$tmp/out.log")"
+# A session that does not end is stopped and reported, and does not hang the
+# doctor. The session gets the configured seconds, no fewer: a wait that
+# returns at once would stop a slow but sound session. SECONDS has whole
+# seconds, so a stop after at least 3 s of wall-clock time shows as 3 or more.
+started=$SECONDS
+MOCK_CODEX_HANG=1 DOCTOR_CODEX_TIMEOUT=3 run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a stopped codex session was reported as a failure"; }
+elapsed=$((SECONDS - started))
+grep -Eq '^WARNING +the codex session that checks the sandbox did not end within 3 seconds' "$tmp/out.log" ||
+  fail "a session that does not end was not stopped and reported: $(cat "$tmp/out.log")"
+[[ "$elapsed" -ge 3 ]] || fail "the session was stopped after $elapsed s, before the configured 3 s had passed"
+[[ "$elapsed" -le 30 ]] || fail "the session was stopped after $elapsed s, long after the configured 3 s"
+[[ -z "$(ls -A "$tmp/scratch")" ]] || fail "the stopped sandbox check left its scratch repository behind"
+# No Codex role with write access: no session, and no line about the sandbox.
+printf 'implementer: claude model-a\nreviewer: codex model-b\n' >"$config"
+: >"$MOCK_CODEX_LOG"
+run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a read-only codex role was reported as a failure"; }
+if grep -q '^exec' "$MOCK_CODEX_LOG"; then fail "the sandbox was checked although no codex role has write access"; fi
+if grep -Fq "sandbox" "$tmp/out.log"; then fail "the sandbox was mentioned although no codex role has write access"; fi
+# A level line that gives a write role to codex is enough.
+printf 'implementer: claude model-a\nimplementer@high: codex model-c\nreviewer: claude model-b\n' >"$config"
+run_doctor "$bin" || { cat "$tmp/out.log" >&2; fail "a codex level line was reported as a failure"; }
+grep -q '^exec .*--model model-c' "$MOCK_CODEX_LOG" || fail "the sandbox was not checked with the model of the level line: $(cat "$MOCK_CODEX_LOG")"
+printf 'implementer: codex model-a\nreviewer: claude model-b\n' >"$config"
+# Codex configured for a write role but not installed: the missing CLI fails,
+# and the sandbox check says it was skipped.
+bin_no_codex="$(make_bin no-codex git gh jq claude)"
+expect_failure "$bin_no_codex" "codex CLI is not installed"
+grep -Eq '^WARNING +whether codex can write .* was not checked: codex is not installed' "$tmp/out.log" ||
+  fail "the sandbox check was not reported as skipped without codex: $(cat "$tmp/out.log")"
+
+# Git without a commit identity fails, with both commands to set one.
+MOCK_GIT_NO_IDENTITY=1 expect_failure "$bin" "git has no commit identity"
+grep -Fq 'git config --global user.name' "$tmp/out.log" && grep -Fq 'git config --global user.email' "$tmp/out.log" ||
+  fail "the commands that set the identity were not shown: $(cat "$tmp/out.log")"
 
 # Each missing required tool fails and is identified.
 bin="$(make_bin no-jq git gh codex claude)"

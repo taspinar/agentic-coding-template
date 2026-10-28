@@ -11,11 +11,24 @@
 Run `./scripts/doctor.sh` to check these prerequisites, including that you can
 push to `origin` with the Git identity in use. It reports each check
 as `OK`, `WARNING`, or `FAILED` with a fix hint, exits non-zero when a required
-prerequisite is missing, and never modifies anything. A missing agent CLI
-fails when `.agents/agents.conf` assigns it to a role and is a warning
-otherwise. It also warns when a pull request into `main` can be merged while
-its checks fail, because no ruleset or branch protection requires a status
-check; see `docs/repository-setup.md`.
+prerequisite is missing, and never modifies anything of the project. A missing
+agent CLI fails when `.agents/agents.conf` assigns it to a role and is a
+warning otherwise. It fails when Git has no commit identity (`user.name` and
+`user.email`, at any configuration level), with the two `git config` commands
+that set one: without it `finish-feature.sh` fails at the commit, after the
+implementation, the review, and the triage are done. When a role with write
+access (`project-grill`, `project-planner`, `implementer`,
+`triage-implementer`, also by a level line) uses Codex, it runs one short
+real `codex exec` session in a scratch repository under your temporary
+directory, with agent.sh's unattended profile, and reports as `FAILED`, with
+its path, a runtime directory under `.agents/` that the session cannot write
+(see "Codex and `.agents/`" under "Configuring agents"); the check never
+prompts, a session that does not end is stopped after `DOCTOR_CODEX_TIMEOUT`
+seconds (180 by default), and it is skipped with a warning when Codex is not
+installed, not logged in, or the script itself runs inside a Codex session.
+It also warns when a pull request into `main` can be merged while its checks
+fail, because no ruleset or branch protection requires a status check; see
+`docs/repository-setup.md`.
 
 Keep `./scripts/verify.sh` as the stable verification entry point for humans,
 agents, and CI.
@@ -354,6 +367,38 @@ reviewing role is always read-only; a writing role gets `write`, or
 
 A profile that a provider cannot enforce is an error; an agent is never started
 with broader permissions instead.
+
+**Codex and `.agents/`.** Codex 0.164 and later mount `.agents/`, `.git/`, and
+`.codex/` read-only in the workspace-write sandbox, also inside the worktree
+that the session may write otherwise. The implementer and the
+triage-implementer have to write five directories under `.agents/`
+(`.agents/prompts/implementer.md`, `.agents/prompts/triage-implementer.md`):
+the completion record, the handoff note, the summary, the manual steps, and
+the experience notes. A Codex session of the `write` and of the `unattended`
+profile therefore gets exactly these opened as writable roots of its sandbox
+(`-c sandbox_workspace_write.writable_roots=[...]`, built from the worktree):
+
+- `.agents/completion/`
+- `.agents/handoffs/`
+- `.agents/summaries/`
+- `.agents/manual-steps/`
+- `.agents/experience/`
+
+All five are ignored by Git. `agent.sh` creates them before the session
+starts, because the sandbox refuses a writable root that does not exist (every
+command of the session then fails) and the session cannot create a directory
+inside the read-only `.agents/` itself. Nothing else under `.agents/` is
+opened: the policies, the prompts, the schemas, the plans, the reviews, the
+triage, `.agents/run/`, `.agents/verification/`, and `agents.conf` stay
+read-only for the agent, as do `.git/` and `.codex/`; a read-only session and
+a Claude session get no such roots. A `./scripts/verify.sh` that the agent
+runs inside the sandbox therefore cannot record its pass
+(`.agents/verification/`) or its run record (`.agents/run/records/` of the
+primary checkout): both are warnings of the scripts, the verification itself
+passes or fails as always, and the step that follows the session verifies
+the result again. `tests/agent-sandbox-test.sh` checks the grant with the
+real Codex CLI, when it is installed and logged in, and `doctor.sh` checks
+the Codex of your host the same way (see "Prerequisites").
 
 **When a session fails.** A read-only or unattended session that fails says
 why, as the provider said it: its error messages, which Codex writes as JSON

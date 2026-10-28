@@ -213,7 +213,8 @@ for provider in codex claude; do
 done
 : >"$MOCK_AGENT_LOG"
 agent_run unattended codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null
-grep -Fq -- "exec --ignore-user-config -c sandbox_workspace_write.network_access=true --sandbox workspace-write" "$MOCK_AGENT_LOG" ||
+grep -Fq -- "exec --ignore-user-config -c sandbox_workspace_write.network_access=true -c sandbox_workspace_write.writable_roots=" "$MOCK_AGENT_LOG" &&
+  grep -Fq -- "--sandbox workspace-write --disable apps" "$MOCK_AGENT_LOG" ||
   fail "the unattended codex run is not a non-interactive run in the workspace sandbox"
 if grep -Fq -- "--ask-for-approval" "$MOCK_AGENT_LOG"; then fail "the unattended codex run can ask for approval"; fi
 # No tools from the user's configuration reach an unattended session.
@@ -353,6 +354,54 @@ grep -Fq "This is a usage limit of codex" "$tmp/failed.err" || fail "a limit bef
 printf '#!/usr/bin/env bash\necho "Here is my review of the confidential code"\nexit 1\n' >"$tmp/stderr-bin/claude"
 (PATH="$tmp/stderr-bin:$PATH" agent_run read-only claude model-b "$workdir" "the prompt" "$tmp/failed.txt") >/dev/null 2>"$tmp/failed.err" || true
 if grep -Fq "confidential code" "$tmp/failed.err"; then fail "the answer of a failed session was shown as its error"; fi
+
+# Codex mounts .agents/, .git/, and .codex/ read-only in its workspace-write
+# sandbox (0.164). A write and an unattended Codex session get exactly the
+# runtime directories that the implementing prompts require opened as
+# writable roots, created before the session so that the roots exist and
+# the agent, which cannot write .agents/ itself, finds them; nothing else
+# under .agents/. A read-only Codex session and Claude get no such roots.
+codex_roots_of() {
+  sed -n 's/.*-c sandbox_workspace_write.writable_roots=\(\[[^]]*\]\).*/\1/p' "$MOCK_AGENT_LOG" | head -n 1
+}
+for profile in write unattended; do
+  rm -rf "$workdir/.agents"
+  : >"$MOCK_AGENT_LOG"
+  agent_run "$profile" codex model-a "$workdir" "the prompt" "$tmp/final.txt" >/dev/null ||
+    fail "the codex $profile session failed"
+  roots="$(codex_roots_of)"
+  expected="[\"$workdir/.agents/completion\",\"$workdir/.agents/handoffs\",\"$workdir/.agents/summaries\",\"$workdir/.agents/manual-steps\",\"$workdir/.agents/experience\"]"
+  [[ "$roots" == "$expected" ]] || fail "the codex $profile session grants other writable roots than the five runtime directories: ${roots:-none}"
+  for dir in completion handoffs summaries manual-steps experience; do
+    [[ -d "$workdir/.agents/$dir" ]] || fail "the codex $profile session started without .agents/$dir in the work directory"
+  done
+  if grep -Eq -- '--add-dir|writable_roots=\[[^]]*(policies|prompts|schemas|plans|reviews|triage|run|\.git|\.codex)' "$MOCK_AGENT_LOG"; then
+    fail "the codex $profile session opens more than the runtime directories: $(cat "$MOCK_AGENT_LOG")"
+  fi
+  : >"$MOCK_AGENT_LOG"
+  agent_run "$profile" claude model-b "$workdir" "the prompt" "$tmp/final.txt" >/dev/null
+  if grep -Fq -- "writable_roots" "$MOCK_AGENT_LOG"; then fail "the claude $profile session was given Codex's writable roots"; fi
+done
+: >"$MOCK_AGENT_LOG"
+agent_run read-only codex model-a "$workdir" "the prompt" "$tmp/report.txt"
+if grep -Fq -- "writable_roots" "$MOCK_AGENT_LOG"; then fail "the read-only codex session was given writable roots"; fi
+# The roots are TOML strings: a quote and a backslash in the path are escaped.
+odd_workdir="$tmp/odd \"dir\\x"
+mkdir -p "$odd_workdir"
+: >"$MOCK_AGENT_LOG"
+agent_run unattended codex model-a "$odd_workdir" "the prompt" "$tmp/final.txt" >/dev/null
+roots="$(codex_roots_of)"
+[[ "$roots" == *'/odd \"dir\\x/.agents/completion"'* ]] || fail "a quote or a backslash in the work directory is not escaped in the writable roots: $roots"
+rm -rf "$odd_workdir"
+# A runtime directory that cannot be created starts no session.
+mkdir -p "$tmp/blocked/.agents" && : >"$tmp/blocked/.agents/completion"
+: >"$MOCK_AGENT_LOG"
+if agent_run unattended codex model-a "$tmp/blocked" "the prompt" "$tmp/final.txt" >/dev/null 2>"$tmp/err.log"; then
+  fail "a codex session started although a runtime directory could not be created"
+fi
+[[ ! -s "$MOCK_AGENT_LOG" ]] || fail "codex was started although a runtime directory could not be created"
+grep -Fq "could not create" "$tmp/err.log" || fail "the directory that could not be created was not reported: $(cat "$tmp/err.log")"
+rm -rf "$tmp/blocked"
 
 # A codex session that ends without a final message is a failure too.
 mkdir -p "$tmp/silent-bin"

@@ -3,7 +3,10 @@
 set -euo pipefail
 
 # Read-only check of the local prerequisites for the template workflow.
-# Uses only Bash builtins besides the tools it checks.
+# Uses only Bash builtins besides the tools it checks, except for the check
+# of the Codex sandbox, which lays out a scratch repository in a temporary
+# directory (mkdir, git init, rm), waits for the session (sleep) and removes
+# it again. Nothing of the project is changed.
 
 script_dir="${BASH_SOURCE[0]%/*}"
 [[ "$script_dir" != "${BASH_SOURCE[0]}" ]] || script_dir="."
@@ -60,6 +63,127 @@ check_main_protection() {
   fi
 }
 
+# check_codex_sandbox <model> <roles>
+# Codex 0.164 mounts .agents/ read-only in its workspace-write sandbox, so a
+# Codex session with write access gets the runtime directories it has to
+# write opened as writable roots (lib/agent.sh, AGENT_CODEX_WRITABLE_DIRS).
+# Whether that works with the Codex of this host is tried for real: a session
+# of the unattended profile, with <model>, in a scratch repository laid out
+# like a feature worktree, runs a probe that writes into every one of the
+# directories, and a directory the probe cannot write is reported with its
+# path. The session asks nothing ('codex exec' never does); one that does not
+# end within DOCTOR_CODEX_TIMEOUT seconds (180 by default) is stopped and
+# reported as a warning. Skipped, with a warning, when codex is not logged in.
+check_codex_sandbox() {
+  local model="$1"
+  local roles="$2"
+  local limit="${DOCTOR_CODEX_TIMEOUT:-180}"
+  local scratch="${TMPDIR:-/tmp}/doctor-codex-sandbox.$$.$RANDOM"
+  local probe="$scratch/sandbox-probe.sh"
+  local results="$scratch/sandbox-probe-results"
+  local final="$scratch/final.md"
+  local prompt
+  local dir
+  local line
+  local denied=""
+  local writable=""
+  local pid
+  local attempt
+  local waited
+  local status
+
+  # Inside a Codex session a second codex cannot start: its sandbox refuses
+  # the files codex writes in its own home.
+  if [[ -n "${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}" ]]; then
+    warn "whether codex can write the runtime files under .agents/ inside its sandbox was not checked: this runs inside a Codex session, which cannot start another one" \
+      "Run this script from a terminal."
+    return 0
+  fi
+  if ! codex login status </dev/null >/dev/null 2>&1; then
+    warn "whether codex can write the runtime files under .agents/ inside its sandbox was not checked: codex is not logged in" \
+      "Run 'codex login', then this script again. The roles$roles run Codex with write access."
+    return 0
+  fi
+
+  if ! mkdir -p "$scratch/.agents/policies" "$scratch/.agents/prompts" 2>/dev/null ||
+    ! git -C "$scratch" init -q 2>/dev/null; then
+    rm -rf "$scratch" 2>/dev/null || true
+    warn "whether codex can write the runtime files under .agents/ inside its sandbox was not checked: no scratch repository could be made under ${TMPDIR:-/tmp}" \
+      "Check that the directory is writable, then run this script again."
+    return 0
+  fi
+
+  # The probe writes a file in every runtime directory and notes the result
+  # in the repository root, which the sandbox lets the session write. Bash
+  # builtins only: it runs with whatever the sandbox offers.
+  {
+    echo '#!/usr/bin/env bash'
+    printf ': >%q\n' "$results"
+    for dir in $AGENT_CODEX_WRITABLE_DIRS; do
+      printf 'if echo probe >%q 2>/dev/null; then echo "writable %s"; else echo "denied %s"; fi >>%q\n' \
+        "$scratch/$dir/sandbox-probe" "$dir" "$dir" "$results"
+    done
+  } >"$probe"
+  prompt="This is a check of your sandbox. Use your shell tool to run the command: bash $probe
+Then reply with the single word done. Do not create or change any other file."
+
+  # The session runs in a process group of its own, so that a session that
+  # does not end can be stopped with everything it started. A model that
+  # answers without running the command proves nothing: one more session,
+  # then the result stands.
+  for attempt in 1 2; do
+    rm -f "$results" "$final"
+    waited=0
+    status=0
+    set -m
+    (
+      agent_run_session unattended codex "$model" "$scratch" "$prompt" "$final" >/dev/null 2>"$scratch/session.err"
+    ) </dev/null &
+    pid=$!
+    set +m
+    while kill -0 "$pid" 2>/dev/null && [[ "$waited" -lt "$limit" ]]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      rm -rf "$scratch" 2>/dev/null || true
+      warn "the codex session that checks the sandbox did not end within $limit seconds and was stopped; whether codex can write the runtime files under .agents/ was not checked" \
+        "Run this script again; a slow network or provider may be the cause. DOCTOR_CODEX_TIMEOUT sets the seconds to wait."
+      return 0
+    fi
+    wait "$pid" || status=$?
+    [[ ! -s "$results" && "$status" -eq 0 && "$attempt" -eq 1 ]] || break
+  done
+
+  if [[ -s "$results" ]]; then
+    while IFS= read -r line; do
+      case "$line" in
+        "denied "*) denied+=" ${line#denied }" ;;
+        "writable "*) writable+=" ${line#writable }" ;;
+      esac
+    done <"$results"
+  fi
+  for dir in $AGENT_CODEX_WRITABLE_DIRS; do
+    [[ " $writable " == *" $dir "* || " $denied " == *" $dir "* ]] || denied+=" $dir"
+  done
+
+  if [[ -s "$results" && -n "$denied" ]]; then
+    missing "codex cannot write$denied inside its sandbox, which the roles$roles have to" \
+      "scripts/lib/agent.sh opens these directories as writable roots of the workspace-write sandbox (sandbox_workspace_write.writable_roots); this codex ($(codex --version 2>/dev/null || echo "version unknown")) does not honour that. Update Codex, or give the roles to Claude in .agents/agents.conf."
+  elif [[ "$status" -ne 0 ]]; then
+    warn "whether codex can write the runtime files under .agents/ inside its sandbox was not checked: the codex session failed (status $status)" \
+      "$(line="$(<"$scratch/session.err")"; echo "${line:-The session left no error output.}")"
+  elif [[ ! -s "$results" ]]; then
+    missing "codex did not write the runtime files under .agents/ inside its sandbox: the probe of the sandbox left no result" \
+      "$(line="$(<"$final")"; echo "The session answered: ${line:-nothing}")"
+  else
+    ok "codex can write the runtime directories under .agents/ inside its sandbox (${AGENT_CODEX_WRITABLE_DIRS// /, })"
+  fi
+  rm -rf "$scratch" 2>/dev/null || true
+}
+
 echo "== Agentic template doctor =="
 
 if have git; then
@@ -99,6 +223,10 @@ fi
 # any line, also of a role that is not started, makes it invalid.
 codex_roles=""
 claude_roles=""
+# The roles with write access that use Codex, and the model of the first: the
+# Codex sandbox is tried with it (check_codex_sandbox).
+codex_write_roles=""
+codex_write_model=""
 # configured_provider <role> [level]: the provider the role resolves to for
 # a feature of the level, by the line of the level or the plain line; nothing
 # when neither exists.
@@ -117,13 +245,25 @@ if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
       agent_lookup "$root" "$role"
       role_levels="$AGENT_CONFIG_LEVELS"
       case "$AGENT_CONFIG_PROVIDER" in
-        codex) codex_roles+=" $role" ;;
+        codex)
+          codex_roles+=" $role"
+          if [[ " $AGENT_WRITE_ROLES " == *" $role "* ]]; then
+            codex_write_roles+=" $role"
+            codex_write_model="${codex_write_model:-$AGENT_CONFIG_MODEL}"
+          fi
+          ;;
         claude) claude_roles+=" $role" ;;
       esac
       for level in $role_levels; do
         agent_lookup "$root" "$role" "$level"
         case "$AGENT_LEVEL_PROVIDER" in
-          codex) codex_roles+=" $role@$level" ;;
+          codex)
+            codex_roles+=" $role@$level"
+            if [[ " $AGENT_WRITE_ROLES " == *" $role "* ]]; then
+              codex_write_roles+=" $role@$level"
+              codex_write_model="${codex_write_model:-$AGENT_LEVEL_MODEL}"
+            fi
+            ;;
           claude) claude_roles+=" $role@$level" ;;
         esac
       done
@@ -212,7 +352,27 @@ for agent in codex claude; do
   fi
 done
 
+# A Codex role with write access has to write the runtime files of a feature
+# under .agents/, which Codex's sandbox refuses unless agent.sh's grant works.
+if [[ -n "$codex_write_roles" ]]; then
+  if have codex; then
+    check_codex_sandbox "$codex_write_model" "$codex_write_roles"
+  else
+    warn "whether codex can write the runtime files under .agents/ inside its sandbox was not checked: codex is not installed" \
+      "Install it and run this script again. The roles$codex_write_roles run Codex with write access."
+  fi
+fi
+
 if have git; then
+  # finish-feature.sh commits as you, after the implementation, the review,
+  # and the triage are done; without a name and an address Git refuses the
+  # commit then ("unable to auto-detect email address").
+  if [[ -n "$(git config user.name 2>/dev/null)" && -n "$(git config user.email 2>/dev/null)" ]]; then
+    ok "git has a commit identity (user.name and user.email)"
+  else
+    missing "git has no commit identity: finish-feature.sh could not commit" \
+      "Run: git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\""
+  fi
   if git rev-parse --show-toplevel >/dev/null 2>&1; then
     ok "current directory is inside a Git repository"
     if git remote get-url origin >/dev/null 2>&1; then
