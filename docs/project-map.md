@@ -97,7 +97,7 @@ the website describes the current template.
 |---|---|
 | `scripts/lib/agent.sh` | Role configuration, `--agent`/`--model` overrides, and starting agents with the `write`, `unattended`, or `read-only` profile; for Codex, the runtime directories under `.agents/` that a write session may write (`AGENT_CODEX_WRITABLE_DIRS`), opened as writable roots of its sandbox and created before the session; `tests/agent-sandbox-test.sh` checks that with the real Codex CLI |
 | `scripts/lib/attribution.sh` | The attribution preference of `.agents/attribution.conf`, and the check of commits and texts for agent `Co-authored-by` trailers and generated attribution text |
-| `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON |
+| `scripts/lib/review-data.sh` | Validation and rendering of review, triage, and revision JSON; the decisions of the earlier rounds of a feature, against which the predecessor of a finding (`previous`) is checked |
 | `scripts/lib/review-run.sh` | Running a read-only agent with one retry, and storing a review |
 | `scripts/lib/github.sh` | Questions about the repository on GitHub, such as whether a branch requires a status check |
 | `scripts/lib/issue-comments.sh` | The comments of a feature Issue that are passed on to the implementer, the reviewer, and the triage agent: those of the owner, members, and collaborators, without the workflow's own reports, bounded in size |

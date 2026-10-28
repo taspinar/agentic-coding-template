@@ -147,6 +147,13 @@ def report_subject($kind; $subject):
        repair: (($calls | map(select(.role == "triage-implementer")) | length)
                + ($runs | map(select(.command == "revise-planning.sh") | .events[]
                    | select(.type == "agent-call" and .role == "project-planner")) | length))},
+     # The findings of a review that continue an earlier finding
+     # (review-feature.sh, the finding events): a fix that did not hold, or
+     # an accepted or deferred finding that the change made worse.
+     reraises: ($events | map(select(.type == "finding" and (.previous | type) == "object")) | {
+       count: length,
+       unresolved: (map(select(.previous.relation == "unresolved")) | length),
+       worsened: (map(select(.previous.relation == "worsened")) | length)}),
      interventions: ($events | map(select(.type == "intervention")) | group_by(.what)
                      | map({what: first.what, count: length})),
      resumed: ($events | map(select(.type == "resumed")) | length),
@@ -228,6 +235,7 @@ def subject_markdown:
   + "| Review rounds | \(.rounds.review) |\n"
   + "| Triage | \(.rounds.triage) |\n"
   + "| Repair sessions | \(.rounds.repair) |\n"
+  + (if .kind == "feature" then "| Re-raised findings | \(.reraises.count)\(if .reraises.count > 0 then " (\(.reraises.unresolved) unresolved, \(.reraises.worsened) worsened)" else "" end) |\n" else "" end)
   + "| Input tokens | \(.input | token_text) |\n"
   + "| Output tokens | \(.output | token_text) |\n"
   + "| Verification | \(.verification.count) runs, \(.verification.seconds | duration), \(.verification.reused) reused, \(.verification.failed) failed\(if .verification.interrupted > 0 then ", \(.verification.interrupted) interrupted" else "" end) |\n"

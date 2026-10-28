@@ -573,14 +573,19 @@ jq -n \
             } end)
         } ]' >"$proposal_file"
 
+# render_proposal <decisions-json>: the decisions, each with the earlier
+# finding that its finding continues, as the review names it.
 render_proposal() {
-  jq -r '
+  jq -r --slurpfile review "$review_path" "$_review_data_previous_text"'
     def group($decision):
-      $decision,
+      ($review[0].findings | map({(.id): .previous}) | add // {}) as $previous
+      | $decision,
       ([.[] | select(.decision == $decision)] as $items
        | if ($items | length) == 0 then "- (none)"
          else ($items[] |
            "- \(.finding_id) \(.title) — \(.rationale)",
+           (if ($previous[.finding_id] | type) == "object"
+            then "  Continues: \($previous[.finding_id] | previous_text)" else empty end),
            (if .followup != null then
               "  Follow-up Issue: \(.followup.title)" +
               (if .followup.issue_number != null then " → #\(.followup.issue_number)" else "" end),

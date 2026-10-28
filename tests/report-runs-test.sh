@@ -286,6 +286,23 @@ if report "$repo" --github-summary 31 >/dev/null 2>&1; then fail "a summary of a
 printf 'not json\n' >>"$file"
 [[ "$(report "$repo" 30 --json | jq '.subjects[0].runs.total')" -eq 1 ]] || fail "a damaged line hid the report"
 
+# Re-raised findings: the finding events of the reviews that name an earlier
+# finding, per feature, by relation.
+repo="$(setup_repo reraises)"
+run_file "$repo" r1 31 review-feature.sh 1000 1100 0
+for fields in '{"round":2,"id":"M1","severity":"major","previous":{"round":1,"id":"M1","relation":"unresolved"}}' \
+  '{"round":2,"id":"MIN1","severity":"minor","previous":{"round":1,"id":"MIN2","relation":"worsened"}}' \
+  '{"round":2,"id":"S1","severity":"suggestion"}'; do
+  event "$repo/.agents/run/records/r1.jsonl" r1 1050 finding "$fields"
+done
+run_file "$repo" r2 32 review-feature.sh 1000 1100 0
+[[ "$(report "$repo" 31 --json | jq -c '.subjects[0].reraises')" == '{"count":2,"unresolved":1,"worsened":1}' ]] ||
+  fail "the re-raises of a feature are not counted: $(report "$repo" 31 --json | jq -c '.subjects[0].reraises')"
+[[ "$(report "$repo" 32 --json | jq -c '.subjects[0].reraises')" == '{"count":0,"unresolved":0,"worsened":0}' ]] ||
+  fail "a feature without re-raises shows some"
+grep -Fq "| Re-raised findings | 2 (1 unresolved, 1 worsened) |" <<<"$(report "$repo" 31)" ||
+  fail "the Markdown does not show the re-raises"
+
 [[ ! -e "$tmp/network" ]] || fail "the report called the network"
 
 echo "report-runs tests passed"

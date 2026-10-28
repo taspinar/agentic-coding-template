@@ -720,6 +720,20 @@ records_artifact() {
   records_emit artifact --arg kind "$1" --arg path "$2" '{kind: $kind, path: $path}'
 }
 
+# records_findings <review-json>: one 'finding' event per finding of a stored
+# feature review: its round, id, and severity, and previous when it continues
+# an earlier finding, so that a report can count the re-raises.
+records_findings() {
+  local finding
+
+  [[ -n "${RECORDS_RUN_ID:-}" ]] || return 0
+  while IFS= read -r finding; do
+    [[ -n "$finding" ]] || continue
+    records_emit finding --argjson finding "$finding" '$finding'
+  done < <(jq -c '.round as $round | .findings[]?
+    | {round: $round, id, severity} + (if (.previous | type) == "object" then {previous: (.previous | {round, id, relation})} else {} end)' "$1" 2>/dev/null)
+}
+
 # records_risk <when> <level> <reasons> [<profile>]: the risk level of the
 # feature and its reasons, one per line, at a moment of the run, and the
 # workflow profile of the risk policy ('light', 'standard', or 'none').
