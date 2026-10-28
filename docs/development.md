@@ -245,7 +245,8 @@ per line:
 
 Supported providers are `codex` and `claude`. Set each model to one your
 account supports, and use a different provider for a reviewing role than for
-the role whose work it reviews.
+the role whose work it reviews: `review-feature.sh` refuses to start a
+reviewer that resolves to the implementer's provider (see "Per risk level").
 
 Every workflow script accepts `--agent <agent>` and `--model <model>` to
 override the configuration for one run. Overriding the provider requires a
@@ -254,13 +255,63 @@ as Codex, and is never replaced: an unknown provider, missing CLI, missing
 model, or malformed configuration fails before the script creates a branch,
 worktree, or file, and a model the provider rejects fails the run.
 
+**Per risk level.** A role of a feature (`implementer`, `reviewer`, `triage`,
+`triage-implementer`) may have a line per risk level of the feature ("The
+risk level of a feature" below) next to its plain line:
+
+```text
+implementer: claude sonnet
+implementer@high: claude fable
+```
+
+When a script starts such a role it takes, in this order: `--agent` and
+`--model` on the command line; the line of the role and the effective level of
+the feature; the plain line of the role. Without a level line the plain line
+applies, so a configuration without one behaves as before; the template ships
+none. The level is the effective level as `check-risk.sh` computes it at the
+moment the role starts, raised to the highest level that the run records of
+the feature hold: the level can rise during a feature, so a later session may
+use a stronger model, never a weaker one than a session that already ran at a
+higher level. `start-feature.sh` starts a new feature at the default of the
+risk policy of its base, since the feature has no changes yet, and a resumed
+session at the level of the changes in the worktree. A level that cannot be
+determined is `high`. The script prints the level, why, and which line
+selected the agent; the run record notes both for every agent call (`level`,
+and `selection`: `command-line`, `level-line`, or `plain-line`), and
+`report-runs.sh` shows the calls, the time, and the tokens per level, model,
+and selection ("Per risk level"). A model that cannot be invoked stops the
+step, as for a plain line; nothing falls back to another model. In a project
+that keeps no run records (see "Run records"), the level is computed anew at
+every session.
+
+`doctor.sh` validates the level lines like the plain ones: an unknown level, a
+duplicate, a malformed line, or an unsupported provider is reported, a CLI
+that only a level line needs is required, and every script refuses such a
+file. It also warns when a reviewing role and the role whose work it reviews
+resolve to the same provider, for the plain lines and for every level that
+either side has a line for, and when a role that never runs with a level (the
+planning roles and the analyst) has a level line. The reviewer's independence
+is enforced where the reviewer starts: `review-feature.sh` takes the
+implementer's provider from the run records of the feature ("Run records"),
+which hold every session of the implementer with the provider it ran with,
+also a session that `--agent` on the command line gave another provider than
+the configuration, and refuses, before it calls any agent, a reviewer that
+resolves to a provider the implementer ran with. Without a recorded session
+(a project that keeps no run records, or work done by hand) it resolves the
+implementer's provider for the same level (`implementer@<level>`, or the
+plain line) and refuses a reviewer that resolves to that provider. `--agent`
+and `--model` on the command line can make the pair differ for one run, but
+never make the reviewer equal to a provider that implemented: an implementer
+that ran with both providers leaves no independent reviewer.
+
 `AGENT_CONFIG_FILE` selects another configuration file for a run, for the
 workflow scripts and `doctor.sh`; `ATTRIBUTION_CONFIG_FILE` does the same for
 the attribution preference (see "Configuring attribution"). Neither reaches
 the checks of `verify.sh`: `verify.sh` unsets both for every check, and the
 workflow self-tests that assume the repository's own `.agents/agents.conf`
 unset them themselves, so they give the same result when you start one by
-hand. `tests/agent-test.sh` and `tests/doctor-test.sh` set them on purpose.
+hand. `tests/agent-test.sh`, `tests/agent-levels-test.sh`, and
+`tests/doctor-test.sh` set them on purpose.
 Other variables, such as `CLAUDE*`, are not changed.
 
 Agents run with one of three permission profiles. The profile follows from
@@ -964,7 +1015,11 @@ The full interface is:
 ./scripts/review-feature.sh <issue> [base-branch] [--agent <agent>] [--model <model>] [--changes] [--checks <group>[,<group>...]] [--unverified "<reason>"]
 ```
 
-It uses role `reviewer` with the `read-only` profile. The review is
+It uses role `reviewer` with the `read-only` profile, and refuses to start
+when the reviewer resolves to a provider the implementer ran with for the
+feature, by the run records, or, without a recorded session, to the
+implementer's provider for the feature's risk level (see "Configuring
+agents"). The review is
 non-interactive: the reviewer cannot modify files and has no network access, so
 the script supplies the GitHub Issue and the complete diff against the base
 branch, including uncommitted and untracked changes. The reviewer returns its
@@ -2028,7 +2083,7 @@ brings the rules.
 |---|---|
 | `run-start` | `kind` (`feature` or `planning`), `subject` (the Issue or the name of the planning), `command`, `seq` (the number of the run within its subject, which orders runs that start in the same second; claimed with a link in `.agents/run/records/.sequence/`, `null` when it could not be claimed), `previous` (the run before it of the same subject), `repository` (owner/name), `versions` (the template commit, a hash of the prompts and of `agents.conf`) |
 | `run-end` | `status`: the exit status; 130 when the run was interrupted. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
-| `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`) and ends (the same, with `status`, `seconds`, `usage`) |
+| `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`, and `level` and `selection`: the risk level of the feature that selected the agent, `null` for a planning or an analysis, and where the selection came from, `command-line`, `level-line`, or `plain-line`; see "Configuring agents") and ends (the same, with `status`, `seconds`, `usage`) |
 | `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, `reused`: a recorded pass stood in for the run, and `budgets`: the budget checks of the run, each with `name`, `status` `exceeded` or `within`, `exit`, and `output`; an empty list without one, and the recorded results for a reused pass) |
 | `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
 | `wait-start`, `wait` | the pause before a step is tried again: the `planned` seconds, and the `seconds` it really took |
@@ -2093,8 +2148,11 @@ repaired.
 
 A report shows per subject the outcome of its runs, the elapsed time, the
 agent time, the review rounds, the triage, and the repair sessions, the tokens
-per role, model, and run, the verification, the steps of `run-feature.sh`, the
-recorded interventions, and the versions the runs used. It reads the run files
+per role, model, and run, the calls, the time, and the tokens per risk level
+of the feature, model, and selection of the agent (for the calls that
+recorded a level, see "Configuring agents"), the verification, the steps of
+`run-feature.sh`, the recorded interventions, and the versions the runs used.
+It reads the run files
 and the copies of the primary checkout; a run is read from its own file while
 that exists and from the copy of its subject otherwise, so nothing is counted
 twice and a feature whose worktree is gone gives the same totals. It needs no

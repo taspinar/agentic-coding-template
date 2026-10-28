@@ -8,6 +8,14 @@
 # Provider and model per role come from .agents/agents.conf. The --agent and
 # --model options of a workflow script override that file. A requested model is
 # always passed to the provider and is never replaced by another one.
+#
+# A role of a feature (implementer, reviewer, triage, triage-implementer) may
+# have a line per risk level of the feature (lib/risk.sh), '<role>@<level>:
+# <provider> <model>'. When a script starts such a role it takes, in this
+# order: the command line; the line of the role and the effective level of
+# the feature at that moment, raised to the highest level an earlier session
+# of the feature ran at (the run records keep it); the plain line of the role.
+# Without a level line the plain line applies, as before the levels existed.
 
 # With Bash builtins only: doctor.sh loads this file with a minimal PATH.
 agent_library_dir="${BASH_SOURCE[0]%/*}"
@@ -16,6 +24,13 @@ source "$agent_library_dir/records.sh"
 source "$agent_library_dir/attribution.sh"
 
 AGENT_ROLES="project-grill project-planner planning-reviewer implementer reviewer triage triage-implementer analyst"
+# The roles that run for a feature, with its risk level; a '<role>@<level>'
+# line of another role never applies.
+AGENT_FEATURE_ROLES="implementer reviewer triage triage-implementer"
+AGENT_LEVELS="low medium high"
+# A reviewing role and the role whose work it reviews, which should use
+# different providers; doctor.sh checks the resolved pair.
+AGENT_REVIEW_PAIRS="reviewer:implementer planning-reviewer:project-planner"
 
 agent_fail() {
   echo "Error: $*" >&2
@@ -102,40 +117,62 @@ agent_blocked_reason() {
   sed -n 's/^[[:space:]]*BLOCKED:[[:space:]]*//p' "$1" | tail -n 1
 }
 
-# agent_lookup <root> <role>
-# Validates the complete configuration and sets AGENT_CONFIG_PROVIDER and
-# AGENT_CONFIG_MODEL for the role; both stay empty when the role, or the whole
-# file, is absent.
+# agent_lookup <root> <role> [level]
+# Validates the complete configuration, the level lines like the plain ones,
+# and sets AGENT_CONFIG_PROVIDER and AGENT_CONFIG_MODEL from the plain line of
+# the role, AGENT_LEVEL_PROVIDER and AGENT_LEVEL_MODEL from its line for
+# <level>, and AGENT_CONFIG_LEVELS to the levels the role has a line for. What
+# has no line, or the whole file, stays empty.
 agent_lookup() {
   local root="$1"
   local role="$2"
+  local level="${3:-}"
   local config="${AGENT_CONFIG_FILE:-$root/.agents/agents.conf}"
   local comment_pattern='^[[:space:]]*(#.*)?$'
-  local entry_pattern='^([a-z][a-z-]*):[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]*$'
+  local entry_pattern='^([a-z][a-z-]*)(@([a-z]+))?:[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]*$'
   local line
   local line_number=0
   local seen=" "
+  local entry_role
+  local entry_level
+  local entry_key
 
   AGENT_CONFIG_PROVIDER=""
   AGENT_CONFIG_MODEL=""
+  AGENT_LEVEL_PROVIDER=""
+  AGENT_LEVEL_MODEL=""
+  AGENT_CONFIG_LEVELS=""
 
   [[ " $AGENT_ROLES " == *" $role "* ]] || agent_fail "unknown agent role: $role"
+  [[ -z "$level" || " $AGENT_LEVELS " == *" $level "* ]] || agent_fail "unknown risk level: $level"
   [[ -f "$config" ]] || return 0
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     line_number=$((line_number + 1))
     [[ "$line" =~ $comment_pattern ]] && continue
     [[ "$line" =~ $entry_pattern ]] ||
-      agent_fail "malformed entry on line $line_number of $config; expected '<role>: <provider> <model>'."
-    [[ " $AGENT_ROLES " == *" ${BASH_REMATCH[1]} "* ]] ||
-      agent_fail "unknown role '${BASH_REMATCH[1]}' on line $line_number of $config. Known roles: $AGENT_ROLES"
-    [[ "$seen" != *" ${BASH_REMATCH[1]} "* ]] ||
-      agent_fail "role '${BASH_REMATCH[1]}' is configured more than once in $config."
-    seen+="${BASH_REMATCH[1]} "
+      agent_fail "malformed entry on line $line_number of $config; expected '<role>: <provider> <model>' or '<role>@<level>: <provider> <model>'."
+    entry_role="${BASH_REMATCH[1]}"
+    entry_level="${BASH_REMATCH[3]}"
+    [[ " $AGENT_ROLES " == *" $entry_role "* ]] ||
+      agent_fail "unknown role '$entry_role' on line $line_number of $config. Known roles: $AGENT_ROLES"
+    [[ -z "$entry_level" || " $AGENT_LEVELS " == *" $entry_level "* ]] ||
+      agent_fail "unknown risk level '$entry_level' on line $line_number of $config; a level line is '<role>@<level>: <provider> <model>' with low, medium, or high."
+    entry_key="$entry_role${entry_level:+@$entry_level}"
+    [[ "$seen" != *" $entry_key "* ]] ||
+      agent_fail "role '$entry_key' is configured more than once in $config."
+    seen+="$entry_key "
 
-    if [[ "${BASH_REMATCH[1]}" == "$role" ]]; then
-      AGENT_CONFIG_PROVIDER="${BASH_REMATCH[2]}"
-      AGENT_CONFIG_MODEL="${BASH_REMATCH[3]}"
+    [[ "$entry_role" == "$role" ]] || continue
+    if [[ -z "$entry_level" ]]; then
+      AGENT_CONFIG_PROVIDER="${BASH_REMATCH[4]}"
+      AGENT_CONFIG_MODEL="${BASH_REMATCH[5]}"
+    else
+      AGENT_CONFIG_LEVELS+="${AGENT_CONFIG_LEVELS:+ }$entry_level"
+      if [[ "$entry_level" == "$level" ]]; then
+        AGENT_LEVEL_PROVIDER="${BASH_REMATCH[4]}"
+        AGENT_LEVEL_MODEL="${BASH_REMATCH[5]}"
+      fi
     fi
   done <"$config"
 }
@@ -164,35 +201,128 @@ agent_validate() {
     agent_fail "'$provider' command not found. Install the $provider CLI or select another agent."
 }
 
-# agent_resolve <root> <role> [provider-override] [model-override]
-# Sets AGENT_PROVIDER and AGENT_MODEL, or fails before any side effect.
+# agent_resolve <root> <role> [provider-override] [model-override] [level]
+# Sets AGENT_PROVIDER and AGENT_MODEL, or fails before any side effect. With
+# a <level>, the risk level of the feature the role runs for, the line
+# '<role>@<level>' of the configuration is taken before the plain line of the
+# role; the command line comes before both. AGENT_LEVEL holds the level and
+# AGENT_SELECTION where the selection came from: 'command-line',
+# 'level-line', or 'plain-line'; the run records note both for every call.
 agent_resolve() {
   local root="$1"
   local role="$2"
   local override_provider="${3:-}"
   local override_model="${4:-}"
+  local level="${5:-}"
+  local config_provider
+  local config_model
+  local configured
+  local selection
   local provider
   local model
 
-  agent_lookup "$root" "$role"
+  agent_lookup "$root" "$role" "$level"
 
-  provider="${override_provider:-$AGENT_CONFIG_PROVIDER}"
+  if [[ -n "$level" && -n "$AGENT_LEVEL_PROVIDER" ]]; then
+    config_provider="$AGENT_LEVEL_PROVIDER"
+    config_model="$AGENT_LEVEL_MODEL"
+    configured="role '$role' at risk level $level ('$role@$level')"
+    selection="level-line"
+  else
+    config_provider="$AGENT_CONFIG_PROVIDER"
+    config_model="$AGENT_CONFIG_MODEL"
+    configured="role '$role'"
+    selection="plain-line"
+  fi
+  [[ -z "$override_provider$override_model" ]] || selection="command-line"
+
+  provider="${override_provider:-$config_provider}"
   [[ -n "$provider" ]] ||
     agent_fail "no agent is configured for role '$role'. Add '$role: <provider> <model>' to .agents/agents.conf or pass --agent and --model."
 
   if [[ -n "$override_model" ]]; then
     model="$override_model"
-  elif [[ "$provider" == "$AGENT_CONFIG_PROVIDER" ]]; then
-    model="$AGENT_CONFIG_MODEL"
+  elif [[ "$provider" == "$config_provider" ]]; then
+    model="$config_model"
   else
-    agent_fail "--agent $provider differs from the provider configured for role '$role'; pass --model as well."
+    agent_fail "--agent $provider differs from the provider configured for $configured; pass --model as well."
   fi
 
   agent_validate "$provider" "$model"
   AGENT_PROVIDER="$provider"
   AGENT_MODEL="$model"
-  # The role the run records name for the agent calls that follow.
+  # The role, the level, and the selection the run records name for the
+  # agent calls that follow.
   AGENT_ROLE="$role"
+  AGENT_LEVEL="$level"
+  AGENT_SELECTION="$selection"
+}
+
+# agent_selection_text
+# One line that says how the agent of the last agent_resolve was selected,
+# for the output of a script.
+agent_selection_text() {
+  case "${AGENT_SELECTION:-}" in
+    command-line) echo "--agent or --model on the command line" ;;
+    level-line) echo "the line '$AGENT_ROLE@$AGENT_LEVEL' of .agents/agents.conf" ;;
+    *)
+      if [[ -n "${AGENT_LEVEL:-}" ]]; then
+        echo "the plain line of '$AGENT_ROLE' (no '$AGENT_ROLE@$AGENT_LEVEL' line)"
+      else
+        echo "the plain line of '$AGENT_ROLE'"
+      fi
+      ;;
+  esac
+}
+
+# agent_computed_level <worktree> <base>
+# Prints the effective risk level of the feature in <worktree> as
+# check-risk.sh computes it now, and after a tab where it comes from. A
+# level that cannot be determined is high, as the risk library has it: a
+# feature that cannot be classified never gets the agent of a lesser one.
+agent_computed_level() {
+  local output
+  local status=0
+  local level
+
+  output="$( (cd "$1" && ./scripts/check-risk.sh "$2" </dev/null) 2>&1)" || status=$?
+  level="$(printf '%s\n' "$output" | sed -n '1s/^risk: //p')"
+  if [[ "$status" -gt 2 || -z "$level" ]]; then
+    printf 'high\tthe level could not be determined (check-risk.sh exited with status %s); a feature that cannot be classified is high\n' "$status"
+    return 0
+  fi
+  printf '%s\tcomputed by check-risk.sh against %s\n' "$level" "$2"
+}
+
+# agent_feature_level <issue> <level> <why>
+# Prints the level that selects the agent of a role of feature <issue>, and
+# after a tab why: the <level> computed now, raised to the highest level that
+# the run records of the feature hold, so that a later session never runs at
+# a weaker configured level than an earlier one did.
+agent_feature_level() {
+  local issue="$1"
+  local level="$2"
+  local why="$3"
+  local highest=""
+
+  if declare -F records_highest_level >/dev/null; then
+    highest="$(records_highest_level "$issue" 2>/dev/null)" || highest=""
+  fi
+  if [[ -n "$highest" && "$(agent_level_rank "$highest")" -gt "$(agent_level_rank "$level")" ]]; then
+    printf '%s\tan earlier session of the feature ran at %s (the run records); %s now, %s\n' "$highest" "$highest" "$level" "$why"
+  else
+    printf '%s\t%s\n' "$level" "$why"
+  fi
+}
+
+# agent_level_rank <level>: 0 for low, 1 for medium, 2 for high; -1 otherwise.
+agent_level_rank() {
+  case "$1" in
+    low) echo 0 ;;
+    medium) echo 1 ;;
+    high) echo 2 ;;
+    *) echo -1 ;;
+  esac
 }
 
 # agent_session_notice <provider>
@@ -269,7 +399,7 @@ agent_run() {
   # prompt or of the answer.
   if declare -F records_agent_start >/dev/null; then
     call="$(records_id)"
-    records_agent_start "$call" "${AGENT_ROLE:-unknown}" "$1" "$2" "$3"
+    records_agent_start "$call" "${AGENT_ROLE:-unknown}" "$1" "$2" "$3" "${AGENT_LEVEL:-}" "${AGENT_SELECTION:-}"
   fi
   # The experience notes that an implementing session writes belong to its
   # run (lib/experience.sh); only their hash is recorded here.
@@ -279,7 +409,7 @@ agent_run() {
   fi
   agent_run_session "$@" || status=$?
   if declare -F records_agent_call >/dev/null; then
-    records_agent_call "${AGENT_ROLE:-unknown}" "$1" "$2" "$3" "$(($(date +%s) - started))" "$status" "${6:-}" "$call"
+    records_agent_call "${AGENT_ROLE:-unknown}" "$1" "$2" "$3" "$(($(date +%s) - started))" "$status" "${6:-}" "$call" "${AGENT_LEVEL:-}" "${AGENT_SELECTION:-}"
   fi
   if declare -F experience_notes_written >/dev/null; then
     experience_notes_written "$4" "$notes_before" "$call" 2>/dev/null || true

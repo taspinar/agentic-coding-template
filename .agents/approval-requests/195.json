@@ -1,0 +1,21 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "ed18b2e0badd30a86fa317292f843d00249c22f8",
+  "commit": {
+    "branch": "feature/195-select-the-agent-and",
+    "parent": "9557d82ede7ca53b52321890f8ac4ec8f61f883d",
+    "base": "9557d82ede7ca53b52321890f8ac4ec8f61f883d"
+  },
+  "review": {
+    "round": 4,
+    "verdict": "PASS WITH MINOR FINDINGS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".agents/agents.conf: the file defines or carries out the workflow and its gate",
+    "scripts/lib/agent.sh: the file defines or carries out the workflow and its gate",
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The feature changes shared workflow infrastructure: role resolution in `scripts/lib/agent.sh`, run-record data and reporting in `scripts/lib/records.sh` and `scripts/lib/report.jq`, reviewer independence enforcement in `scripts/review-feature.sh`, and validation in `scripts/doctor.sh`. These changes affect behavior other workflows and reports rely on. "
+  ],
+  "explanation": "Issue #195: Select the agent and model of a role by the risk level of the feature. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

@@ -23,30 +23,43 @@ fail() {
 source "$source_root/tests/lib-fakes.sh"
 make_fake_agents "$tmp/bin"
 
-# A fake agent that plays every role of a feature. The role follows from how
-# the scripts start it. Per role, the control directory of a test may hold
-# '<role>-<n>.sh' for the n-th session of that role, or '<role>.sh' for all
-# of them: a script that runs in the agent's working directory and sets
-# 'reply', the final message. Without one, the role does its work well.
+# A fake agent that plays every role of a feature, as codex and as claude
+# (the reviewer, since the review refuses the implementer's provider). The
+# role follows from how the scripts start it. Per role, the control directory
+# of a test may hold '<role>-<n>.sh' for the n-th session of that role, or
+# '<role>.sh' for all of them: a script that runs in the agent's working
+# directory and sets 'reply', the final message. Without one, the role does
+# its work well.
 cat >"$tmp/bin/codex" <<'AGENT'
 #!/usr/bin/env bash
 set -euo pipefail
 
+provider="$(basename "$0")"
 out=""
 schema=""
+logged=()
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
     --output-last-message) out="${args[$((i + 1))]}" ;;
     --output-schema) schema="${args[$((i + 1))]}" ;;
+    # Claude gets the text of the schema, which stays off the logged
+    # arguments so that every call is one line of '<role>.args'.
+    --json-schema)
+      schema="${args[$((i + 1))]}"
+      logged+=("--json-schema")
+      i=$((i + 1))
+      continue
+      ;;
   esac
+  logged+=("${args[$i]}")
 done
 
-case "$schema:$out" in
-  *review.schema.json:*) role=reviewer ;;
-  *triage.schema.json:*) role=triage ;;
-  :*-implementer.md) role=implementer ;;
-  :*-fixes.md) role=fixes ;;
+case "$provider:$schema:$out" in
+  *review.schema.json:* | claude:*\"findings\"*:) role=reviewer ;;
+  *triage.schema.json:* | claude:*\"decisions\"*:) role=triage ;;
+  *::*-implementer.md) role=implementer ;;
+  *::*-fixes.md) role=fixes ;;
   *)
     echo "The fake agent does not know this session: $*" >&2
     exit 98
@@ -70,7 +83,7 @@ completion() {
 
 count="$(($(cat "$RUN_CONTROL/$role.count" 2>/dev/null || echo 0) + 1))"
 echo "$count" >"$RUN_CONTROL/$role.count"
-printf '%s\n' "$*" >>"$RUN_CONTROL/$role.args"
+printf '%s\n' "${logged[*]}" >>"$RUN_CONTROL/$role.args"
 # A read-only session gets its context on standard input.
 [[ -z "$schema" ]] || cat >"$RUN_CONTROL/$role-$count.context"
 
@@ -101,9 +114,17 @@ elif [[ -f "$RUN_CONTROL/$role.sh" ]]; then
 else
   eval "$default"
 fi
-printf '%s\n' "$reply" >"$out"
+if [[ "$provider" != "claude" ]]; then
+  printf '%s\n' "$reply" >"$out"
+elif printf '%s' "$reply" | jq -e . >/dev/null 2>&1; then
+  # Claude returns structured output inside a result envelope.
+  printf '{"is_error": false, "structured_output": %s}\n' "$reply"
+else
+  jq -n --arg result "$reply" '{is_error: false, result: $result}'
+fi
 AGENT
 chmod +x "$tmp/bin/codex"
+cp "$tmp/bin/codex" "$tmp/bin/claude"
 
 cat >"$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
@@ -161,7 +182,7 @@ setup_repo() {
   mkdir -p "$seed" "$repo.control"
   copy_workflow "$seed"
   cp "$source_root/.gitignore" "$seed/.gitignore"
-  printf 'implementer: codex model-i\nreviewer: codex model-r\ntriage: codex model-t\ntriage-implementer: codex model-f\n' \
+  printf 'implementer: codex model-i\nreviewer: claude model-r\ntriage: codex model-t\ntriage-implementer: codex model-f\n' \
     >"$seed/.agents/agents.conf"
   printf '%s\n' "${VERIFY_CONF:-sound: test ! -e broken.txt}" >"$seed/scripts/verify.conf"
   # The risk policy of the project: the one the template ships, unless the

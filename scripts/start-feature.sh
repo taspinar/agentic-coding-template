@@ -10,6 +10,7 @@ source "$script_dir/lib/agent.sh"
 source "$script_dir/lib/completion.sh"
 source "$script_dir/lib/fingerprint.sh"
 source "$script_dir/lib/issue-comments.sh"
+source "$script_dir/lib/risk.sh"
 
 usage() {
   echo "Usage: $0 <issue-number> [slug] [base-branch] [--agent <agent>] [--model <model>] [--unattended]"
@@ -173,7 +174,13 @@ if [[ "$resume" -eq 1 ]]; then
   resume_base="$(git -C "$worktree" config --get "branch.$branch.workflow-base" || true)"
   resume_base="${resume_base:-main}"
 
-  agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+  # The agent of the implementer by the risk level of the feature as it is
+  # now, never below the level an earlier session ran at (lib/agent.sh).
+  agent_computed="$(agent_computed_level "$worktree" "$resume_base")"
+  agent_selected="$(agent_feature_level "$issue" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}")"
+  agent_level="${agent_selected%%$'\t'*}"
+  agent_level_why="${agent_selected#*$'\t'}"
+  agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
   agent="$AGENT_PROVIDER"
   model="$AGENT_MODEL"
 
@@ -184,6 +191,8 @@ if [[ "$resume" -eq 1 ]]; then
   echo "  Worktree: $worktree"
   echo "  Agent:    $agent"
   echo "  Model:    $model"
+  echo "  Level:    $agent_level ($agent_level_why)"
+  echo "  Selected: by $(agent_selection_text)"
 
   # The note the earlier session kept. Files that changed after it was last
   # written are named, because the note does not describe them.
@@ -301,7 +310,16 @@ repo_root="$(git rev-parse --show-toplevel)"
 repo_name="$(basename "$repo_root")"
 worktree="$(dirname "$repo_root")/${repo_name}-${issue}-${slug}"
 
-agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+# The agent of the implementer by the risk level of the feature. A feature
+# that is started has no changes yet, so its level is the default of the
+# risk policy of the base, as check-risk.sh would compute it; a session that
+# resumes the work computes the level from the changes in the worktree. The
+# level never falls below one that an earlier session of the Issue ran at.
+agent_computed="$(risk_default "$repo_root" "$(guardrails_rules_refs "$repo_root" "$base")")"
+agent_selected="$(agent_feature_level "$issue" "$agent_computed" "the default of the risk policy of $base; the feature has no changes yet")"
+agent_level="${agent_selected%%$'\t'*}"
+agent_level_why="${agent_selected#*$'\t'}"
+agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
 
@@ -311,6 +329,8 @@ echo "  Branch:   $branch"
 echo "  Worktree: $worktree"
 echo "  Agent:    $agent"
 echo "  Model:    $model"
+echo "  Level:    $agent_level ($agent_level_why)"
+echo "  Selected: by $(agent_selection_text)"
 echo
 
 # Modified tracked files would not be part of the feature worktree, which is

@@ -93,14 +93,28 @@ else
   missing "GitHub CLI (gh) is not installed" "Install it: https://cli.github.com"
 fi
 
-# Providers that .agents/agents.conf assigns to a role are required.
+# Providers that .agents/agents.conf assigns to a role are required, on its
+# plain line and on its lines per risk level ('<role>@<level>'), which are
+# validated like the plain ones.
 codex_roles=""
 claude_roles=""
+# configured_provider <role> [level]: the provider the role resolves to for
+# a feature of the level, by the line of the level or the plain line; nothing
+# when neither exists.
+configured_provider() {
+  agent_lookup "$root" "$1" "${2:-}"
+  if [[ -n "${2:-}" && -n "$AGENT_LEVEL_PROVIDER" ]]; then
+    printf '%s' "$AGENT_LEVEL_PROVIDER"
+  else
+    printf '%s' "$AGENT_CONFIG_PROVIDER"
+  fi
+}
 if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
   if [[ -f "${AGENT_CONFIG_FILE:-$root/.agents/agents.conf}" ]]; then
     ok "agent configuration is valid"
     for role in $AGENT_ROLES; do
       agent_lookup "$root" "$role"
+      role_levels="$AGENT_CONFIG_LEVELS"
       case "$AGENT_CONFIG_PROVIDER" in
         codex) codex_roles+=" $role" ;;
         claude) claude_roles+=" $role" ;;
@@ -110,6 +124,47 @@ if config_error="$( (agent_lookup "$root" implementer) 2>&1)"; then
             "Use 'codex' or 'claude' in .agents/agents.conf."
           ;;
       esac
+      for level in $role_levels; do
+        agent_lookup "$root" "$role" "$level"
+        case "$AGENT_LEVEL_PROVIDER" in
+          codex) codex_roles+=" $role@$level" ;;
+          claude) claude_roles+=" $role@$level" ;;
+          *)
+            missing "role '$role@$level' uses unsupported agent '$AGENT_LEVEL_PROVIDER'" \
+              "Use 'codex' or 'claude' in .agents/agents.conf."
+            ;;
+        esac
+      done
+      if [[ -n "$role_levels" && " $AGENT_FEATURE_ROLES " != *" $role "* ]]; then
+        warn "role '$role' has a line per risk level ($role_levels) that never applies" \
+          "Only a role of a feature (${AGENT_FEATURE_ROLES// /, }) runs with a risk level; the plain line of '$role' is used."
+      fi
+    done
+    # A reviewing role and the role whose work it reviews should resolve to
+    # different providers: for the plain lines, and for every level that
+    # either side has a line for.
+    for pair in $AGENT_REVIEW_PAIRS; do
+      reviewing="${pair%%:*}"
+      reviewed="${pair#*:}"
+      reviewing_provider="$(configured_provider "$reviewing")"
+      reviewed_provider="$(configured_provider "$reviewed")"
+      if [[ -n "$reviewing_provider" && "$reviewing_provider" == "$reviewed_provider" ]]; then
+        warn "roles '$reviewing' and '$reviewed' use the same agent ($reviewing_provider)" \
+          "Use a different provider for a reviewing role than for the role whose work it reviews."
+      fi
+      for level in $AGENT_LEVELS; do
+        agent_lookup "$root" "$reviewing" "$level"
+        pair_levels="$AGENT_LEVEL_PROVIDER"
+        agent_lookup "$root" "$reviewed" "$level"
+        pair_levels+="$AGENT_LEVEL_PROVIDER"
+        [[ -n "$pair_levels" ]] || continue
+        reviewing_provider="$(configured_provider "$reviewing" "$level")"
+        reviewed_provider="$(configured_provider "$reviewed" "$level")"
+        if [[ -n "$reviewing_provider" && "$reviewing_provider" == "$reviewed_provider" ]]; then
+          warn "roles '$reviewing' and '$reviewed' use the same agent ($reviewing_provider) for a $level-risk feature" \
+            "The pair resolved for the level ('<role>@$level', or the plain line) should use different providers."
+        fi
+      done
     done
   else
     warn "agent configuration .agents/agents.conf was not found" \

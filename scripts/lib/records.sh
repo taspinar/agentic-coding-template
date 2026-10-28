@@ -34,7 +34,11 @@
 #                is not recorded), budgets: the budget checks of the run
 #                (name, status "exceeded" or "within", exit, output), empty
 #                without one
-#   agent-call   role, profile, agent, model, status, seconds, usage
+#   agent-call   role, profile, agent, model, status, seconds, usage, and
+#                level and selection: the risk level of the feature that
+#                selected the agent (null for a planning or an analysis)
+#                and where the selection came from ("command-line",
+#                "level-line", "plain-line"; lib/agent.sh)
 #   intervention what: something the human did that a script observed
 #   note         step, outcome, reason, action: a line of the log of
 #                run-feature.sh, which is written from the same call
@@ -452,14 +456,18 @@ records_usage() {
   jq -cn '{source: "unavailable"}'
 }
 
-# records_agent_start <id> <role> <profile> <provider> <model>: an agent
-# call begins. A start without its agent-call is a call that was interrupted.
+# records_agent_start <id> <role> <profile> <provider> <model> [<level>] [<selection>]
+# An agent call begins. A start without its agent-call is a call that was
+# interrupted. <level> is the risk level that selected the agent, empty when
+# the role runs without one, and <selection> where the selection came from.
 records_agent_start() {
   records_emit agent-start --arg id "$1" --arg role "$2" --arg profile "$3" --arg agent "$4" --arg model "$5" \
-    '{id: $id, role: $role, profile: $profile, agent: $agent, model: $model}'
+    --arg level "${6:-}" --arg selection "${7:-}" \
+    '{id: $id, role: $role, profile: $profile, agent: $agent, model: $model,
+      level: (if $level == "" then null else $level end), selection: (if $selection == "" then null else $selection end)}'
 }
 
-# records_agent_call <role> <profile> <provider> <model> <seconds> <status> <output-file> [<id>]
+# records_agent_call <role> <profile> <provider> <model> <seconds> <status> <output-file> [<id>] [<level>] [<selection>]
 records_agent_call() {
   local usage
 
@@ -468,8 +476,71 @@ records_agent_call() {
   [[ -n "$usage" ]] || usage='{"source": "unavailable"}'
   records_emit agent-call --arg role "$1" --arg profile "$2" --arg agent "$3" --arg model "$4" \
     --argjson seconds "$5" --argjson status "$6" --argjson usage "$usage" --arg id "${8:-}" \
-    '{role: $role, profile: $profile, agent: $agent, model: $model, status: $status, seconds: $seconds, usage: $usage}
+    --arg level "${9:-}" --arg selection "${10:-}" \
+    '{role: $role, profile: $profile, agent: $agent, model: $model, status: $status, seconds: $seconds, usage: $usage,
+      level: (if $level == "" then null else $level end), selection: (if $selection == "" then null else $selection end)}
      + (if $id == "" then {} else {id: $id} end)'
+}
+
+# records_feature_events <issue> [jq-options...] <jq-program>
+# Runs <jq-program> over the array of the events of feature <issue>, with
+# the --arg options given before it, and prints its raw output: the events
+# of the run files and of the copy of the feature whose run is one whose
+# start names the feature; the runs of another feature or of a planning
+# never count. Nothing when there is no record or no jq.
+records_feature_events() {
+  local issue="$1"
+  local program
+  local dir
+  local primary
+  local files=()
+  local file
+
+  shift
+  program="${*: -1}"
+  set -- "${@:1:$#-1}"
+  command -v jq >/dev/null 2>&1 || return 0
+  dir="$(records_run_dir)" || return 0
+  primary="$(records_primary)"
+  for file in "$dir"/*.jsonl "$primary/.agents/records/feature-$issue.jsonl"; do
+    [[ -f "$file" ]] && files+=("$file")
+  done
+  [[ "${#files[@]}" -gt 0 ]] || return 0
+  cat "${files[@]}" 2>/dev/null | jq -R 'fromjson? | objects' 2>/dev/null |
+    jq -rs --arg subject "$issue" "$@" '
+      ([.[] | select(.type == "run-start" and .kind == "feature" and (.subject | tostring) == $subject) | .run] | unique) as $runs
+      | [.[] | select(.run as $run | any($runs[]; . == $run))]
+      | '"$program" 2>/dev/null || true
+}
+
+# records_highest_level <issue>
+# Prints the highest risk level that the records of feature <issue> hold:
+# the levels run-feature.sh noted ('risk' events) and the levels at which
+# its agents were started (records_feature_events). Nothing when there is no
+# record or no level. A script that starts a role raises the level it
+# computed to this one, so a later session never runs at a weaker configured
+# level than an earlier one did.
+records_highest_level() {
+  records_feature_events "$1" '
+    [.[] | select((.type == "risk" or .type == "agent-start" or .type == "agent-call") and (.level | type) == "string")
+         | .level | {low: 0, medium: 1, high: 2}[.] // empty]
+    | if length == 0 then empty else (max | ["low", "medium", "high"][.]) end'
+}
+
+# records_role_providers <issue> <role>
+# Prints the providers that <role> ran with for feature <issue>, one per
+# line, each followed by a tab and the number of its calls: the agent calls
+# of the runs of the feature (records_feature_events), and the starts of
+# calls that were interrupted. A session started with --agent on the command
+# line counts with the provider it ran with, not the configured one.
+# Nothing when the role has no recorded call.
+records_role_providers() {
+  records_feature_events "$1" --arg role "$2" '
+    [.[] | select(.type == "agent-call" and .role == $role and (.agent | type) == "string")] as $calls
+    | [$calls[] | .id // empty] as $ids
+    | $calls + [.[] | select(.type == "agent-start" and .role == $role and (.agent | type) == "string"
+                            and (.id as $id | any($ids[]; . == $id) | not))]
+    | group_by(.agent) | .[] | "\(.[0].agent)\t\(length)"'
 }
 
 # records_consolidate <kind> <subject>

@@ -121,6 +121,19 @@ def report_subject($kind; $subject):
        unfinished: (map(select(.unfinished == true)) | length),
        seconds: (map(.seconds | number_or_null // 0) | add),
        input: input_of, output: output_of})),
+     # The calls by the risk level of the feature when each started and by
+     # what selected the agent (lib/agent.sh); a call recorded before the
+     # levels existed has none and is left out here.
+     levels: ($calls | map(select((.level | type) == "string"))
+       | group_by([.level, .role, .agent, .model, .selection])
+       | map({
+           level: first.level, role: first.role, agent: first.agent, model: first.model,
+           selection: (first.selection // "unknown"), calls: length,
+           failed: (map(select(.status != null and .status != 0)) | length),
+           unfinished: (map(select(.unfinished == true)) | length),
+           seconds: (map(.seconds | number_or_null // 0) | add),
+           input: input_of, output: output_of})
+       | sort_by(({low: 0, medium: 1, high: 2}[.level] // 3), (.role as $role | roles | index([$role]) // 99), .agent, .model, .selection)),
      by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
        run, command, seq, state, status,
        seconds: (if .end == null then null else .end - .start end),
@@ -218,6 +231,11 @@ def subject_markdown:
   + (if (.agents | length) == 0 then "No agent call was recorded.\n" else
       "| Role | Agent | Model | Calls | Time | Input tokens | Output tokens |\n|---|---|---|---|---|---|---|\n"
       + (.agents | map("| \(.role) | \(.agent) | \(.model) | \(.calls)\([(if .failed > 0 then "\(.failed) failed" else empty end), (if .unfinished > 0 then "\(.unfinished) unfinished" else empty end)] | if length > 0 then " (\(join(", ")))" else "" end) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
+    end)
+  + (if (.levels | length) == 0 then "" else
+      "\n### Per risk level\n\nThe risk level of the feature when each call started, and what selected its agent: the line of the role for that level (`level-line`), the plain line of the role (`plain-line`), or `--agent`/`--model` (`command-line`).\n\n"
+      + "| Level | Role | Agent | Model | Selected by | Calls | Time | Input tokens | Output tokens |\n|---|---|---|---|---|---|---|---|---|\n"
+      + (.levels | map("| \(.level) | \(.role) | \(.agent) | \(.model) | \(.selection) | \(.calls)\([(if .failed > 0 then "\(.failed) failed" else empty end), (if .unfinished > 0 then "\(.unfinished) unfinished" else empty end)] | if length > 0 then " (\(join(", ")))" else "" end) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
     end)
   + (if (.steps | length) == 0 then "" else
       "\n### Steps of run-feature.sh\n\n| Step | Times | Time | Failed | Unfinished |\n|---|---|---|---|---|\n"

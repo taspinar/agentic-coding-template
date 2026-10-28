@@ -102,9 +102,50 @@ if [[ "$branch" != feature/${issue}-* ]]; then
   exit 1
 fi
 
-agent_resolve "$root" reviewer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL"
+# The agent of the reviewer by the risk level of the feature as it is now,
+# never below the level an earlier session of the feature ran at
+# (lib/agent.sh). The level the reviewer is told, below, is computed again
+# from the diff and the rules of the base, without that raise.
+agent_computed="$(agent_computed_level "$root" "$base")"
+agent_selected="$(agent_feature_level "$issue" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}")"
+agent_level="${agent_selected%%$'\t'*}"
+agent_level_why="${agent_selected#*$'\t'}"
+agent_resolve "$root" reviewer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
 agent="$AGENT_PROVIDER"
 model="$AGENT_MODEL"
+
+# The reviewer uses a different provider than the implementer whose work it
+# reviews. The implementer's provider is the one it ran with for this
+# feature: the run records (lib/records.sh) hold every session, also one
+# that --agent on the command line gave another provider than the
+# configuration. Without a recorded session (a project that keeps no
+# records, or work done by hand), it is the pair as the configuration
+# resolves it for the level (the line '<role>@<level>', or the plain line
+# of the role), not the plain lines only. The review refuses to start
+# otherwise, before any agent is called; doctor.sh warns about such a
+# configuration beforehand. --agent and --model can make the pair differ
+# for the reviewer, but never make it equal to a provider that implemented.
+implementer_ran="$(records_role_providers "$issue" implementer)"
+if [[ -n "$implementer_ran" ]]; then
+  while IFS=$'\t' read -r implementer_provider implementer_calls; do
+    [[ -n "$implementer_provider" && "$implementer_provider" == "$agent" ]] || continue
+    implementer_sessions="session"
+    [[ "$implementer_calls" == 1 ]] || implementer_sessions="sessions"
+    fail "the reviewer would use $agent, the provider the implementer ran with for this feature: the run records (.agents/run/records/ of the primary checkout) hold $implementer_calls $implementer_sessions of the implementer with $agent; the reviewer is selected by $(agent_selection_text). A reviewing role uses a different provider than the role whose work it reviews. Configure another provider for the reviewer ('reviewer@$agent_level: <provider> <model>', or the plain line), or pass --agent and --model."
+  done <<<"$implementer_ran"
+else
+  agent_lookup "$root" implementer "$agent_level"
+  if [[ -n "$AGENT_LEVEL_PROVIDER" ]]; then
+    implementer_provider="$AGENT_LEVEL_PROVIDER"
+    implementer_line="'implementer@$agent_level'"
+  else
+    implementer_provider="$AGENT_CONFIG_PROVIDER"
+    implementer_line="'implementer'"
+  fi
+  if [[ -n "$implementer_provider" && "$implementer_provider" == "$agent" ]]; then
+    fail "the reviewer and the implementer would both use $agent for this $agent_level-risk feature: the reviewer by $(agent_selection_text), the implementer by the line $implementer_line of .agents/agents.conf. A reviewing role uses a different provider than the role whose work it reviews. Configure another provider for one of them ('reviewer@$agent_level: <provider> <model>', or the plain line), or pass --agent and --model."
+  fi
+fi
 
 [[ -f "$prompt_file" ]] || fail "reviewer prompt not found: $prompt_file"
 [[ -f "$schema_file" ]] || fail "review schema not found: $schema_file"
@@ -452,6 +493,8 @@ echo "  Branch:   $branch"
 echo "  Base:     $base_ref"
 echo "  Agent:    $agent"
 echo "  Model:    $model"
+echo "  Level:    $agent_level ($agent_level_why)"
+echo "  Selected: by $(agent_selection_text)"
 echo "  Risk:     $risk_level"
 echo "  Output:   $review_relative.json"
 if [[ -n "$previous_review" ]]; then
