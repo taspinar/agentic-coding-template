@@ -20,7 +20,10 @@ usage() {
   echo "uncommitted and untracked files. An agent can raise the level, never lower"
   echo "it; a base that cannot be determined gives high."
   echo
-  echo "After the reasons it prints what the level requires of the workflow by the"
+  echo "After the reasons it prints the workflow profile of the policy of the base,"
+  echo "'profile: light', 'profile: standard', or 'profile: none' without the key"
+  echo "(a profile supplies the lines the policy does not write, and never applies"
+  echo "to a high-risk feature), then what the level requires of the workflow by the"
   echo "same policy: 'verification: full' or 'verification: groups <group>...' for"
   echo "the intermediate review rounds, 'review: full', 'review: delta', or"
   echo "'review: none' for the later rounds, and 'triage: full' or 'triage: light'"
@@ -61,9 +64,13 @@ fi
 decision="$(risk_decision "$computed" "$record" "$review")"
 level="$(printf '%s\n' "$decision" | sed -n 1p)"
 
+profile_lines="$(risk_profile_note "$root" "$rules" "$level")"
+
 echo "risk: $level"
 printf '%s\n' "$decision" | sed '1d; s/^/- /'
+echo "profile: $(printf '%s\n' "$profile_lines" | sed -n 1p)"
 risk_requirements "$root" "$rules" "$level"
+printf '%s\n' "$profile_lines" | sed 1d | grep . | sed 's/^/refused: /' || true
 case "$level" in
   low) exit 0 ;;
   medium) exit 1 ;;

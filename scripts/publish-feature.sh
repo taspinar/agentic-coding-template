@@ -220,6 +220,8 @@ committed_risk="$(git -C "$root" log -1 --format=%b "$finish_commit" | sed -n 's
 if [[ -n "$committed_risk" && "$committed_risk" != "$risk_level" ]]; then
   risk_lines+=$'\n'"the finish commit recorded $committed_risk; the level is computed again at every publication"
 fi
+# The workflow profile of the policy of the base, next to the level.
+risk_lines+=$'\n'"$(risk_profile_note "$root" "$feature_rules" "$risk_level" | sed '1s/^/profile: /')"
 risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
 echo "Risk level: $risk_level"
 printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'

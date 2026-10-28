@@ -425,6 +425,8 @@ fi
 # record and by the reviewer's classification of the impact, never lowered.
 risk_lines="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest")"
 risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
+# The workflow profile of the policy of the base, next to the level.
+risk_lines+=$'\n'"$(risk_profile_note "$root" "$feature_base_ref" "$risk_level" | sed '1s/^/profile: /')"
 risk_block="Risk: $risk_level"$'\n'"$(printf '%s\n' "$risk_lines" | sed '1d; s/^/- /')"
 echo "Risk level: $risk_level"
 printf '%s\n' "$risk_lines" | sed '1d; s/^/  - /'

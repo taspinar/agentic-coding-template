@@ -103,6 +103,9 @@ def report_subject($kind; $subject):
      first_start: ($runs | map(.start) | min),
      elapsed: {seconds: ($runs | map(select(.end != null) | [.start, .end]) | union_seconds),
                runs_without_end: ($runs | map(select(.end == null)) | length)},
+     # The workflow profile of the risk policy, as the latest risk event of
+     # the runs recorded it; null for runs recorded before the profiles.
+     profile: ($events | map(select(.type == "risk" and (.profile | type) == "string")) | last | .profile // null),
      agent_seconds: ($calls | map(.seconds | number_or_null // 0) | add // 0),
      unfinished_calls: ($calls | map(select(.unfinished == true)) | length),
      steps: ($steps | group_by(step_name) | map({
@@ -219,6 +222,7 @@ def subject_markdown:
   "## \(.kind | if . == "feature" then "Feature #" else "Planning " end)\(.subject)\n\n"
   + "| | |\n|---|---|\n"
   + "| Runs | \(.runs.total): \(.runs.completed) completed, \(.runs.failed) failed, \(.runs.blocked) blocked, \(.runs.interrupted) interrupted, \(.runs.incomplete) without an end |\n"
+  + (if .kind == "feature" then "| Workflow profile | \(.profile // "not recorded") |\n" else "" end)
   + "| Elapsed time | \(.elapsed | elapsed_text) |\n"
   + "| Agent time | \(.agent_seconds | duration) (the sum of all agent calls; higher than the elapsed time when work ran side by side\(if .unfinished_calls > 0 then "; without \(.unfinished_calls) calls that did not finish" else "" end)) |\n"
   + "| Review rounds | \(.rounds.review) |\n"

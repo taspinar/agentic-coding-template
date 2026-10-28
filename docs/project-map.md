@@ -35,7 +35,7 @@ the website describes the current template.
 | `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
 | `.agents/policies/guardrails.conf` | The paths of the project that the merge approval gate protects or names to the reviewer |
-| `.agents/policies/risk.conf` | The risk policy: the path classes `low`, `medium`, `high`, the `default`, the test files, and the manifests, from which the risk level of a feature is computed, and per level what the review rounds require (`verification: full` or `groups ...`, `review: full`, `delta`, or `none` for `low`) |
+| `.agents/policies/risk.conf` | The risk policy: the path classes `low`, `medium`, `high`, the `default`, the test files, and the manifests, from which the risk level of a feature is computed, and per level what the review rounds require (`verification: full` or `groups ...`, `review: full`, `delta`, or `none` for `low`), and the workflow profile (`profile: light` or `standard`) whose preset supplies the lines the file does not write |
 | `scripts/verify.conf` | The required verification checks of the project |
 | `scripts/verify-workflow.conf` | The self-tests of the workflow scripts and the workflow files they guard |
 | `.github/` | CI workflow, Issue templates, PR template, and code owners |
@@ -108,7 +108,7 @@ the website describes the current template.
 | `scripts/lib/report.jq` | The report of `report-runs.sh`: totals, comparisons, and the summary for GitHub, from numeric fields only |
 | `scripts/lib/completion.sh` | The completion gate: validation of the implementer's completion record, the remaining work a handoff note lists, and the decision the scripts act on |
 | `scripts/lib/guardrails.sh` | The merge approval gate: the protected and sensitive paths on the diff, by the rules of the base, the decision with the reviewer's classification, the approval requests (writing, validation against their schema, display), and the finish commit of a branch that merged its base afterwards |
-| `scripts/lib/risk.sh` | The risk level of a feature: the path classes of `.agents/policies/risk.conf` on the diff, the fixed escalations, and what the agents recorded, of which the highest counts; and what a level requires of the review rounds, by the same policy |
+| `scripts/lib/risk.sh` | The risk level of a feature: the path classes of `.agents/policies/risk.conf` on the diff, the fixed escalations, and what the agents recorded, of which the highest counts; and what a level requires of the review rounds, by the same policy; the presets of the workflow profiles `light` and `standard` |
 | `scripts/lib/scope.sh` | File-scope enforcement for write sessions: a snapshot of the worktree before and after, which leaves out the directories Git ignores as a whole |
 | `scripts/lib/planning.sh` | The planning scope and the planning approval check |
 
