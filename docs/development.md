@@ -1737,7 +1737,13 @@ commit SHA, writes it into the request as `content_tree`, and checks after
 the commit that the commit holds exactly that content. `publish-feature.sh`
 computes it again from the finish commit and puts it into the pull request,
 next to the commit SHA, labelled as the content tree. The reviewer gets it in
-the review context. No other fingerprint is printed in the same statement:
+the review context, and gets the request of the feature, when there is one,
+as a section of that context with the content tree it names, like the
+completion record and the handoff note: the diff the reviewer sees shows no
+change in `.agents/approval-requests/`, neither the feature's own request nor
+a request of an earlier feature that the base already has, since the content
+fingerprint leaves the directory out. No other fingerprint is printed in the
+same statement:
 the `reviewed_tree` of a review artifact is a different value, since it also
 covers the completion record and the handoff note (see "What does not change
 the fingerprint"), and comparing the two was a recurring false finding in
