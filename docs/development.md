@@ -2453,8 +2453,8 @@ tests, `model-` followed by a letter or a word (`model-a`, `model-b`,
 `model-t`, `model-claude`, `model-codex`), mostly with usage figures `null`.
 The same runs hold many `verification-start` and `verification` events within
 seconds, and review or triage rounds that the run never had.
-`report-runs.sh` counts these events like the others; such records are not
-repaired.
+`report-runs.sh` leaves their agent calls out of the totals and warns about
+them (see "Reporting on the records"); such records are not repaired.
 
 ### Reporting on the records
 
@@ -2500,6 +2500,23 @@ Some figures need care:
   with partial or unknown figures out of the means of tokens and says how
   many.
 - **A subject without any record** is named and left out, not counted as zero.
+- **Calls of undeclared models.** Every `agent-start` and `agent-call` is
+  declared when its event records a `selection` (`plain-line`, `level-line`,
+  or `command-line`: the script chose the agent and model, overrides
+  included), otherwise when its agent and model pair stands on a plain or
+  level line of any role in any version of `.agents/agents.conf` in the Git
+  history of the primary checkout or in its current file, and undeclared
+  otherwise. An undeclared call, such as a fake call of a self-test in an old
+  record, is left out of the call counts, the times, the tokens, the review
+  rounds, the triage, and the repair sessions, and once per run a warning
+  names it ("run <id>: 62 calls of undeclared models model-a, model-b; left
+  out of the totals"), with a "Left out" line in the table of the subject.
+  `--json` carries the same warnings in `warnings` and the calls left out in
+  the subject's `undeclared`; both are absent when no call is undeclared, so
+  such a report is unchanged. A model that the project used and later
+  replaced in the file stays in the totals. When no version of the file is
+  committed, the current file alone is the measure and the warning line says
+  so; without any version nothing is compared.
 - **A comparison** names what differs between the subjects: the template
   commit, the prompts, `agents.conf`, and the models. It and `--split` say
   that totals and means show no cause: features differ in size and

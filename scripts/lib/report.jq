@@ -5,6 +5,10 @@
 #   $copies     the events of .agents/records/*.jsonl, as one array
 #   $selection  [{kind, subject}], the subjects to report on
 #   $since, $until, $split   epoch seconds, or null
+#   $declared   {pairs: {"<agent> <model>": true}, history: bool}: the pairs
+#               of every version of .agents/agents.conf in the Git history and
+#               of the current file, or of the current file alone (history
+#               false); null without any version
 #   $mode       "json", "markdown", or "summary" (the GitHub summary)
 #
 # A run is read from its own file while that file exists, and from the copy
@@ -92,10 +96,34 @@ def finished_or_open($events; $begin; $stop):
   | $stops + ($events | map(select(.type == $begin and ($stoped["\(.run) \(.id)"] | not))
                        | . + {type: $stop, status: null, seconds: null, usage: null, unfinished: true}));
 
+# A call of an agent and model that no version of agents.conf declares, such
+# as a fake call of a self-test written into a record before #186. A call
+# whose event records a selection (plain-line, level-line, command-line) is
+# declared by its record: the script chose it, overrides included. Any other
+# selection value does not exempt the call.
+def undeclared:
+  $declared != null and (.selection | IN("plain-line", "level-line", "command-line") | not)
+  and (.agent | type) == "string" and (.model | type) == "string"
+  and ($declared.pairs["\(.agent) \(.model)"] | not);
+
+def declared_calls($events): finished_or_open($events; "agent-start"; "agent-call") | map(select(undeclared | not));
+
+# The undeclared calls of the runs, per run; they are left out of every total.
+def left_out($runs):
+  $runs | map(finished_or_open(.events; "agent-start"; "agent-call") | map(select(undeclared)) as $c
+              | select($c | length > 0)
+              | {run: $c[0].run, calls: ($c | length), pairs: ($c | map({agent, model}) | unique)})
+  | if length == 0 then null else
+      {calls: (map(.calls) | add), models: (map(.pairs[].model) | unique), runs: .} end;
+
+def left_out_text:
+  "\(.calls) calls of undeclared models \(.pairs | map(.model) | unique | join(", ")); left out of the totals"
+  + (if $declared.history then "" else " (compared with the current .agents/agents.conf alone: its Git history could not be read)" end);
+
 def report_subject($kind; $subject):
   runs_of(events_of($kind; $subject)) as $runs
   | ($runs | map(.events[])) as $events
-  | finished_or_open($events; "agent-start"; "agent-call") as $calls
+  | declared_calls($events) as $calls
   | finished_or_open($events; "step-start"; "step") as $steps
   | {kind: $kind, subject: $subject, has_record: ($runs | length > 0),
      runs: {total: ($runs | length),
@@ -141,7 +169,7 @@ def report_subject($kind; $subject):
            seconds: (map(.seconds | number_or_null // 0) | add),
            input: input_of, output: output_of})
        | sort_by(({low: 0, medium: 1, high: 2}[.level] // 3), (.role as $role | roles | index([$role]) // 99), .agent, .model, .selection)),
-     by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
+     by_run: ($runs | map(declared_calls(.events) as $c | {
        run, command, seq, state, status, step, reason,
        seconds: (if .end == null then null else .end - .start end),
        input: ($c | input_of), output: ($c | output_of),
@@ -158,7 +186,7 @@ def report_subject($kind; $subject):
        triage: ($calls | map(select(.role == "triage" and .status == 0)) | length),
        repair: (($calls | map(select(.role == "triage-implementer")) | length)
                + ($runs | map(select(.command == "revise-planning.sh") | .events[]
-                   | select(.type == "agent-call" and .role == "project-planner")) | length))},
+                   | select(.type == "agent-call" and .role == "project-planner" and (undeclared | not))) | length))},
      # The findings of a review that continue an earlier finding
      # (review-feature.sh, the finding events): a fix that did not hold, or
      # an accepted or deferred finding that the change made worse.
@@ -171,7 +199,10 @@ def report_subject($kind; $subject):
      resumed: ($events | map(select(.type == "resumed")) | length),
      versions: ($runs | map(.versions) | unique),
      models: ($calls | map({agent, model}) | unique),
-     input: ($calls | input_of), output: ($calls | output_of)};
+     input: ($calls | input_of), output: ($calls | output_of)}
+  # Only a subject with undeclared calls has the field, so that a report
+  # without them stays as it was.
+  + (left_out($runs) | if . == null then {} else {undeclared: .} end);
 
 # What differs between the subjects of a comparison.
 def differences($subjects):
@@ -209,7 +240,9 @@ def report:
        {split: ($split | todate),
         before: series($found | map(select(.first_start < $split)); "before"),
         after: series($found | map(select(.first_start >= $split)); "after"),
-        caution: caution} end)};
+        caution: caution} end)}
+  + ($found | map(.undeclared // empty | .runs[] | "run \(.run): \(left_out_text)")
+     | if length == 0 then {} else {warnings: .} end);
 
 # --- Markdown ---------------------------------------------------------------
 
@@ -247,6 +280,8 @@ def subject_markdown:
   "## \(.kind | if . == "feature" then "Feature #" else "Planning " end)\(.subject)\n\n"
   + "| | |\n|---|---|\n"
   + "| Runs | \(.runs.total): \(.runs.completed) completed, \(.runs.failed) failed, \(.runs.blocked) blocked, \(.runs.interrupted) interrupted, \(.runs.incomplete) without an end |\n"
+  + (if .undeclared == null then "" else
+      "| Left out | \(.undeclared.calls) calls of undeclared models \(.undeclared.models | join(", ")) in \(.undeclared.runs | length) runs (see Warnings) |\n" end)
   + (if .kind == "feature" then "| Workflow profile | \(.profile // "not recorded") |\n" else "" end)
   + "| Elapsed time | \(.elapsed | elapsed_text) |\n"
   + "| Agent time | \(.agent_seconds | duration) (the sum of all agent calls; higher than the elapsed time when work ran side by side\(if .unfinished_calls > 0 then "; without \(.unfinished_calls) calls that did not finish" else "" end)) |\n"
@@ -288,6 +323,9 @@ def subject_markdown:
 
 def markdown:
   "# Run report\n\n"
+  + (if .warnings == null then "" else
+      "Warnings: calls of an agent and model that no version of `.agents/agents.conf` declares are left out of every total.\n\n"
+      + (.warnings | map("- \(.)\n") | add) + "\n" end)
   + (if (.subjects | length) == 0 then "No run was recorded for the selection.\n\n" else "" end)
   + (if (.without_record | length) > 0 then
       "Without any \(if $period then "run in the selected period" else "record" end): \(.without_record | map("\(.kind) \(.subject)") | join(", ")). They are left out, not counted as zero.\n\n"

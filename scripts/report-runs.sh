@@ -106,12 +106,35 @@ if [[ ${#subjects[@]} -eq 0 ]]; then
   subjects=("feature:$issue")
 fi
 
+# The agent and model pairs that .agents/agents.conf of the primary checkout
+# declares or declared, on the plain and the level lines of every role: every
+# version of the file in the Git history, and the current file (the working
+# tree may differ from HEAD). Collected once per report. 'history' is false
+# when no version could be read from Git (no commit of the file yet), so that
+# the warning says that only the current file was compared; null without any
+# version, so that every call counts.
+agents_conf_pairs() {
+  sed -nE 's/^[a-z][a-z-]*(@[a-z]+)?:[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]*$/\2 \3/p'
+}
+versions="$(git -C "$primary" log --format=%H -- .agents/agents.conf 2>/dev/null || true)"
+pairs=""
+while IFS= read -r commit; do
+  [[ -n "$commit" ]] || continue
+  pairs+="$({ git -C "$primary" show "$commit:.agents/agents.conf" 2>/dev/null || true; } | agents_conf_pairs)"$'\n'
+done <<<"$versions"
+declared="null"
+if [[ -n "$versions" || -f "$primary/.agents/agents.conf" ]]; then
+  declared="$({ printf '%s' "$pairs"; if [[ -f "$primary/.agents/agents.conf" ]]; then agents_conf_pairs <"$primary/.agents/agents.conf"; fi; } |
+    jq -R . | jq -cs --argjson history "$([[ -n "$versions" ]] && echo true || echo false)" \
+      '{pairs: (map(select(. != "") | {key: ., value: true}) | from_entries), history: $history}')"
+fi
+
 selection="$(printf '%s\n' "${subjects[@]}" | jq -R '{kind: (split(":")[0]), subject: (split(":")[1:] | join(":"))}' | jq -cs 'unique')"
 
 result="$(jq -n -r \
   --slurpfile active "$work/active.json" --slurpfile copies "$work/copies.json" \
   --argjson selection "$selection" --argjson since "$since" --argjson until "$until" \
-  --argjson split "$split" --arg mode "$mode" --argjson period "$([[ "$since$until" == nullnull ]] && echo false || echo true)" \
+  --argjson split "$split" --argjson declared "$declared" --arg mode "$mode" --argjson period "$([[ "$since$until" == nullnull ]] && echo false || echo true)" \
   '$active[0] as $active | $copies[0] as $copies | '"$(cat "$script_dir/lib/report.jq")")"
 
 if [[ "$mode" == "summary" && "$result" == "null" ]]; then
