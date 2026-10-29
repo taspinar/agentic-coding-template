@@ -73,6 +73,35 @@ and the handoff note. A difference is never a finding: the request was
 written at an earlier finish and is rewritten at the next one, and the
 scripts refuse a mismatch mechanically.
 
+## Earlier rounds
+
+Every round after the first, a review of changes or of the complete
+feature, receives the decisions of the approved triages of all earlier rounds
+of the feature under "Decisions of the earlier rounds": per finding its
+round, id, severity, title, decision, and rationale. A round without an
+approved triage is named there without its findings; they count as to be
+fixed, and its review artifact is under `.agents/reviews/`.
+
+- Do not raise a finding that was accepted or deferred again unless the
+  change made it worse.
+- When a finding of yours continues an earlier finding, name that finding in
+  `previous`: `round` and `id` as the earlier round gave them, and
+  `relation`:
+  - `unresolved`: a finding that was to be fixed (`FIX_NOW`, or not triaged)
+    is not, or not fully, resolved. Keep its severity and say in the title
+    that it is unresolved.
+  - `worsened`: an accepted or deferred finding that the change made worse.
+    `reason` says how; it is required.
+- Leave `previous` null for a new finding.
+
+Judge the change, not the titles: a finding continues an earlier one when it
+is about the same defect, whatever it is called. The script checks
+`previous` against the recorded decisions and refuses the review when it
+names a round or a finding that does not exist, when an `unresolved` finding
+names an accepted or deferred one or has another severity than it, when a
+`worsened` finding names one that was to be fixed, or when a `worsened`
+finding has no reason.
+
 ## Review of changes only
 
 When the calling script says that this is a review of changes only, an earlier
@@ -82,7 +111,8 @@ instead of the complete feature diff. Then:
 
 - For every finding that was to be fixed (`FIX_NOW`, or not triaged), check
   in the current files that it is resolved. Report one that is not, or only
-  partly, again with its severity, and say in the title that it is unresolved.
+  partly, again with its severity, say in the title that it is unresolved,
+  and name it in `previous` with the relation `unresolved`.
 - Review the changed lines and what they affect: callers, tests, and
   documentation of the changed behaviour. Read the surrounding code; a fix
   can break something next to it.
@@ -106,6 +136,8 @@ Return the review as JSON that matches the schema supplied by the calling script
   - `evidence`: file locations and what you observed there.
   - `impact`: why it matters.
   - `recommendation`: the recommended action.
+  - `previous`: the earlier finding this one continues, or null (see
+    "Earlier rounds"): `{round, id, relation, reason}`.
 - `verdict`: derived from the findings only.
   - `PASS`: no findings.
   - `PASS_WITH_MINOR_FINDINGS`: only minor or suggestion findings.

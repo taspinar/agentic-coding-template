@@ -353,6 +353,40 @@ else
   } >"$context_file"
 fi
 
+# Every round after the first, of changes or complete, gets what the approved
+# triages of all earlier rounds decided, so that it neither raises an
+# accepted or deferred finding again nor loses a finding that was to be
+# fixed, and can name the finding a new one continues (previous). A round
+# without an approved triage is named without its findings: they count as to
+# be fixed, and the reviewer reads them in the review artifact.
+if [[ "$review_number" -gt 1 ]]; then
+  earlier_decisions="$(review_earlier_decisions "$out.json" "$issue" "$review_number")"
+  if [[ "$(jq '.rounds | length' <<<"$earlier_decisions")" -gt 0 ]]; then
+    {
+      echo
+      echo "## Decisions of the earlier rounds"
+      echo
+      echo "What the approved triage of each earlier round decided about its findings."
+      echo "Do not raise an accepted or deferred finding again unless the change made it"
+      echo "worse. When a finding of yours continues an earlier one, name it in"
+      echo "previous: relation unresolved for a finding to fix that is not, or not fully,"
+      echo "resolved; worsened, with the reason, for an accepted or deferred finding that"
+      echo "the change made worse. Leave previous null for a new finding. The script"
+      echo "checks previous against these decisions."
+      echo
+      jq -r --arg reviews ".agents/reviews/$slug-review" '
+        .findings as $findings
+        | .rounds[] as $round
+        | ($findings | map(select(.round == $round))) as $items
+        | if ($items | length) == 0 then "- Round \($round): no findings."
+          elif ($items | all(.decision == null)) then
+            "- Round \($round): no approved triage; its findings count as to be fixed (\($reviews)-\($round | tostring | if length < 2 then "0" + . else . end).json)."
+          else ($items[] | "- Round \($round), \(.id) [\(.severity)] \(.title): \(.decision) — \(.rationale)")
+          end' <<<"$earlier_decisions"
+    } >>"$context_file"
+  fi
+fi
+
 # The merge approval gate: what the feature changes that needs the owner's
 # approval or a closer look, by the rules of its base. The reviewer is told,
 # and the artifact records it.
@@ -592,6 +626,15 @@ verification ran. Standard input says which, under \"Verification of the
 content under review\"."
 fi
 
+if [[ -n "${earlier_decisions:-}" && "$(jq '.rounds | length' <<<"$earlier_decisions")" -gt 0 ]]; then
+  START_PROMPT+="
+
+Standard input lists, under \"Decisions of the earlier rounds\", what was
+decided about the findings of the earlier rounds. Set previous for a finding
+that continues one of them, as your contract says, and leave it null for a
+new finding."
+fi
+
 START_PROMPT+="
 
 You have read-only access. Do not modify, create, or delete any file.
@@ -647,6 +690,7 @@ jq --arg lines "$approval_lines" '
   | .merge_approval = {required: ($l[0] == "owner"), reasons: $l[1:]}' "$out.json" >"$out.json.tmp"
 mv "$out.json.tmp" "$out.json"
 records_artifact review "$review_relative.json" 2>/dev/null || true
+records_findings "$out.json" 2>/dev/null || true
 if [[ "$(jq -r '.merge_approval.required' "$out.json")" == "true" ]]; then
   echo "  Merge approval: required from the owner"
   jq -r '.merge_approval.reasons[] | "    - \(.)"' "$out.json"

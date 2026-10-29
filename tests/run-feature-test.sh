@@ -1092,6 +1092,15 @@ if grep -Fq "## Verification of the content under review" "$repo.control/reviewe
   fail "the closing round was not made on the full verification"
 grep -q "^Review: round 3, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the closing round"
 grep -Fqx "Risk: high" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the high level"
+# The complete closing round gets the decisions of the approved triages of
+# every earlier round, not only those of the round before.
+grep -Fqx "## Decisions of the earlier rounds" "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the earlier decisions"
+grep -Eq '^- Round 1, M1 \[major\] .+: FIX_NOW — It is wrong\.$' "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the decision to fix of round 1"
+grep -Eq '^- Round 1, MIN1 \[minor\] .+: DEFER — Later\.$' "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the deferred finding of round 1"
+grep -Fqx -- "- Round 2: no findings." "$repo.control/reviewer-3.context" || fail "the closing round was not told about round 2"
 # The same partial check when round 2 is a complete review by policy: it is
 # still an intermediate round, and a complete review on the full
 # verification follows before the commit.
