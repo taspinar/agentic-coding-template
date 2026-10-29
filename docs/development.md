@@ -1084,9 +1084,12 @@ GitHub with a separate identity (#99).
 The gate passes when the record is valid and says `complete` or
 `awaiting_evidence`, and the handoff note lists nothing under "Remaining".
 The note outweighs the record: remaining work listed there means not complete,
-whatever the record says. Two things are never evidence: a partial run of the
-checks (`verify.sh --only`), which is not a verification, and a budget check
-of `scripts/verify.conf` or `scripts/verify-workflow.conf` (see "Budgets"),
+whatever the record says. A line there that only says a category has nothing
+left, a label followed by `none`, `nothing`, `n/a`, `no` or `-` (such as
+`FIX_NOW findings: none.`), is not work; a label followed by anything else
+is. Two things are never evidence: a partial run of the checks
+(`verify.sh --only`), which is not a verification, and a budget check of
+`scripts/verify.conf` or `scripts/verify-workflow.conf` (see "Budgets"),
 which is a measurement that never fails the verification. A record whose
 evidence for a met criterion names such a run, or names a budget check as a
 word, is invalid.
