@@ -30,6 +30,7 @@ usage() {
 
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -105,6 +106,7 @@ publish_triage() {
       else
         echo "Retry with: ./scripts/triage-review.sh --publish ${artifact#"$root"/}.json" >&2
       fi
+      records_stop "${0##*/}" "publishing the reports on Issue #$source_issue failed. The triage is stored."
       exit 1
     fi
   done
@@ -245,6 +247,7 @@ review_errors="$(review_artifact_errors "$review_path")"
 if [[ -n "$review_errors" ]]; then
   echo "Error: invalid review artifact:" >&2
   printf '%s\n' "$review_errors" | sed 's/^/  - /' >&2
+  records_stop "${0##*/}" "invalid review artifact:"
   exit 1
 fi
 
@@ -525,6 +528,7 @@ triage contract. Classify every finding exactly once, using its 'id' as
           "$(fingerprint_artifacts "$root")" != "$artifacts_before" ]]; then
       echo "Error: triage agent modified the working tree." >&2
       git -C "$root" status --short >&2
+      records_stop "${0##*/}" "triage agent modified the working tree."
       exit 1
     fi
     if [[ "$historical" -eq 1 &&
@@ -757,6 +761,7 @@ artifact_errors="$(triage_artifact_errors "$pending" "$review_path")"
 if [[ -n "$artifact_errors" ]]; then
   echo "Error: the triage artifact would be invalid; nothing was stored:" >&2
   printf '%s\n' "$artifact_errors" | sed 's/^/  - /' >&2
+  records_stop "${0##*/}" "the triage artifact would be invalid; nothing was stored:"
   exit 1
 fi
 

@@ -18,6 +18,7 @@ source "$script_dir/lib/issue-comments.sh"
 
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -99,6 +100,7 @@ schema_file="$root/.agents/schemas/feature-review.schema.json"
 if [[ "$branch" != feature/${issue}-* ]]; then
   echo "Error: current branch does not look like feature/${issue}-*" >&2
   echo "Current branch: $branch" >&2
+  records_stop "${0##*/}" "current branch does not look like feature/${issue}-*"
   exit 1
 fi
 
@@ -215,6 +217,7 @@ elif [[ -n "$checks" ]]; then
   # reuse. Status 4 as for a failed verification.
   (cd "$root" && ./scripts/verify.sh --only "$checks") || {
     echo "Error: the checks of the groups ${checks//,/, } failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"." >&2
+    records_stop "${0##*/}" "the checks of the groups ${checks//,/, } failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"."
     exit 4
   }
   verification="$(jq -n --arg groups "$checks" \
@@ -229,6 +232,7 @@ else
   # other reason for which no review was stored.
   (cd "$root" && ./scripts/verify.sh --reuse) || {
     echo "Error: verification failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"." >&2
+    records_stop "${0##*/}" "verification failed; the review was not started. Fix the failing check, or review anyway with --unverified \"<reason>\"."
     exit 4
   }
   verification="$(jq -n --arg at "$(verification_field "$root" verified-at)" \

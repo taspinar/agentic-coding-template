@@ -72,6 +72,10 @@ def runs_of($events):
     | {run: $start.run, command: $start.command, seq: $start.seq,
        start: $start.epoch, end: ($finish | if . == null then null else .epoch end),
        status: ($finish | if . == null then null else .status end), state: state_of($finish),
+       # Where and why a run with a status other than 0 stopped; null for a
+       # run recorded before the end carried them.
+       step: ($finish | if . == null then null else .step end),
+       reason: ($finish | if . == null then null else .reason end),
        versions: ($start.versions // {}),
        events: .})
   | map(select(($since == null or .start >= $since) and ($until == null or .start < $until)))
@@ -138,7 +142,7 @@ def report_subject($kind; $subject):
            input: input_of, output: output_of})
        | sort_by(({low: 0, medium: 1, high: 2}[.level] // 3), (.role as $role | roles | index([$role]) // 99), .agent, .model, .selection)),
      by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
-       run, command, seq, state, status,
+       run, command, seq, state, status, step, reason,
        seconds: (if .end == null then null else .end - .start end),
        input: ($c | input_of), output: ($c | output_of)})),
      rounds: {
@@ -221,6 +225,12 @@ def token_text:
   else "\(.sum)" end;
 
 # The elapsed time of a subject as text: "at least" when a run has no end.
+# The step and the reason of a stop as text for a cell of a table.
+def stop_text:
+  if .status == null or .status == 0 or (.step == null and .reason == null) then ""
+  else " at \(.step // "an unknown step"): \(.reason // "no reason recorded")" | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|")
+  end;
+
 def elapsed_text:
   if .runs_without_end > 0 then "at least \(.seconds | duration) (\(.runs_without_end) runs without an end)"
   else .seconds | duration end;
@@ -254,7 +264,7 @@ def subject_markdown:
       + (.steps | map("| \(.name) | \(.count) | \(.seconds | duration) | \(.failed) | \(.unfinished) |\n") | add)
     end)
   + "\n### Runs\n\n| # | Command | State | Time | Input tokens | Output tokens |\n|---|---|---|---|---|---|\n"
-  + (.by_run | map("| \(.seq // "–") | \(.command) | \(.state)\(if .status != null and .status != 0 then " (\(.status))" else "" end) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
+  + (.by_run | map("| \(.seq // "–") | \(.command) | \(.state)\(if .status != null and .status != 0 then " (\(.status))" else "" end)\(stop_text) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
   + "\n### Interventions\n\n"
   + (if (.interventions | length) == 0 then "None were recorded.\n" else
       (.interventions | map("- \(.what): \(.count)\n") | add) end)

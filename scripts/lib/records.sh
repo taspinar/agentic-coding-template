@@ -27,7 +27,11 @@
 #                or the name of the planning), command, previous (the run
 #                before it of the same subject, or null), repository,
 #                versions (template commit, prompts, agents.conf)
-#   run-end      status (exit status; 130 for an interruption)
+#   run-end      status (exit status; 130 for an interruption), and for a
+#                status other than 0 step and reason: those of the last stop
+#                event of the run
+#   stop         step, reason: where and why a workflow script stops, as it
+#                tells the user: the script, or the step of run-feature.sh
 #   step         name, status, seconds: a step of run-feature.sh
 #   wait         name, seconds: a pause before a step is tried again
 #   verification status, seconds, reused, groups (always "all": a --only run
@@ -339,14 +343,30 @@ records_resumption() {
 # it holds the end and the status of the run.
 records_end() {
   local primary
+  local stop="null"
 
+  # Why the run stopped: the last stop that a script of the run recorded. A
+  # run that ends otherwise gets one here, so that no failed run is without
+  # its step and reason.
+  if [[ "${1:-0}" != "0" && -n "${RECORDS_FILE:-}" ]]; then
+    if [[ "${1:-0}" == "130" ]]; then
+      records_stop "${RECORDS_COMMAND:-unknown}" "interrupted"
+    else
+      stop="$(jq -c -s 'map(select(.type == "stop")) | last // null' "$RECORDS_FILE" 2>/dev/null)" || stop="null"
+      [[ -n "$stop" && "$stop" != "null" ]] ||
+        records_stop "${RECORDS_COMMAND:-unknown}" "exited with status ${1:-0} without a recorded reason"
+    fi
+    stop="$(jq -c -s 'map(select(.type == "stop")) | last // null | if . == null then null else {step, reason} end' "$RECORDS_FILE" 2>/dev/null)" || stop="null"
+    [[ -n "$stop" ]] || stop="null"
+  fi
   # The experience record of a feature run (lib/experience.sh), before its
   # end. A verification on its own has nothing to observe beyond its result.
   if [[ "${RECORDS_KIND:-}" == "feature" && "${RECORDS_COMMAND##*/}" != "verify.sh" ]] &&
     declare -F experience_record >/dev/null; then
     experience_record "${1:-0}" || records_warn "the experience record of the run could not be made"
   fi
-  records_emit run-end --argjson status "${1:-0}" '{status: $status}'
+  records_emit run-end --argjson status "${1:-0}" --argjson stop "$stop" \
+    '{status: $status} + (if $stop == null then {} else {step: $stop.step, reason: $stop.reason} end)'
   [[ -n "${RECORDS_KIND:-}" && -n "${RECORDS_SUBJECT:-}" ]] || return 0
   primary="$(records_primary)" || return 0
   if [[ -f "$primary/.agents/records/$RECORDS_KIND-$RECORDS_SUBJECT.jsonl" ]]; then
@@ -362,6 +382,7 @@ records_end() {
 # script runs as a child, so its own traps and exits stay as they are, and the
 # end of the run is recorded also when it fails. An interruption ends the run
 # with status 130; a run that is killed has no end and stays incomplete.
+# Inside a run, the script gets a trap that records an unexpected exit.
 records_wrap() {
   local kind="$1"
   local subject="$2"
@@ -369,7 +390,11 @@ records_wrap() {
   local status=0
 
   shift 3
-  [[ -z "${RECORDS_RUN_ID:-}" && -z "${RECORDS_DISABLED:-}" && -n "$subject" ]] || return 0
+  if [[ -n "${RECORDS_RUN_ID:-}" ]]; then
+    records_trap_unexpected
+    return 0
+  fi
+  [[ -z "${RECORDS_DISABLED:-}" && -n "$subject" ]] || return 0
   records_begin "$kind" "$subject" "$(basename "$script")"
   if [[ -z "${RECORDS_RUN_ID:-}" ]]; then
     # The run could not be started; the work goes on without a record.
@@ -381,6 +406,36 @@ records_wrap() {
   trap - INT TERM
   records_end "$status"
   exit "$status"
+}
+
+# records_stop <step> <reason>: where and why a workflow script stops: the
+# script, or the step of run-feature.sh, and the text that it tells the user.
+# The end of the run carries the last one (records_end).
+records_stop() {
+  records_emit stop --arg step "$1" --arg reason "$2" '{step: $step, reason: $reason}'
+}
+
+# records_trap_unexpected: records the exit of the calling script that a
+# failing command causes under errexit, with the command, so that no stop is
+# without a reason. The trap is inherited by functions (errtrace) and changes
+# no exit status.
+records_trap_unexpected() {
+  set -E
+  trap 'records_unexpected "$?" "$BASH_COMMAND" "$LINENO"' ERR
+}
+
+# records_unexpected <status> <command> <line>: the trap of
+# records_trap_unexpected. The ERR trap also runs where errexit does not apply,
+# as in a command substitution; that is no exit. A stop that is the last
+# event already explains this one: a script that stopped inside a command
+# substitution, whose failure ends the script around it.
+records_unexpected() {
+  local last
+
+  [[ "$-" == *e* && -n "${RECORDS_FILE:-}" ]] || return 0
+  last="$(tail -n 1 "$RECORDS_FILE" 2>/dev/null | jq -r '.type' 2>/dev/null)" || last=""
+  [[ "$last" != "stop" ]] || return 0
+  records_stop "${0##*/}" "unexpected exit: the command '$2' on line $3 failed with status $1"
 }
 
 # records_intervention <what>: records something the human did.

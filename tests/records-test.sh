@@ -231,7 +231,8 @@ for _ in $(seq 1 50); do grep -q '"intervention"' <<<"$(lines "$repo")" && break
 # the run treats the same.
 pkill -TERM -f "scripts/sample.sh sleep" 2>/dev/null || true
 wait "$runner" 2>/dev/null || true
-[[ "$(lines "$repo" | jq -r 'select(.type == "run-end") | .status')" == "130" ]] || fail "an interrupted run does not end with 130"
+[[ "$(lines "$repo" | jq -r 'select(.type == "run-end") | "\(.status) \(.step) \(.reason)"')" == "130 sample.sh interrupted" ]] ||
+  fail "an interrupted run does not end with 130, its command, and the reason"
 rm -rf "$repo/.agents/run/records"
 (cd "$repo" && unset RECORDS_RUN_ID && exec ./scripts/sample.sh sleep) &
 runner=$!
@@ -410,10 +411,10 @@ jq -e . "$copy" >/dev/null || fail "overlapping copies left a line that is not J
 [[ -z "$(find "$repo/.agents/records" -name '.*' -mindepth 1)" ]] || fail "a copy left a temporary file or a lock"
 
 # The copy that a step of a run made is brought up to date at the end of the
-# run, with its status.
+# run, with its status and why it stopped.
 repo="$(setup_repo copy-at-end)"
 in_repo "$repo" 'records_begin feature 12 publish-feature.sh; records_consolidate feature 12; records_step "after the copy" 0 1; records_end 3'
-[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,experience,run-end" ]] ||
+[[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,stop,experience,run-end" ]] ||
   fail "the copy was not brought up to date at the end of the run"
 [[ "$(jq -r -s '.[-1].status' "$repo/.agents/records/feature-12.jsonl")" == "3" ]] || fail "the copy lacks the status of the run"
 
@@ -477,5 +478,93 @@ in_repo "$repo" 'export PATH="'"$tmp/offline-bin"':$PATH"; records_begin feature
   records_step "review, round 1 of at most 5" 0 3; records_end 0; records_consolidate feature 12'
 [[ "$(jq -r -s 'map(.type) | join(",")' "$repo/.agents/records/feature-12.jsonl")" == "run-start,step,experience,run-end" ]] ||
   fail "a run without GitHub is not complete"
+
+# Every stop of a workflow script is in the end of its run: the script, or
+# the step of run-feature.sh, and the reason it printed. A GitHub that
+# answers nothing but its authentication makes each script stop after its run
+# has begun; the remote is a path that does not exist, so nothing leaves the
+# machine.
+repo="$(setup_repo stops)"
+git -C "$repo" remote set-url origin "$tmp/no-remote.git"
+mkdir -p "$tmp/stops-bin"
+printf '#!/usr/bin/env bash\ncase "$1" in auth) exit 0 ;; esac\necho "gh: offline" >&2\nexit 1\n' >"$tmp/stops-bin/gh"
+chmod +x "$tmp/stops-bin/gh"
+# stopped <branch> <script> <argument>...: runs the script as a run of its
+# own and checks the end of the run.
+stopped() {
+  local branch="$1"
+  local script="$2"
+  local out
+  local end
+  local status=0
+
+  shift 2
+  rm -rf "$repo/.agents/run/records"
+  git -C "$repo" switch -q "$branch"
+  out="$(in_repo "$repo" "export PATH=\"$tmp/stops-bin:\$PATH\"; ./scripts/$script $(printf '%q ' "$@") </dev/null 2>&1")" || status=$?
+  [[ "$status" -ne 0 ]] || fail "$script did not stop: $out"
+  end="$(lines "$repo" | jq -c 'select(.type == "run-end")')"
+  [[ "$(jq -r '.status' <<<"$end")" == "$status" ]] || fail "the end of $script lacks its status: $end"
+  [[ "$(jq -r '.step' <<<"$end")" == "${expected_step:-$script}" ]] || fail "the end of $script does not name its step: $end"
+  [[ -n "$(jq -r '.reason // empty' <<<"$end")" ]] || fail "the end of $script has no reason: $end"
+  grep -Fq -- "$(jq -r '.reason' <<<"$end")" <<<"$out" || fail "the reason of $script is not what it printed: $end, $out"
+  lines "$repo" | jq -e -s --argjson end "$end" 'any(.type == "experience" and .record.derived.stop == {status: $end.status, step: $end.step, reason: $end.reason})' >/dev/null ||
+    fail "the experience record of $script lacks the stop: $(lines "$repo" | jq -c 'select(.type == "experience") | .record.derived.stop')"
+}
+git -C "$repo" switch -q -c feature/21-thing
+stopped feature/21-thing finish-feature.sh 21 "A summary" --unattended
+stopped feature/21-thing publish-feature.sh 21
+stopped main start-feature.sh 21 thing --unattended
+stopped main review-feature.sh 21
+stopped feature/21-thing triage-review.sh .agents/reviews/missing.json
+stopped feature/21-thing apply-triage.sh .agents/triage/missing.json
+# run-feature.sh names the step of the run; its other stops, with status 1
+# and 3, are checked in tests/run-feature-test.sh.
+expected_step=implementation stopped main run-feature.sh 21 thing
+grep -Fq "the implementation failed before a worktree existed" <<<"$(lines "$repo" | jq -r 'select(.type == "run-end") | .reason')" ||
+  fail "the stop of run-feature.sh is not its own reason"
+
+# A command that fails under errexit, also inside a function, records the
+# script, the command, and its line; a script that stops inside a command
+# substitution keeps its own reason, and a command that fails where errexit
+# does not apply records nothing. The status stays the script's.
+repo="$(setup_repo unexpected)"
+cat >"$repo/scripts/sample.sh" <<'SAMPLE'
+#!/usr/bin/env bash
+set -euo pipefail
+records_arguments=("$@")
+source "$(dirname "$0")/lib/records.sh"
+fail() {
+  echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
+  exit 1
+}
+records_wrap feature 21 "$0" ${records_arguments[@]+"${records_arguments[@]}"}
+broken() { ls "$PWD/missing" >/dev/null 2>&1; }
+ignored="$(false; echo ignored)"
+broken || true
+case "${1:-}" in
+  function) broken ;;
+  substitution) found="$(fail "nothing was found")" ;;
+  plain) exit 6 ;;
+esac
+SAMPLE
+chmod +x "$repo/scripts/sample.sh"
+ends() {
+  rm -rf "$repo/.agents/run/records"
+  in_repo "$repo" './scripts/sample.sh '"$1"' 2>/dev/null' || true
+  lines "$repo" | jq -c -s '[(map(select(.type == "stop")) | length), (map(select(.type == "run-end")) | last | {status, step, reason})]'
+}
+[[ "$(ends function)" == '[1,{"status":2,"step":"sample.sh","reason":"unexpected exit: the command '"'"'ls \"$PWD/missing\" > /dev/null 2>&1'"'"' on line 11 failed with status 2"}]' ]] ||
+  fail "an unexpected exit is not recorded with its command: $(ends function)"
+[[ "$(ends substitution)" == '[1,{"status":1,"step":"sample.sh","reason":"nothing was found"}]' ]] ||
+  fail "a stop inside a command substitution lost its reason: $(ends substitution)"
+# A script that exits without a reason still says where.
+[[ "$(ends plain)" == '[1,{"status":6,"step":"sample.sh","reason":"exited with status 6 without a recorded reason"}]' ]] ||
+  fail "an exit without a reason has no step or reason: $(ends plain)"
+[[ "$(ends none)" == '[0,{"status":0,"step":null,"reason":null}]' ]] ||
+  fail "a run that ends with status 0 carries a stop: $(ends none)"
+lines "$repo" | jq -e 'select(.type == "run-end") | has("step") or has("reason") | not' >/dev/null ||
+  fail "the end of a run with status 0 changed"
 
 echo "records tests passed"

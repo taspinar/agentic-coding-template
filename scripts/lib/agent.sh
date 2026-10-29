@@ -47,6 +47,8 @@ AGENT_CODEX_WRITABLE_DIRS=".agents/completion .agents/handoffs .agents/summaries
 
 agent_fail() {
   echo "Error: $*" >&2
+  # The stop of a workflow run (lib/records.sh), where the library is loaded.
+  ! declare -F records_stop >/dev/null || records_stop "${0##*/}" "$*"
   exit 1
 }
 

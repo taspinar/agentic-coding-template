@@ -127,6 +127,7 @@ grep -Fq "[redacted]" <<<"$record" || fail "the token was not replaced"
 repo="$(setup_repo blocked)"
 in_run "$repo" 3 'printf "**Open questions:** which ADR?\n" >"$PWD/handoff.tmp"; mkdir -p .agents/handoffs; mv handoff.tmp .agents/handoffs/12.md
   records_note "implementation" "blocked" "the Issue contradicts ADR 001" "stopped"
+  records_stop "implementation" "the Issue contradicts ADR 001"
   mkdir -p .agents/completion; printf "%s\n" "{\"schema\": \"completion/v1\", \"status\": \"blocked\", \"criteria\": [{\"criterion\": \"c\", \"status\": \"not_met\", \"evidence\": \"e\"}], \"remaining\": [\"all\"]}" >.agents/completion/12.json'
 record="$(records "$repo")"
 [[ "$(jq -c '.observations[] | select(.id == "stop") | [.what, .circumstances, [.evidence[].type]]' <<<"$record")" == '["The run stopped with status 3, for a decision of the human","implementation: the Issue contradicts ADR 001",["run-record","handoff"]]' ]] ||
