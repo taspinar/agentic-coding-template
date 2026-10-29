@@ -37,7 +37,9 @@
 #   verification status, seconds, reused, groups (always "all": a --only run
 #                is not recorded), budgets: the budget checks of the run
 #                (name, status "exceeded" or "within", exit, output), empty
-#                without one
+#                without one, and checks: the duration of every check that
+#                ran (name, config, seconds, result "pass", "fail", or
+#                "budget"), empty for a reused pass
 #   agent-call   role, profile, agent, model, status, seconds, usage, and
 #                level and selection: the risk level of the feature that
 #                selected the agent (null for a planning or an analysis)
@@ -809,17 +811,20 @@ records_verification_start() {
   records_emit verification-start --arg id "$1" --arg groups "$2" '{id: $id, groups: $groups}'
 }
 
-# records_verification <status> <seconds> <reused> <groups> [<id>] [<budgets>]
+# records_verification <status> <seconds> <reused> <groups> [<id>] [<budgets>] [<checks>]
 # <budgets> is a JSON array of the budget results of the run
 # (lib/verification.sh, verification_budgets_json); an empty array without
-# a budget check.
+# a budget check. <checks> is a JSON array of the durations of the checks
+# that ran (verification_durations_json); an empty array without one.
 records_verification() {
   local budgets="${6:-[]}"
+  local checks="${7:-[]}"
 
   jq -e 'type == "array"' <<<"$budgets" >/dev/null 2>&1 || budgets='[]'
+  jq -e 'type == "array"' <<<"$checks" >/dev/null 2>&1 || checks='[]'
   records_emit verification --argjson status "$1" --argjson seconds "$2" --argjson reused "$3" --arg groups "$4" --arg id "${5:-}" \
-    --argjson budgets "$budgets" \
-    '{status: $status, seconds: $seconds, reused: $reused, groups: $groups, budgets: $budgets} + (if $id == "" then {} else {id: $id} end)'
+    --argjson budgets "$budgets" --argjson checks "$checks" \
+    '{status: $status, seconds: $seconds, reused: $reused, groups: $groups, budgets: $budgets, checks: $checks} + (if $id == "" then {} else {id: $id} end)'
 }
 
 # records_branch_issue: prints the Issue number of the feature branch that is

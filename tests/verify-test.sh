@@ -689,6 +689,134 @@ budget_run "$project" || fail "verify.sh without a budget failed inside a record
 jq -e -s 'any(.type == "verification" and .reused == false and .budgets == [])' "$tmp/budget-run.jsonl" >/dev/null ||
   fail "a verification without a budget check does not record an empty list"
 
+# Every check is timed. The durations are recorded with the pass, next to
+# the record, and in the verification event of a run; a reused pass ran no
+# check. 'budget-seconds: <n>' in either file is the target for the duration
+# of all checks of that file: over it, the summary shows BUDGET with the
+# total, the target, and the slowest checks, the verification passes when
+# every check passed, and the result is recorded as a budget result.
+summary_of() {
+  sed -n '/^== Verification summary ==$/,$p' "$1/out.log"
+}
+durations="/.agents/verification/durations"
+project="$(setup_recorded_project durations)"
+cp "$source_root/scripts/lib/records.sh" "$project/scripts/lib/records.sh"
+printf '%s\n' "lint: ruff check ." "slow: sleep 1.2" "medium: sleep 0.3" >"$project/scripts/verify.conf"
+git -C "$project" add -A
+git -C "$project" commit -qm "A slow check"
+run_with "$project" || fail "a run with a slow check failed"
+plain_summary="$(summary_of "$project")"
+grep -Fq -- "-- slow took 1." "$project/out.log" || fail "the duration of a check is not shown when it ran: $(cat "$project/out.log")"
+[[ "$(cut -f1,2,4 "$project$durations" | tr '\t\n' ' ;')" == "lint scripts/verify.conf pass;slow scripts/verify.conf pass;medium scripts/verify.conf pass;" ]] ||
+  fail "the durations are not recorded with the pass: $(cat "$project$durations" 2>/dev/null)"
+[[ "$(awk -F '\t' '$1 == "slow" { print ($3 >= 1200) }' "$project$durations")" == "1" ]] ||
+  fail "the duration of the slow check is not measured: $(cat "$project$durations")"
+[[ ! -e "$project$budgets" ]] || fail "a run without a budget kept a budget record"
+[[ -z "$(git -C "$project" status --porcelain)" ]] || fail "the durations changed the working tree"
+
+# Without the line the summary is the one it always was; with a target that
+# is not exceeded, it is the same, and only the durations are recorded.
+[[ "$plain_summary" == "$(printf '%s\n' "== Verification summary ==" "PASS  lint" "PASS  slow" "PASS  medium" "Verification passed.")" ]] ||
+  fail "the summary without a target changed: $plain_summary"
+printf '%s\n' "budget-seconds: 100" "lint: ruff check ." "slow: sleep 1.2" "medium: sleep 0.3" >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "A target that holds"
+run_with "$project" || fail "a run within its target failed"
+[[ "$(summary_of "$project")" == "$plain_summary" ]] || fail "a target that is not exceeded changed the summary: $(summary_of "$project")"
+[[ ! -e "$project$budgets" && -s "$project$durations" ]] || fail "a target that is not exceeded kept a budget result, or lost the durations"
+
+# Over the target: BUDGET with the total, the target, and the slowest checks
+# first; the verification passes and the result is a budget result.
+printf '%s\n' "budget-seconds: 1" "lint: ruff check ." "slow: sleep 1.2" "medium: sleep 0.3" >"$project/scripts/verify.conf"
+git -C "$project" commit -qam "A target that does not hold"
+: >"$tmp/duration-run.jsonl"
+duration_run() {
+  RECORDS_RUN_ID=parent-run RECORDS_FILE="$tmp/duration-run.jsonl" RECORDS_COMMAND=scripts/run-feature.sh \
+    RECORDS_KIND=feature RECORDS_SUBJECT=1 run_with "$@"
+}
+duration_run "$project" || fail "a run over the target of its duration failed: $(cat "$project/out.log")"
+grep -Eqx 'BUDGET  duration of scripts/verify\.conf \(1\.[5-9]s, target 1s\)' "$project/out.log" ||
+  fail "the summary lacks the BUDGET line with the total and the target: $(cat "$project/out.log")"
+[[ "$(summary_of "$project" | grep -A3 '^BUDGET' | tail -n 3 | sed -E 's/ [0-9]+\.[0-9]s$//' | tr '\n' ';')" == "        slow;        medium;        lint;" ]] ||
+  fail "the summary lacks the slowest checks, slowest first: $(summary_of "$project")"
+grep -Fq "Verification passed." "$project/out.log" || fail "a verification over the target of its duration did not pass"
+if grep -Fq "FAIL" "$project/out.log"; then fail "a duration over its target was reported as a failure"; fi
+grep -Fqx "budget: duration of scripts/verify.conf" "$project$budgets" && grep -Fqx "status: exceeded" "$project$budgets" &&
+  grep -Eq '^  slow [0-9.]+s$' "$project$budgets" ||
+  fail "the duration over its target is not recorded as a budget result: $(cat "$project$budgets" 2>/dev/null)"
+jq -e -s 'any(.type == "verification" and .status == 0 and .reused == false
+  and (.budgets | map(select(.name == "duration of scripts/verify.conf" and .status == "exceeded")) | length) == 1
+  and (.checks | map(.name)) == ["lint", "slow", "medium"]
+  and (.checks | map(select(.name == "slow" and .seconds >= 1.2 and .result == "pass" and .config == "scripts/verify.conf")) | length) == 1)' \
+  "$tmp/duration-run.jsonl" >/dev/null ||
+  fail "the verification event lacks the durations or the budget result: $(cat "$tmp/duration-run.jsonl")"
+# A reused pass shows the measurement and ran no check.
+duration_run "$project" --reuse || fail "a reused pass over the target failed"
+grep -Fq "  budget duration of scripts/verify.conf exceeded:" "$project/out.log" || fail "a reused pass does not show the duration budget: $(cat "$project/out.log")"
+jq -e -s 'any(.type == "verification" and .reused == true and .checks == [] and (.budgets | length) == 1)' "$tmp/duration-run.jsonl" >/dev/null ||
+  fail "the verification event of a reused pass is wrong: $(cat "$tmp/duration-run.jsonl")"
+
+# A failing check still fails the verification; the measurement is shown.
+if MOCK_RUFF_EXIT=1 duration_run "$project"; then fail "a failing check passed next to a target for the duration"; fi
+grep -Fqx "FAIL  lint (exit 1)" "$project/out.log" || fail "the failing check is not FAIL next to a target for the duration"
+grep -Fq "BUDGET  duration of scripts/verify.conf" "$project/out.log" || fail "the duration is not measured in a failing run"
+[[ ! -e "$project$record" && ! -e "$project$durations" ]] || fail "a failing run left the record or the durations"
+jq -e -s 'any(.type == "verification" and .status == 1 and (.checks | map(select(.name == "lint" and .result == "fail")) | length) == 1)' \
+  "$tmp/duration-run.jsonl" >/dev/null || fail "the run record lacks the durations of a failing run"
+
+# A partial run measures the checks it runs and compares with nothing.
+printf '%s\n' "budget-seconds: 1" "lint: ruff check ." "slow [slow]: sleep 1.2" >"$project/scripts/verify.conf"
+run_with "$project" --only slow || fail "a partial run with a target for the duration failed"
+grep -Fq -- "-- slow took 1." "$project/out.log" || fail "a partial run does not measure its checks"
+if grep -Fq "BUDGET" "$project/out.log"; then fail "a partial run compared with the target for the duration"; fi
+
+# The target of a file covers only its checks, and self-tests that did not
+# run compare with nothing.
+project="$(setup_workflow_project duration-workflow)"
+printf '%s\n' "budget-seconds: 1" "lint: sleep 1.2" >"$project/scripts/verify.conf"
+printf '%s\n' "budget-seconds: 1" "paths: tools" "self-test: pytest" >"$project/scripts/verify-workflow.conf"
+git -C "$project" commit -qam "Targets for both files"
+run_with "$project" || fail "a run with targets in both files failed"
+grep -Fq "SKIP  workflow self-tests" "$project/out.log" || fail "the self-tests ran although no workflow file changed"
+grep -Fq "BUDGET  duration of scripts/verify.conf" "$project/out.log" || fail "the project checks were not compared with their target"
+if grep -Fq "duration of scripts/verify-workflow.conf" "$project/out.log"; then fail "self-tests that did not run were compared with their target"; fi
+run_with "$project" --all || fail "a run of every check with targets in both files failed"
+if grep -Fq "duration of scripts/verify-workflow.conf" "$project/out.log"; then
+  fail "the self-tests were charged with the duration of the project checks: $(cat "$project/out.log")"
+fi
+printf '%s\n' "budget-seconds: 1" "paths: tools" "self-test: sleep 1.2" >"$project/scripts/verify-workflow.conf"
+run_with "$project" --all || fail "self-tests over their target failed"
+grep -Eqx 'BUDGET  duration of scripts/verify-workflow\.conf \(1\.[2-9]s, target 1s\)' "$project/out.log" ||
+  fail "the self-tests were not compared with their own target: $(cat "$project/out.log")"
+
+# The line is exact: a whole number above 0, once per file, no group, no
+# budget check, and never a check of its own.
+for line in "budget-seconds: 0" "budget-seconds: 1.5" "budget-seconds: ten" "budget-seconds [code]: 5" "budget-seconds budget: 5"; do
+  project="$(setup_project duration-malformed "$line" "lint: ruff check .")"
+  expect_failure "$project" "'$line' must be refused"
+  grep -Fq "'budget-seconds'" "$project/out.log" || fail "the refusal of '$line' did not say why: $(cat "$project/out.log")"
+  [[ ! -e "$project/tools.log" ]] || fail "checks ran despite '$line'"
+  rm -rf "$project"
+done
+project="$(setup_project duration-twice "budget-seconds: 5" "budget-seconds: 6" "lint: ruff check .")"
+expect_failure "$project" "'budget-seconds' twice must be refused"
+grep -Fq "declared more than once" "$project/out.log" || fail "the refusal of a second 'budget-seconds' did not say why"
+project="$(setup_project duration-only "budget-seconds: 5")"
+expect_failure "$project" "a file with a target and no check must be refused"
+
+# The library turns the durations into JSON for the run record and skips a
+# damaged line.
+(
+  source "$source_root/scripts/lib/verification.sh"
+  file="$tmp/durations.txt"
+  : >"$file"
+  verification_duration_add "$file" slow scripts/verify.conf 1234 pass
+  verification_duration_add "$file" over scripts/verify-workflow.conf 5 budget
+  printf 'damaged line\n' >>"$file"
+  [[ "$(verification_durations_json "$file" | jq -c 'map([.name, .config, .seconds, .result])')" == '[["slow","scripts/verify.conf",1.234,"pass"],["over","scripts/verify-workflow.conf",0.005,"budget"]]' ]] ||
+    { echo "the durations as JSON are wrong: $(verification_durations_json "$file")" >&2; exit 1; }
+  [[ "$(verification_durations_json "$tmp/none")" == "[]" ]] || { echo "a missing durations file is not an empty list" >&2; exit 1; }
+) || fail "the duration functions of lib/verification.sh"
+
 # Every self-test passes through tests/lib-fakes.sh before it starts anything.
 for test in "$source_root"/tests/*-test.sh; do
   grep -Eq '^source "\$(source_)?root/tests/lib-fakes\.sh"$' "$test" ||

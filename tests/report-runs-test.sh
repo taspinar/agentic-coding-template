@@ -286,6 +286,35 @@ if report "$repo" --github-summary 31 >/dev/null 2>&1; then fail "a summary of a
 printf 'not json\n' >>"$file"
 [[ "$(report "$repo" 30 --json | jq '.subjects[0].runs.total')" -eq 1 ]] || fail "a damaged line hid the report"
 
+# The slowest checks of a run: verify.sh times every check, the verification
+# event of the run carries the durations, and the report lists the slowest
+# checks of each verification that ran them. A reused pass ran none.
+repo="$(setup_repo durations)"
+cp "$source_root/scripts/verify.sh" "$repo/scripts/"
+cp "$source_root/scripts/lib/fingerprint.sh" "$source_root/scripts/lib/verification.sh" "$repo/scripts/lib/"
+printf '%s\n' "slow: sleep 1.2" "fast: true" "medium: sleep 0.3" >"$repo/scripts/verify.conf"
+printf '.agents/\n' >"$repo/.gitignore"
+git -C "$repo" add -A
+git -C "$repo" -c user.name=Test -c user.email=test@example.com commit -qm "Initial commit"
+file="$repo/.agents/run/records/d1.jsonl"
+event "$file" d1 1000 run-start '{"kind":"feature","subject":"40","command":"run-feature.sh","seq":1,"versions":{}}'
+for option in "" --reuse; do
+  (cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" RECORDS_RUN_ID=d1 RECORDS_FILE="$file" RECORDS_COMMAND=run-feature.sh \
+    RECORDS_KIND=feature RECORDS_SUBJECT=40 ./scripts/verify.sh $option >/dev/null 2>&1) || fail "verify.sh failed inside a recorded run"
+done
+event "$file" d1 2000 run-end '{"status":0}'
+json="$(report "$repo" 40 --json)"
+[[ "$(jq -c '.subjects[0].by_run[0].verifications | map(.slowest | map(.name))' <<<"$json")" == '[["slow","medium","fast"]]' ]] ||
+  fail "the report does not list the slowest checks of the run, slowest first, without the reused pass: $(jq -c '.subjects[0].by_run[0].verifications' <<<"$json")"
+jq -e '.subjects[0].by_run[0].verifications[0] | .slowest[0].seconds >= 1.2 and .checks_seconds >= 1.5 and .status == 0' <<<"$json" >/dev/null ||
+  fail "the durations of the checks are not measured: $(jq -c '.subjects[0].by_run[0].verifications' <<<"$json")"
+markdown="$(report "$repo" 40)"
+grep -Fq "### Slowest checks" <<<"$markdown" || fail "the Markdown report has no slowest checks: $markdown"
+grep -Eq '^\| 1 \| run-feature.sh \| passed, [0-9]+s \| 1s \| slow 1s, medium 0s, fast 0s \|$' <<<"$markdown" ||
+  fail "the Markdown report does not list the slowest checks of the run: $markdown"
+# Runs recorded before the durations have no slowest checks and no section.
+if grep -Fq "### Slowest checks" <<<"$(report "$tmp/basic" 12)"; then fail "runs without durations have a section of slowest checks"; fi
+
 # Re-raised findings: the finding events of the reviews that name an earlier
 # finding, per feature, by relation.
 repo="$(setup_repo reraises)"

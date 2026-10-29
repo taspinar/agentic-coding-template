@@ -18,6 +18,14 @@
 # handoff note, the commit message, and the pull request. The file exists only
 # together with the pass, and only when the run had a budget check.
 #
+# Next to it as well, the duration of every check of that run
+# (VERIFICATION_DURATIONS), so that the time the verification takes, and
+# which checks take it, can be seen while it grows. A line
+# 'budget-seconds: <n>' in scripts/verify.conf or
+# scripts/verify-workflow.conf puts a target on the duration of all checks
+# of that file; a run over it keeps a budget result named
+# 'duration of <file>', with the total, the target, and the slowest checks.
+#
 # The record is a working file that Git ignores. Without that ignore rule no
 # record is written, because the file would become part of the fingerprint.
 #
@@ -28,6 +36,7 @@
 
 VERIFICATION_RECORD=".agents/verification/passed"
 VERIFICATION_BUDGETS=".agents/verification/budgets"
+VERIFICATION_DURATIONS=".agents/verification/durations"
 
 # verification_recordable <root>
 # Succeeds when a record can be kept for the working tree at <root>.
@@ -45,11 +54,12 @@ verification_field() {
   sed -n "s/^$2: //p" "$1/$VERIFICATION_RECORD" | head -n 1
 }
 
-# verification_write <root> <tree> <workflow-tests> [<budgets-file>]
+# verification_write <root> <tree> <workflow-tests> [<budgets-file>] [<durations-file>]
 # <workflow-tests> is 'ran', 'skipped', or 'none'. <budgets-file> holds the
 # budget results of the run in the format of verification_budget_add; it is
 # kept with the record, and without one, or with an empty one, no budget
-# record is kept.
+# record is kept. <durations-file> holds the durations of the checks in the
+# format of verification_duration_add, kept the same way.
 verification_write() {
   mkdir -p "$(dirname "$1/$VERIFICATION_RECORD")" &&
     printf 'tree: %s\nworkflow-tests: %s\nverified-at: %s\n' \
@@ -59,11 +69,49 @@ verification_write() {
   else
     rm -f "$1/$VERIFICATION_BUDGETS"
   fi
+  if [[ -n "${5:-}" && -s "$5" ]]; then
+    cp "$5" "$1/$VERIFICATION_DURATIONS"
+  else
+    rm -f "$1/$VERIFICATION_DURATIONS"
+  fi
 }
 
 # verification_forget <root>
 verification_forget() {
-  rm -f "$1/$VERIFICATION_RECORD" "$1/$VERIFICATION_BUDGETS"
+  rm -f "$1/$VERIFICATION_RECORD" "$1/$VERIFICATION_BUDGETS" "$1/$VERIFICATION_DURATIONS"
+}
+
+# verification_duration_add <durations-file> <name> <config> <ms> <result>
+# Appends the duration of one check, one line of four fields separated by
+# tabs: the name of the check, the file that declares it, the duration in
+# milliseconds, and the result: 'pass', 'fail', or 'budget' (a budget check
+# over its target).
+verification_duration_add() {
+  printf '%s\t%s\t%s\t%s\n' "$2" "$3" "$4" "$5" >>"$1"
+}
+
+# verification_durations <root>
+# Prints the recorded durations of the last passed verification, in the
+# format of verification_duration_add, and nothing without a record.
+verification_durations() {
+  [[ -f "$1/$VERIFICATION_RECORD" && -f "$1/$VERIFICATION_DURATIONS" ]] || return 0
+  cat "$1/$VERIFICATION_DURATIONS"
+}
+
+# verification_durations_json <durations-file>
+# Prints the durations of a file as a JSON array of objects with name,
+# config, seconds (with three decimals), and result, for the run record.
+# Needs jq. An empty or missing file is an empty array; a line that is not
+# in the format is left out.
+verification_durations_json() {
+  if [[ ! -s "$1" ]]; then
+    echo '[]'
+    return 0
+  fi
+  jq -Rs '
+    split("\n")
+    | map(split("\t") | select(length == 4 and (.[2] | test("^[0-9]+$")))
+          | {name: .[0], config: .[1], seconds: ((.[2] | tonumber) / 1000), result: .[3]})' "$1"
 }
 
 # verification_budget_add <budgets-file> <name> <status> <exit> <output-file>
