@@ -216,7 +216,7 @@ if lines="$(feature_base "$root" "$feature_base")"; then
 else
   risk_computed_lines="$(risk_undetermined "the base of the feature could not be determined ($feature_base)")"
 fi
-risk_lines="$(risk_decision "$risk_computed_lines" "$(completion_record "$root" "$issue")" "$latest_review")"
+risk_lines="$(risk_decision "$risk_computed_lines" "$(completion_record "$root" "$issue")" "$latest_review" "$(risk_hints "$root" "$branch")")"
 risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
 committed_risk="$(git -C "$root" log -1 --format=%b "$finish_commit" | sed -n 's/^Risk: //p' | sed -n 1p)"
 if [[ -n "$committed_risk" && "$committed_risk" != "$risk_level" ]]; then

@@ -15,12 +15,17 @@ usage() {
   echo "high, and every reason for it: the classes of .agents/policies/risk.conf on"
   echo "the paths the feature changed, the fixed escalations, and what the agents"
   echo "recorded (risk in the completion record, the reviewer's classification of"
-  echo "the impact on the architecture). The rules are read from the base branch as"
-  echo "it is now (default: main), the diff from where the feature left it, with"
-  echo "uncommitted and untracked files. An agent can raise the level, never lower"
-  echo "it; a base that cannot be determined gives high."
+  echo "the impact on the architecture), and the owner's hints: the label 'risk: high'"
+  echo "or 'risk: medium' of the Issue, which start-feature.sh kept for the branch,"
+  echo "and --risk of the run (WORKFLOW_RISK_HINT). The rules are read from the base"
+  echo "branch as it is now (default: main), the diff from where the feature left it,"
+  echo "with uncommitted and untracked files. An agent or a hint can raise the level,"
+  echo "never lower it; a base that cannot be determined gives high."
   echo
-  echo "After the reasons it prints the workflow profile of the policy of the base,"
+  echo "After the reasons, one line 'hint: <level> <source>' names each hint, with the"
+  echo "source issue-label or command-line."
+  echo
+  echo "Then it prints the workflow profile of the policy of the base,"
   echo "'profile: light', 'profile: standard', or 'profile: none' without the key"
   echo "(a profile supplies the lines the policy does not write, and never applies"
   echo "to a high-risk feature), then what the level requires of the workflow by the"
@@ -61,13 +66,15 @@ if lines="$(feature_base "$root" "$base")"; then
 else
   computed="$(risk_undetermined "the base of this worktree could not be determined ($base)")"
 fi
-decision="$(risk_decision "$computed" "$record" "$review")"
+hints="$(risk_hints "$root" "$branch")"
+decision="$(risk_decision "$computed" "$record" "$review" "$hints")"
 level="$(printf '%s\n' "$decision" | sed -n 1p)"
 
 profile_lines="$(risk_profile_note "$root" "$rules" "$level")"
 
 echo "risk: $level"
 printf '%s\n' "$decision" | sed '1d; s/^/- /'
+printf '%s\n' "$hints" | grep . | sed 's/^/hint: /' || true
 echo "profile: $(printf '%s\n' "$profile_lines" | sed -n 1p)"
 risk_requirements "$root" "$rules" "$level"
 printf '%s\n' "$profile_lines" | sed 1d | grep . | sed 's/^/refused: /' || true

@@ -337,8 +337,12 @@ the feature hold: the level can rise during a feature, so a later session may
 use a stronger model, never a weaker one than a session that already ran at a
 higher level. `start-feature.sh` starts a new feature at the default of the
 risk policy of its base, since the feature has no changes yet, and a resumed
-session at the level of the changes in the worktree. A level that cannot be
-determined is `high`. The script prints the level, why, and which line
+session at the level of the changes in the worktree. When you know that a
+feature will be `high`, say so before its first session, so that it starts
+with the model of `implementer@high`: label the Issue `risk: high` (or
+`risk: medium`), or pass `--risk high` to `start-feature.sh` or
+`run-feature.sh` ("The owner's hint" under "The risk level of a feature"). A
+level that cannot be determined is `high`. The script prints the level, why, and which line
 selected the agent; the run record notes both for every agent call (`level`,
 and `selection`: `command-line`, `level-line`, or `plain-line`), and
 `report-runs.sh` shows the calls, the time, and the tokens per level, model,
@@ -881,8 +885,8 @@ implementation agent:
 The full interface is:
 
 ```text
-./scripts/start-feature.sh <issue> [slug] [base-branch] [--agent <agent>] [--model <model>]
-./scripts/start-feature.sh <issue> --resume [--agent <agent>] [--model <model>]
+./scripts/start-feature.sh <issue> [slug] [base-branch] [--agent <agent>] [--model <model>] [--risk <level>]
+./scripts/start-feature.sh <issue> --resume [--agent <agent>] [--model <model>] [--risk <level>]
 ```
 
 The slug names the branch and the worktree. Without one, the script derives it
@@ -1750,7 +1754,7 @@ implementation to the open pull request, without asking anything:
 ```
 
 ```text
-./scripts/run-feature.sh <issue> [slug] [base-branch] [--implemented]
+./scripts/run-feature.sh <issue> [slug] [base-branch] [--implemented] [--risk <level>]
 ```
 
 From the primary checkout it runs:
@@ -2069,10 +2073,10 @@ authorization, a migration, the infrastructure, or a dependency file is
    fixture is the exception the `test-fixtures` key names;
 3. what the agents recorded: `"risk": "<level>"` in the implementer's
    completion record, and the reviewer's `architecture_impact`, of which
-   `major` and `breaking` count as `high`.
+   `major` and `breaking` count as `high`; and the owner's hint (below).
 
-An agent can raise the level, never lower it: a recorded level below the
-computed one is ignored and reported, and `finish-feature.sh` refuses a
+An agent or a hint can raise the level, never lower it: a recorded level or
+a hint below the computed one is ignored and reported, and `finish-feature.sh` refuses a
 completion record that claims less than the diff shows. A record without
 `risk`, as every record written before the level existed, claims nothing and
 is never refused: a feature that was already in progress gets its level
@@ -2082,6 +2086,39 @@ paths to `low` is still classified by the base's file, and is `high` because
 it changed the policy. When the base of the feature cannot be determined, or
 Git cannot enumerate its changes (a failed `git diff`), the level is `high`,
 never the default for a feature that changed nothing.
+
+**The owner's hint.** A new feature has no diff, so without a hint its first
+session runs at the default of the policy, also when the feature will be
+`high`. You can raise the level before that session, in two ways:
+
+- **A label on the Issue:** `risk: high` or `risk: medium` (in any case).
+  `start-feature.sh` reads the labels with the title of the Issue when it
+  creates the feature and keeps the level of the label in the Git
+  configuration of the branch (`branch.<branch>.workflow-risk-label`), so
+  that every script of the feature counts it, for the whole feature. Labels
+  are set by people with triage rights on the repository; other labels,
+  `risk: low` among them, say nothing about the level. Every session reads
+  the labels again, a resumed one too, and keeps the highest level it has
+  seen: a label added later counts from the next session on, a removed label
+  lowers nothing, and a read that fails for a moment keeps the level that
+  was kept.
+- **A command-line option:** `start-feature.sh <issue> --risk <level>` and
+  `run-feature.sh <issue> --risk <level>` (`low`, `medium`, or `high`) do the
+  same for one run. The run passes it to the scripts it starts in the
+  variable `WORKFLOW_RISK_HINT`; a later run does not see it.
+
+A hint is one more input to the maximum: it raises the level, never lowers
+it, and the path-based minimum and the escalations are unchanged. A hint
+below the computed level is ignored and reported, like a completion record
+that claims less. The reasons name it (`the Issue is labelled risk: high,
+which raises the level to high`, `the owner gave --risk high for this run,
+...`), `check-risk.sh` prints one line `hint: <level> <source>` per hint
+after the reasons, with the source `issue-label` or `command-line`, and the
+run record notes the hints with their sources in its `risk` events: the one
+of `start-feature.sh` for the first session, and those of `run-feature.sh`.
+The first session's agent and model follow the raised level, so
+`implementer@high` applies from the start, and later sessions keep it by the
+run records ("Per risk level" under "Configuring agents").
 
 **Where it appears.** Each script derives the level itself, from the diff
 and the rules of the base at that moment; a level stored in an artifact is an
@@ -2105,8 +2142,8 @@ To ask, in a feature worktree or in CI:
 ./scripts/check-risk.sh develop    # against another base
 ```
 
-The first line is `risk: <level>`, then one reason per line, then the
-workflow profile (`profile: ...`), then what the level requires of the
+The first line is `risk: <level>`, then one reason per line, then one
+`hint: <level> <source>` per hint of the owner, then the workflow profile (`profile: ...`), then what the level requires of the
 review rounds (`verification: ...`, `review: ...`, `triage: ...`, and
 `refused: ...` for a value of the policy that is not accepted). It exits 0
 for `low`, 1 for `medium`, 2 for `high`, and 3 on a usage error, so a CI
@@ -2428,7 +2465,7 @@ brings the rules.
 | `completion-gate` | one check of the completion gate: `check` (its number in the run), `sessions` (the sessions of the implementer and the triage implementer that the run recorded before it, a repair or a retry too), `session` (the last of them, which the check judges; a check without a new session judges it again), `status`, `reasons`, and `content`, the fingerprint of what it judged |
 | `artifact` | a review or a triage that the run wrote: `kind` and `path` |
 | `finding` | a finding of a feature review that the run stored: `round`, `id`, `severity`, and `previous` (`round`, `id`, `relation`) when it continues an earlier finding; see "Earlier rounds and re-raised findings" |
-| `risk` | the risk level of the feature as `run-feature.sh` printed it: `when` (at the start, or before a review round), `level`, and `reasons` |
+| `risk` | the risk level of the feature as `run-feature.sh` printed it: `when` (at the start, or before a review round), `level`, and `reasons`; or the level of the first session of `start-feature.sh` when the owner gave a hint; and `hints`, when there is one: each with `level` and `source` (`issue-label` or `command-line`) |
 | `issue-comments` | the comments of the Issue that a step read for its agent: `issue`, `role` (`implementer`, `reviewer`, or `triage agent`), `passed` and the `authors` of the passed comments, `left_out` (by the size limit), `others` (comments of other authors), and `workflow` (the workflow's own reports) |
 | `experience-notes` | a session of the run changed the agent's experience notes: the `call` and the `hash` of the notes |
 | `experience` | the experience record of a feature run, under `record`: see below |

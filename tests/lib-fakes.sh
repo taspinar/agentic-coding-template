@@ -8,7 +8,9 @@
 # attribution files of their fixtures. It also unsets the RECORDS_* variables
 # of the run that started the test: the workflow scripts that a test starts
 # must not write their fake events into that run's record. A test of the
-# records sets what it needs after sourcing this file.
+# records sets what it needs after sourcing this file. It unsets
+# WORKFLOW_RISK_HINT too, the owner's --risk of a run that started the test,
+# which would raise every level that a test computes.
 #
 # make_fake_agents <bin-dir>
 # Creates fake 'codex' and 'claude' executables that log their arguments and
@@ -17,6 +19,7 @@
 # the agent's working directory; MOCK_AGENT_EXIT sets the exit status.
 unset AGENT_CONFIG_FILE ATTRIBUTION_CONFIG_FILE
 unset RECORDS_RUN_ID RECORDS_FILE RECORDS_COMMAND RECORDS_KIND RECORDS_SUBJECT RECORDS_VERIFICATION RECORDS_DISABLED
+unset WORKFLOW_RISK_HINT
 
 make_fake_agents() {
   local bin="$1"
