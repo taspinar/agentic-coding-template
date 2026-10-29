@@ -366,6 +366,20 @@ fi
 case "${1:-} ${2:-}" in
   "auth status") exit 0 ;;
   "issue view")
+    # MOCK_GH_ISSUE_FLAKY=<n>: the first n reads of the Issue fail on the
+    # connection; MOCK_GH_ISSUE_REFUSED: every read is refused.
+    if [[ -n "${MOCK_GH_ISSUE_FLAKY:-}" ]]; then
+      calls="$(cat "$MOCK_AGENT_LOG.gh-calls" 2>/dev/null || echo 0)"
+      echo $((calls + 1)) >"$MOCK_AGENT_LOG.gh-calls"
+      if [[ "$calls" -lt "$MOCK_GH_ISSUE_FLAKY" ]]; then
+        echo "Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout" >&2
+        exit 1
+      fi
+    fi
+    if [[ -n "${MOCK_GH_ISSUE_REFUSED:-}" ]]; then
+      echo "GraphQL: Resource not accessible by integration (repository.issue)" >&2
+      exit 1
+    fi
     case "$*" in
       # MOCK_ISSUE_LABELS: the labels of the Issue, one per line.
       *"--json title,labels"*) echo "Feature with levels"; [[ -z "${MOCK_ISSUE_LABELS:-}" ]] || printf '%s\n' "$MOCK_ISSUE_LABELS" ;;
@@ -571,6 +585,11 @@ started "$repo_hint" claude fable "a new feature with --risk high"
 grep -Fq "the owner gave --risk high for this run, which raises the level to high" "$repo_hint.out" ||
   fail "--risk high was not given as the reason of the level: $(cat "$repo_hint.out")"
 recorded "$repo_hint" implementer high level-line "a new feature with --risk high"
+[[ "$(git -C "$tmp/hint-9-thing" config --get branch.feature/9-thing.workflow-risk-label || true)" == "" ]] ||
+  fail "--risk was kept in the configuration of the branch"
+run_start "$repo_hint" 9 --resume --risk high || { cat "$repo_hint.out" >&2; fail "resuming a feature with --risk high failed"; }
+[[ "$(git -C "$tmp/hint-9-thing" config --get branch.feature/9-thing.workflow-risk-label || true)" == "" ]] ||
+  fail "--risk of a resumed session was kept in the configuration of the branch"
 [[ "$(jq -c '[.[] | .hints] | .[0]' <<<"$(risk_events "$repo_hint")")" == '[{"level":"high","source":"command-line"}]' ]] ||
   fail "the run record does not note --risk and its source: $(risk_events "$repo_hint")"
 check_risk "$tmp/hint-9-thing"
@@ -591,6 +610,77 @@ printf 'other\n' >"$tmp/low-hint-10-thing/other.txt"
 [[ "$(sed -n 1p "$tmp/risk.out")" == "risk: medium" ]] || fail "--risk low lowered the level of the diff: $(cat "$tmp/risk.out")"
 grep -Fxq -- "- the owner gave --risk low for this run, below the computed medium; a hint cannot lower the computed level and is ignored" "$tmp/risk.out" ||
   fail "check-risk.sh does not report --risk low as ignored: $(cat "$tmp/risk.out")"
+
+# The labels are read again at every session, never to lower the level. A
+# label risk: high added after the first session raises the next one to the
+# High model, names the label, and is kept for the scripts of the feature.
+label_of() {
+  git -C "$1" config --get "branch.feature/$2.workflow-risk-label" || true
+}
+repo_later="$(setup_repo later-label)"
+worktree_later="$tmp/later-label-12-thing"
+run_start "$repo_later" 12 thing || { cat "$repo_later.out" >&2; fail "starting a feature that is not labelled yet failed"; }
+started "$repo_later" codex sonnet "a feature that is not labelled yet"
+[[ "$(label_of "$worktree_later" 12-thing)" == "" ]] || fail "a feature without a label kept one"
+: >"$repo_later.log"
+MOCK_ISSUE_LABELS="risk: high" run_start "$repo_later" 12 --resume || { cat "$repo_later.out" >&2; fail "resuming a feature labelled after its first session failed"; }
+started "$repo_later" claude fable "a session after the Issue was labelled risk: high"
+grep -Fq "Level:    high (computed by check-risk.sh against main; the Issue is labelled risk: high)" "$repo_later.out" ||
+  fail "the label added later was not given as the reason of the level: $(cat "$repo_later.out")"
+recorded "$repo_later" implementer high level-line "a session after the Issue was labelled risk: high"
+[[ "$(label_of "$worktree_later" 12-thing)" == "high" ]] || fail "the label added later was not kept for the feature"
+check_risk "$worktree_later"
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: high" ]] || fail "check-risk.sh does not count the label added later: $(cat "$tmp/risk.out")"
+grep -Fxq -- "- the Issue is labelled risk: high, which raises the level to high" "$tmp/risk.out" ||
+  fail "check-risk.sh does not name the label added later: $(cat "$tmp/risk.out")"
+
+# A removed label does not lower the kept level, nor does a lower one: the
+# level of a feature never goes down. The reason names the earlier session.
+: >"$repo_later.log"
+MOCK_ISSUE_LABELS="" run_start "$repo_later" 12 --resume || { cat "$repo_later.out" >&2; fail "resuming after the label was removed failed"; }
+started "$repo_later" claude fable "a session after the label was removed"
+grep -Fq "Level:    high (computed by check-risk.sh against main; the Issue was labelled risk: high at an earlier session)" "$repo_later.out" ||
+  fail "the kept label was not given as the reason of the level: $(cat "$repo_later.out")"
+[[ "$(label_of "$worktree_later" 12-thing)" == "high" ]] || fail "a removed label lowered the kept level"
+MOCK_ISSUE_LABELS="risk: medium" run_start "$repo_later" 12 --resume || { cat "$repo_later.out" >&2; fail "resuming with a lower label failed"; }
+grep -Fq "Level:    high (computed by check-risk.sh against main; the Issue was labelled risk: high at an earlier session)" "$repo_later.out" ||
+  fail "the kept label was not given as the reason over a lower one: $(cat "$repo_later.out")"
+[[ "$(label_of "$worktree_later" 12-thing)" == "high" ]] || fail "a lower label lowered the kept level"
+check_risk "$worktree_later"
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: high" ]] || fail "the scripts of the feature lost the kept label: $(cat "$tmp/risk.out")"
+
+# A connection that fails for a moment while the feature is resumed does not
+# erase the kept label: the Issue is read three times, then the session runs
+# at the kept level and says so. A refusal stops the session, as at the
+# first start.
+: >"$repo_later.log"
+rm -f "$repo_later.log.gh-calls"
+MOCK_GH_ISSUE_FLAKY=9 run_start "$repo_later" 12 --resume || { cat "$repo_later.out" >&2; fail "resuming while the Issue cannot be read failed"; }
+[[ "$(cat "$repo_later.log.gh-calls")" -eq 3 ]] || fail "the Issue was not read three times before the kept label was used"
+rm -f "$repo_later.log.gh-calls"
+grep -Fq "could not read Issue #12 after 3 attempts" "$repo_later.out" || fail "the failed read of the Issue was not said: $(cat "$repo_later.out")"
+grep -Fq "the label risk: high of an earlier session is kept." "$repo_later.out" || fail "the kept label was not said: $(cat "$repo_later.out")"
+started "$repo_later" claude fable "a session while the Issue cannot be read"
+grep -Fq "Level:    high (computed by check-risk.sh against main; the labels of the Issue could not be read; the label risk: high of an earlier session is kept)" "$repo_later.out" ||
+  fail "the failed read was not given in the reason of the level: $(cat "$repo_later.out")"
+[[ "$(label_of "$worktree_later" 12-thing)" == "high" ]] || fail "a failed read of the Issue erased the kept label"
+: >"$repo_later.log"
+if MOCK_GH_ISSUE_REFUSED=1 run_start "$repo_later" 12 --resume; then fail "a resumed session started although the Issue cannot be read"; fi
+grep -Fq "could not read Issue #12: GraphQL: Resource not accessible by integration" "$repo_later.out" ||
+  fail "the refused read of the Issue was not named: $(cat "$repo_later.out")"
+[[ ! -s "$repo_later.log" ]] || fail "an agent was started although the read of the Issue was refused"
+
+# A resume in a fresh clone, whose configuration holds no label and whose run
+# records are empty, reads the label and uses it.
+git -C "$worktree_later" push -q origin feature/12-thing
+clone_later="$tmp/later-label-clone"
+git clone -q "$tmp/later-label-remote.git" "$clone_later"
+git -C "$clone_later" checkout -q feature/12-thing
+MOCK_ISSUE_LABELS="risk: high" run_start "$clone_later" 12 --resume || { cat "$clone_later.out" >&2; fail "resuming in a fresh clone failed"; }
+started "$clone_later" claude fable "a session in a fresh clone of a labelled feature"
+grep -Fq "Level:    high (computed by check-risk.sh against main; the Issue is labelled risk: high)" "$clone_later.out" ||
+  fail "the label was not read in a fresh clone: $(cat "$clone_later.out")"
+[[ "$(label_of "$clone_later" 12-thing)" == "high" ]] || fail "the label was not kept in the fresh clone"
 
 # A --risk without a level stops before anything is created.
 repo_bad_hint="$(setup_repo bad-hint)"

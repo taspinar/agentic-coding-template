@@ -92,6 +92,52 @@ $ISSUE_COMMENTS_SECTION"
   fi
 }
 
+# read_issue: reads the title and the labels of the Issue, into issue_title
+# and label_level, the level that the highest risk label names ('risk: high'
+# or 'risk: medium', lib/risk.sh; nothing without one). Only a connection or
+# a service that fails for a moment is tried again: a timeout, a reset or
+# refused connection, a host that cannot be resolved, or a server error.
+# Anything else, such as an Issue that does not exist or a refusal, stops at
+# once with its reason. A failure that stays temporary returns 75, with what
+# happened in gh_error; what the caller does then depends on whether the
+# feature exists already.
+read_issue() {
+  local gh_wait="${START_FEATURE_GH_WAIT:-5}"
+  local gh_attempt=1
+  local gh_errors
+  local issue_view
+  local label
+  local labels=()
+
+  command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is needed to read the title and the labels of Issue #$issue."
+  gh_errors="$(mktemp "${TMPDIR:-/tmp}/start-feature-gh.XXXXXX")" || agent_fail "could not create a temporary file."
+  trap 'rm -f "$gh_errors"' EXIT
+  while ! issue_view="$(gh issue view "$issue" --json title,labels --jq '.title, (.labels // [] | .[].name)' </dev/null 2>"$gh_errors")"; do
+    gh_error="$(tail -n 3 "$gh_errors" 2>/dev/null || true)"
+    if ! printf '%s\n' "$gh_error" |
+      grep -Eiq 'timeout|timed out|connection (reset|refused)|could not resolve host|no such host|network is unreachable|temporary failure|EOF|HTTP 5[0-9][0-9]|50[234] |service unavailable|bad gateway'; then
+      agent_fail "could not read Issue #$issue: ${gh_error:-gh failed without a message}."
+    fi
+    if [[ "$gh_attempt" -ge 3 ]]; then
+      rm -f "$gh_errors"
+      trap - EXIT
+      gh_error="could not read Issue #$issue after $gh_attempt attempts: $gh_error"
+      return 75
+    fi
+    echo "Reading Issue #$issue failed ($gh_error); trying again in $gh_wait seconds." >&2
+    sleep "$gh_wait"
+    gh_wait=$((gh_wait * 2))
+    gh_attempt=$((gh_attempt + 1))
+  done
+  rm -f "$gh_errors"
+  trap - EXIT
+  issue_title="$(printf '%s\n' "$issue_view" | sed -n 1p)"
+  while IFS= read -r label; do
+    [[ -z "$label" ]] || labels+=("$label")
+  done < <(printf '%s\n' "$issue_view" | sed 1d)
+  label_level="$(risk_label_level ${labels[@]+"${labels[@]}"})"
+}
+
 # run_session <worktree> <prompt>: runs the implementer and reports the result.
 run_session() {
   local session_worktree="$1"
@@ -190,10 +236,34 @@ if [[ "$resume" -eq 1 ]]; then
   resume_base="$(git -C "$worktree" config --get "branch.$branch.workflow-base" || true)"
   resume_base="${resume_base:-main}"
 
+  # The labels of the Issue, read again at every session: the level of the
+  # highest risk label seen is kept in the configuration of the branch, which
+  # every script of the feature counts (lib/risk.sh), so a label added after
+  # the feature was created counts from this session on. The level of a
+  # feature never goes down: a label that was removed lowers nothing, and a
+  # label that cannot be read for a moment does not erase it. --risk is never
+  # kept: it holds for this run only.
+  label_stored="$(git -C "$worktree" config --get "branch.$branch.$RISK_LABEL_KEY" 2>/dev/null || true)"
+  label_why=""
+  if read_issue; then
+    if [[ -n "$label_level" && "$(risk_rank "$label_level")" -ge "$(risk_rank "$label_stored")" ]]; then
+      [[ "$label_level" == "$label_stored" ]] || git -C "$worktree" config "branch.$branch.$RISK_LABEL_KEY" "$label_level"
+      label_why="the Issue is labelled risk: $label_level"
+    elif [[ -n "$label_stored" ]]; then
+      label_why="the Issue was labelled risk: $label_stored at an earlier session"
+    fi
+  elif [[ -n "$label_stored" ]]; then
+    echo "Warning: $gh_error; the label risk: $label_stored of an earlier session is kept." >&2
+    label_why="the labels of the Issue could not be read; the label risk: $label_stored of an earlier session is kept"
+  else
+    echo "Warning: $gh_error; no risk label of the Issue is known." >&2
+    label_why="the labels of the Issue could not be read"
+  fi
+
   # The agent of the implementer by the risk level of the feature as it is
   # now, never below the level an earlier session ran at (lib/agent.sh).
   agent_computed="$(agent_computed_level "$worktree" "$resume_base")"
-  agent_selected="$(agent_feature_level "$issue" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}")"
+  agent_selected="$(agent_feature_level "$issue" "${agent_computed%%$'\t'*}" "${agent_computed#*$'\t'}${label_why:+; $label_why}")"
   agent_level="${agent_selected%%$'\t'*}"
   agent_level_why="${agent_selected#*$'\t'}"
   agent_resolve "$repo_root" implementer "$AGENT_CLI_PROVIDER" "$AGENT_CLI_MODEL" "$agent_level"
@@ -283,43 +353,13 @@ fi
 
 # The title of the Issue, from which the slug is derived when none is given,
 # and its labels, of which 'risk: high' and 'risk: medium' raise the level of
-# the feature (lib/risk.sh).
-slug_advice=""
-[[ -n "$slug" ]] || slug_advice=" Pass a slug instead."
-command -v gh >/dev/null 2>&1 || agent_fail "GitHub CLI 'gh' is needed to read the title and the labels of Issue #$issue."
-# Only a connection or a service that fails for a moment is tried again:
-# a timeout, a reset or refused connection, a host that cannot be resolved,
-# or a server error. Anything else, such as an Issue that does not exist or
-# a refusal, stops at once with its reason. A failure that stays temporary
-# ends with status 75, which run-feature.sh tries again too.
-gh_wait="${START_FEATURE_GH_WAIT:-5}"
-gh_attempt=1
-gh_errors="$(mktemp "${TMPDIR:-/tmp}/start-feature-gh.XXXXXX")" || agent_fail "could not create a temporary file."
-trap 'rm -f "$gh_errors"' EXIT
-while ! issue_view="$(gh issue view "$issue" --json title,labels --jq '.title, (.labels // [] | .[].name)' </dev/null 2>"$gh_errors")"; do
-  gh_error="$(tail -n 3 "$gh_errors" 2>/dev/null || true)"
-  if ! printf '%s\n' "$gh_error" |
-    grep -Eiq 'timeout|timed out|connection (reset|refused)|could not resolve host|no such host|network is unreachable|temporary failure|EOF|HTTP 5[0-9][0-9]|50[234] |service unavailable|bad gateway'; then
-    agent_fail "could not read the title of Issue #$issue: ${gh_error:-gh failed without a message}.$slug_advice"
-  fi
-  if [[ "$gh_attempt" -ge 3 ]]; then
-    echo "Error: could not read the title of Issue #$issue after $gh_attempt attempts: $gh_error. Try again later${slug_advice:+, or pass a slug}." >&2
-    records_stop "${0##*/}" "could not read the title of Issue #$issue after $gh_attempt attempts: $gh_error. Try again later${slug_advice:+, or pass a slug}."
-    exit 75
-  fi
-  echo "Reading Issue #$issue failed ($gh_error); trying again in $gh_wait seconds." >&2
-  sleep "$gh_wait"
-  gh_wait=$((gh_wait * 2))
-  gh_attempt=$((gh_attempt + 1))
-done
-rm -f "$gh_errors"
-trap - EXIT
-issue_title="$(printf '%s\n' "$issue_view" | sed -n 1p)"
-issue_labels=()
-while IFS= read -r label; do
-  [[ -z "$label" ]] || issue_labels+=("$label")
-done < <(printf '%s\n' "$issue_view" | sed 1d)
-label_level="$(risk_label_level ${issue_labels[@]+"${issue_labels[@]}"})"
+# the feature (read_issue). A failure that stays temporary ends with status
+# 75, which run-feature.sh tries again.
+read_issue || {
+  echo "Error: $gh_error. Try again later." >&2
+  records_stop "${0##*/}" "$gh_error. Try again later."
+  exit 75
+}
 
 if [[ -z "$slug" ]]; then
   # Derive the slug from the Issue title: without a leading feature ID, in

@@ -1,13 +1,13 @@
 {
   "schema": "approval-request/v1",
-  "content_tree": "31a3673e9e2d8116c4e67eb0d3659dc3b23573a4",
+  "content_tree": "0c934468f516e75b9b460050a6869b6682909aea",
   "commit": {
     "branch": "feature/227-let-the-owner-raise",
-    "parent": "dfe0a72ef7a6469d7dff614cb001ade1c885721f",
+    "parent": "69dbed12c56dec1d7a3c1b3b39a24372bbde3808",
     "base": "dfe0a72ef7a6469d7dff614cb001ade1c885721f"
   },
   "review": {
-    "round": 1,
+    "round": 3,
     "verdict": "PASS",
     "reviewer": "codex (gpt-6-luna)"
   },
@@ -18,7 +18,7 @@
     "scripts/publish-feature.sh: the file defines or carries out the workflow and its gate",
     "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
     "scripts/run-feature.sh: the file defines or carries out the workflow and its gate",
-    "the independent review classified the impact on the architecture as major: The change adds owner-provided risk inputs to shared risk classification and propagates them through agent selection, review requirements, records, and the merge gate. It also adds start-feature.sh and run-feature.sh command-line options and stores Issue-label risk in branch Git configuration. This changes shared workflow infrastructure and its public interface. The architecture document is still a template and no accepted ADR was present to compare against. "
+    "the independent review classified the impact on the architecture as major: The feature adds Issue-label and command-line inputs to shared risk classification, agent selection, workflow requirements, run records, and merge gates. It also changes the public interfaces of start-feature.sh and run-feature.sh and retains Issue-label risk in branch Git configuration. docs/architecture.md is a template, and no accepted ADRs were present to compare against. "
   ],
   "explanation": "Issue #227: Let the owner raise the risk level of a feature before its first session, by an Issue label or --risk. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
 }

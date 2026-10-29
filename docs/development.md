@@ -2097,8 +2097,11 @@ session runs at the default of the policy, also when the feature will be
   configuration of the branch (`branch.<branch>.workflow-risk-label`), so
   that every script of the feature counts it, for the whole feature. Labels
   are set by people with triage rights on the repository; other labels,
-  `risk: low` among them, say nothing about the level. A label added after
-  the feature was created is not read; use `--risk` for the runs after it.
+  `risk: low` among them, say nothing about the level. Every session reads
+  the labels again, a resumed one too, and keeps the highest level it has
+  seen: a label added later counts from the next session on, a removed label
+  lowers nothing, and a read that fails for a moment keeps the level that
+  was kept.
 - **A command-line option:** `start-feature.sh <issue> --risk <level>` and
   `run-feature.sh <issue> --risk <level>` (`low`, `medium`, or `high`) do the
   same for one run. The run passes it to the scripts it starts in the
