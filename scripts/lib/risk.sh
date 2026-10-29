@@ -9,10 +9,13 @@
 #    changed, by the classes in .agents/policies/risk.conf, and the default
 #    of that file for a path no class names;
 # 2. the fixed escalations to high: a changed or removed line in a
-#    verification configuration, a change to an existing test file, a change
-#    to an existing file under .agents/policies/, .agents/prompts/, or
-#    .agents/schemas/ (the policy itself among them), and a change to an
-#    existing dependency or toolchain manifest the policy names. An
+#    verification configuration, a removed or changed line of an existing
+#    test file (a file whose diff only adds lines keeps the class of its
+#    path), any change under the shared test fixtures the policy names
+#    (test-fixtures, also an added line or file), a change to an existing
+#    file under .agents/policies/, .agents/prompts/, or .agents/schemas/
+#    (the policy itself among them), and a change to an existing dependency
+#    or toolchain manifest the policy names. Apart from the test fixtures, an
 #    escalation reads only changed or removed existing lines and files: a
 #    file the feature adds, and the lines of a new file, never escalate by
 #    themselves, whatever they hold; a protected path keeps its high class by
@@ -62,6 +65,9 @@ RISK_CONFIG=".agents/policies/risk.conf"
 RISK_BUILTIN_DEFAULT="medium"
 RISK_BUILTIN_HIGH=("${GUARDRAILS_BUILTIN_PROTECTED[@]}" "${GUARDRAILS_CHECK_LISTS[@]}" scripts/check-risk.sh scripts/lib/risk.sh)
 RISK_BUILTIN_TESTS=(tests test)
+# The shared test libraries: a change to one, also an added line, can change
+# every test.
+RISK_BUILTIN_TEST_FIXTURES=(tests/lib-fakes.sh)
 # A change under these escalates to high in every project.
 RISK_ESCALATION_DIRS=(.agents/policies .agents/prompts .agents/schemas)
 # Left out of the diff: the artifacts a run writes while it works.
@@ -142,6 +148,7 @@ risk_profile_preset() {
   echo "default: $RISK_BUILTIN_DEFAULT"
   echo "high: ${RISK_PROFILE_HIGH[*]}"
   echo "tests: ${RISK_BUILTIN_TESTS[*]}"
+  echo "test-fixtures: ${RISK_BUILTIN_TEST_FIXTURES[*]}"
   [[ "$1" != "light" ]] || echo "low: ${RISK_PROFILE_LIGHT_LOW[*]}"
   echo "low: verification: $RISK_DEFAULT_VERIFICATION"
   echo "low: review: $low_review"
@@ -500,6 +507,36 @@ risk_existing_changed() {
   fi | awk -F '\t' '$1 !~ /^A/ && $2 != "" { printf "%s\t%s\n", substr($1, 1, 1), $2 }' | sort -u
 }
 
+# risk_existing_weakened <root> <from> <to> <pathspec...>
+# Prints the paths under the pathspecs that exist in <from> and are removed,
+# or changed with at least one removed or changed line, one per line as
+# '<status><TAB><path>'. A file whose diff only adds lines is left out; a
+# binary file, a change of the type, and a change of the mode alone count as
+# changed, since no added line explains them. With an empty <to> the working
+# tree is compared.
+risk_existing_weakened() {
+  local root="$1"
+  local from="$2"
+  local to="$3"
+  local changed
+  local weakened
+
+  shift 3
+  [[ $# -gt 0 ]] || return 0
+  changed="$(risk_existing_changed "$root" "$from" "$to" "$@")"
+  [[ -n "$changed" ]] || return 0
+  if [[ -n "$to" ]]; then
+    weakened="$(git -C "$root" diff --numstat --no-renames "$from" "$to" -- "$@")"
+  else
+    weakened="$(git -C "$root" diff --numstat --no-renames "$from" -- "$@")"
+  fi
+  weakened="$(printf '%s\n' "$weakened" | awk -F '\t' 'NF >= 3 && ($2 != "0" || $1 == "0") { print $3 }')"
+  # Through the environment: -v would read the backslashes of a quoted path.
+  printf '%s\n' "$changed" | RISK_WEAKENED="$weakened" awk -F '\t' '
+    BEGIN { n = split(ENVIRON["RISK_WEAKENED"], list, "\n"); for (i = 1; i <= n; i++) if (list[i] != "") keep[list[i]] = 1 }
+    $1 != "M" || ($2 in keep) { print }'
+}
+
 # risk_classify <root> <rules-refs> <from> [<to>]
 # Prints one line per finding: '<level><TAB><path><TAB><reason>'. The path
 # classes of each ref are applied on their own and the findings are joined,
@@ -572,7 +609,9 @@ risk_classify() {
     done
   done < <(guardrails_classify "$root" "$rules" "$from" "$to" | sort -u)
 
-  # A change to an existing test file; a new, standalone test file is none.
+  # A removed or changed line of an existing test file, where an existing
+  # test can be weakened; a file whose diff only adds lines (a new case, a
+  # new helper) and a new, standalone test file are none.
   specs=()
   while IFS= read -r spec; do specs+=("$spec"); done < <(risk_union_values "$root" "$rules" tests "${RISK_BUILTIN_TESTS[@]}")
   while IFS=$'\t' read -r level path; do
@@ -580,9 +619,18 @@ risk_classify() {
     if [[ "$level" == "D" ]]; then
       printf 'high\t%s\t%s\n' "$path" "an existing test file is removed"
     else
-      printf 'high\t%s\t%s\n' "$path" "an existing test file is changed"
+      printf 'high\t%s\t%s\n' "$path" "an existing test file has removed or changed lines"
     fi
-  done < <(risk_existing_changed "$root" "$from" "$to" "${specs[@]}" "${RISK_EXCLUDES[@]}")
+  done < <(risk_existing_weakened "$root" "$from" "$to" "${specs[@]}" "${RISK_EXCLUDES[@]}")
+
+  # Any change under the shared test fixtures, also an added line or file:
+  # a shared library of the tests can change every test.
+  specs=()
+  while IFS= read -r spec; do specs+=("$spec"); done < <(risk_union_values "$root" "$rules" test-fixtures "${RISK_BUILTIN_TEST_FIXTURES[@]}")
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    printf 'high\t%s\t%s\n' "$path" "a shared test fixture is changed"
+  done < <(guardrails_changed "$root" "$from" "$to" "${specs[@]}" "${RISK_EXCLUDES[@]}" | sort -u)
 
   # An existing policy, agent contract, or schema that is changed or removed.
   # A file the feature adds under these directories is new and does not

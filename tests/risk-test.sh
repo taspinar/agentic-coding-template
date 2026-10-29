@@ -193,14 +193,42 @@ repo="$(setup_repo check-added "$lenient")"
 printf 'new-check: true\n' >>"$repo/scripts/verify.conf"
 expect_level "$repo" low "an added check does not escalate"
 
+# Only a removed or changed line of an existing test file escalates, where
+# an existing test can be weakened; a file whose diff only adds lines keeps
+# the class of its path.
 repo="$(setup_repo test-changed "$lenient")"
-printf 'exit 1\n' >>"$repo/tests/unit-test.sh"
-expect_level "$repo" high "a change to an existing test file escalates"
-expect_reason "$repo" "tests/unit-test.sh: an existing test file is changed" "the test file was not given as the reason"
+printf 'exit 1\n' >"$repo/tests/unit-test.sh"
+expect_level "$repo" high "a changed line of an existing test file escalates"
+expect_reason "$repo" "tests/unit-test.sh: an existing test file has removed or changed lines" "the test file was not given as the reason"
+
+repo="$(setup_repo test-line-removed "$lenient")"
+printf 'exit 0\nexit 0\n' >"$repo/tests/unit-test.sh"
+git -C "$repo" commit -qam "Two lines"
+git -C "$repo" update-ref refs/heads/main HEAD
+printf 'exit 0\n' >"$repo/tests/unit-test.sh"
+expect_level "$repo" high "a removed line of an existing test file escalates"
+expect_reason "$repo" "tests/unit-test.sh: an existing test file has removed or changed lines" "the removed line was not given as the reason"
+
+repo="$(setup_repo test-appended "$lenient")"
+printf 'echo "a new case"\n' >>"$repo/tests/unit-test.sh"
+expect_level "$repo" low "an existing test file whose diff only adds lines does not escalate"
+if grep -Fq "an existing test file" "$repo.out"; then fail "an appended test file was given as an escalation: $(cat "$repo.out")"; fi
+repo="$(setup_repo test-appended-template template)"
+printf 'echo "a new case"\n' >>"$repo/tests/unit-test.sh"
+expect_level "$repo" medium "the shipped policy keeps a test file with only added lines medium"
+
+repo="$(setup_repo test-mode "$lenient")"
+chmod -x "$repo/tests/unit-test.sh"
+git -C "$repo" update-index --chmod=+x tests/unit-test.sh
+git -C "$repo" commit -qm "Executable"
+git -C "$repo" update-ref refs/heads/main HEAD
+git -C "$repo" update-index --chmod=-x tests/unit-test.sh
+expect_level "$repo" high "a changed mode of an existing test file escalates, since no added line explains it"
 
 repo="$(setup_repo test-removed "$lenient")"
 git -C "$repo" rm -q tests/unit-test.sh
 expect_level "$repo" high "a removed test file escalates"
+expect_reason "$repo" "tests/unit-test.sh: an existing test file is removed" "the removed test file was not given as the reason"
 
 repo="$(setup_repo test-added "$lenient")"
 printf 'exit 0\n' >"$repo/tests/new-test.sh"
@@ -214,12 +242,43 @@ expect_level "$repo" low "a test file the feature itself added is new, also when
 
 # The project names its test files; then the built-in names do not apply.
 repo="$(setup_repo tests-named "$(printf 'default: low\ntests: spec')")"
-printf 'exit 1\n' >>"$repo/spec/unit_spec.rb"
+printf 'exit 1\n' >"$repo/spec/unit_spec.rb"
 expect_level "$repo" high "a change to a test file the project names escalates"
 expect_reason "$repo" "spec/unit_spec.rb" "the named test file was not given as the reason"
 repo="$(setup_repo tests-named-other "$(printf 'default: low\ntests: spec')")"
-printf 'exit 1\n' >>"$repo/tests/unit-test.sh"
+printf 'exit 1\n' >"$repo/tests/unit-test.sh"
 expect_level "$repo" low "a file outside the named test files is not a test file"
+
+# The shared test fixtures escalate on any change, also an added line or a
+# new file: a shared library of the tests can change every test. The shipped
+# value is tests/lib-fakes.sh, which is also the built-in one.
+for policy in template none "$lenient"; do
+  repo="$(setup_repo "fixture-appended-$(printf '%s' "$policy" | tr -c 'a-z' '-')" "$policy")"
+  printf '\n# a new fake\n' >>"$repo/tests/lib-fakes.sh"
+  expect_level "$repo" high "an added line of the shared test fixture escalates (policy: $policy)"
+  expect_reason "$repo" "tests/lib-fakes.sh: a shared test fixture is changed" "the fixture was not given as the reason (policy: $policy)"
+done
+fixture_policy='default: low
+test-fixtures: spec/support'
+repo="$(setup_repo fixture-named-new "$fixture_policy")"
+mkdir -p "$repo/spec/support"
+printf 'helper\n' >"$repo/spec/support/helpers.rb"
+expect_level "$repo" high "a new file under the named test fixtures escalates"
+expect_reason "$repo" "spec/support/helpers.rb: a shared test fixture is changed" "the new fixture was not given as the reason"
+repo="$(setup_repo fixture-named-other "$fixture_policy")"
+printf '\n# a new fake\n' >>"$repo/tests/lib-fakes.sh"
+expect_level "$repo" low "a project that names its fixtures replaces the built-in one"
+
+# The rule is read from the base: a feature that drops 'test-fixtures:' is
+# still classified by the base's file, and is high because it changed the
+# policy.
+repo="$(setup_repo fixture-key-removed template)"
+grep -v '^test-fixtures:' "$repo/.agents/policies/risk.conf" >"$repo/risk.conf.new"
+mv "$repo/risk.conf.new" "$repo/.agents/policies/risk.conf"
+printf '\n# a new fake\n' >>"$repo/tests/lib-fakes.sh"
+expect_level "$repo" high "a feature that removes test-fixtures from the policy is high"
+expect_reason "$repo" ".agents/policies/risk.conf: the risk policy itself is changed" "the changed policy was not given as the reason"
+expect_reason "$repo" "tests/lib-fakes.sh: a shared test fixture is changed" "the base's test-fixtures did not apply"
 
 for path in .agents/prompts/implementer.md .agents/policies/autonomy.md; do
   repo="$(setup_repo "contract-$(basename "$path")" "$lenient")"
@@ -548,8 +607,8 @@ shipped_lines="$(grep -Ev '^(#|$)' "$source_root/.agents/policies/risk.conf" | s
 standard_classes="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset standard | grep -Ev '^[a-z]+: (verification|review|triage):' | sort)"
 [[ "$shipped_lines" == "$standard_classes" ]] ||
   fail "the classes of the standard preset differ from the shipped policy: $(diff <(printf '%s\n' "$shipped_lines") <(printf '%s\n' "$standard_classes"))"
-light_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset light | grep -E '^(high|default|tests):')"
-standard_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset standard | grep -E '^(high|default|tests):')"
+light_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset light | grep -E '^(high|default|tests|test-fixtures):')"
+standard_high="$(source "$source_root/scripts/lib/risk.sh" && risk_profile_preset standard | grep -E '^(high|default|tests|test-fixtures):')"
 [[ "$light_high" == "$standard_high" ]] || fail "the light preset changes the default, the high class, the test files, or what high requires"
 repo="$(setup_repo profile-standard "profile: standard")"
 printf 'More.\n' >>"$repo/docs/guide.md"
@@ -599,7 +658,7 @@ expect_level "$repo" high "a change to the gate is high under light"
   fail "the output does not say that light does not apply to a high-risk feature: $(cat "$repo.out")"
 expect_requirements "$repo" "full | delta | full" "a high feature under light"
 repo="$(setup_repo profile-light-test-changed "profile: light")"
-printf 'exit 1\n' >>"$repo/tests/unit-test.sh"
+printf 'exit 1\n' >"$repo/tests/unit-test.sh"
 printf 'More.\n' >>"$repo/docs/guide.md"
 expect_level "$repo" high "a changed test file escalates under light"
 expect_requirements "$repo" "full | delta | full" "an escalated feature under light"
