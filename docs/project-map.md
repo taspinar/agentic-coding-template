@@ -35,7 +35,7 @@ the website describes the current template.
 | `.agents/template.conf` | Where the workflow comes from, which files belong to it, and the template version the project has |
 | `.agents/policies/` | Risk-based autonomy, execution limits, recovery, conflict resolution, and tool permissions |
 | `.agents/policies/guardrails.conf` | The paths of the project that the merge approval gate protects or names to the reviewer |
-| `.agents/policies/risk.conf` | The risk policy: the path classes `low`, `medium`, `high`, the `default`, the test files, and the manifests, from which the risk level of a feature is computed, and per level what the review rounds require (`verification: full` or `groups ...`, `review: full`, `delta`, or `none` for `low`), and the workflow profile (`profile: light` or `standard`) whose preset supplies the lines the file does not write |
+| `.agents/policies/risk.conf` | The risk policy: the path classes `low`, `medium`, `high`, the `default`, the test files, the shared test fixtures (`test-fixtures`), and the manifests, from which the risk level of a feature is computed, and per level what the review rounds require (`verification: full` or `groups ...`, `review: full`, `delta`, or `none` for `low`), and the workflow profile (`profile: light` or `standard`) whose preset supplies the lines the file does not write |
 | `scripts/verify.conf` | The required verification checks of the project |
 | `scripts/verify-workflow.conf` | The self-tests of the workflow scripts and the workflow files they guard |
 | `.github/` | CI workflow, Issue templates, PR template, and code owners |

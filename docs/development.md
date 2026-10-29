@@ -2005,13 +2005,15 @@ project until it adds its own classes or requirements.
 default: medium
 high: docs/decisions .github/workflows .agents/policies .agents/prompts/reviewer.md ...
 tests: tests test
+test-fixtures: tests/lib-fakes.sh
 ```
 
 | Key | Meaning |
 |---|---|
 | `low`, `medium`, `high` | The path classes. The highest class of any path the feature changed is its path-based minimum; a path in two classes gets the higher one |
 | `default` | The level of a path that no class names |
-| `tests` | The test files. A change to an existing one escalates to `high`; without the key, `tests test` |
+| `tests` | The test files. A removed or changed line of an existing one, or a removed one, escalates to `high`; a diff that only adds lines does not. Without the key, `tests test` |
+| `test-fixtures` | The shared test libraries (a conftest, fixtures, helpers). Any change under them, also an added line or a new file, escalates to `high`. Without the key, `tests/lib-fakes.sh` |
 | `manifests` | The dependency and toolchain manifests. A change to an existing one escalates to `high` |
 | `profile` | The workflow profile, `light` or `standard`: a named preset of the other keys (see "Workflow profiles" below). Without the key, none |
 
@@ -2042,16 +2044,29 @@ authorization, a migration, the infrastructure, or a dependency file is
    untracked files, as the merge approval gate computes it;
 2. the fixed escalations to `high`, which no policy turns off: a changed or
    removed line in `scripts/verify.conf` or `scripts/verify-workflow.conf`;
-   a change to an existing test file, which is where shared fixtures, test
-   collection, skips, and acceptance thresholds live (a new, standalone test
-   file does not escalate by itself); a change to an existing file under
+   a removed or changed line of an existing test file, or a removed test
+   file, which is how an existing test is weakened (an assertion, a skip, an
+   acceptance threshold, test collection); any change under the shared test
+   fixtures (`test-fixtures`), also an added line or a new file, since a
+   shared library of the tests can change every test; a change to an
+   existing file under
    `.agents/policies/`, `.agents/prompts/`, or `.agents/schemas/`, the policy
    itself among them; and a change to an existing manifest the policy names.
-   An escalation reads only changed or removed existing lines and files,
-   never their content: a file the feature adds, and the lines of a new file,
-   never escalate by themselves, whatever they hold, and a protected path
+   Apart from the test fixtures, an escalation reads only changed or removed
+   existing lines and files, never their content: a file the feature adds,
+   and the lines of a new file, never escalate by themselves, whatever they
+   hold, and a protected path
    keeps its `high` class by the path rule. The template ships no detector of
    content patterns (tolerances, test markers, assertions);
+
+   Why additions to a test file do not count: appending a case to an
+   existing test file is the most common change of a feature and weakens
+   nothing, and when it escalated, nearly every feature was `high`, so the
+   distinction between `medium` and `high` hardly applied. A test is weakened
+   by what a diff removes or changes, which the rule reads mechanically from
+   the `-` lines of the diff (a binary file, a change of the type, and a
+   change of the mode alone count as changed); a line added to a shared
+   fixture is the exception the `test-fixtures` key names;
 3. what the agents recorded: `"risk": "<level>"` in the implementer's
    completion record, and the reviewer's `architecture_impact`, of which
    `major` and `breaking` count as `high`.
@@ -2283,7 +2298,7 @@ A workflow profile is one line of the risk policy that names a preset of
 the policy: `profile: light` or `profile: standard` in
 `.agents/policies/risk.conf`. It is not a second mechanism: the preset
 supplies the lines of the keys that the file does not write (the classes,
-the `default`, the test files, and the `<level>: <kind>` requirements of
+the `default`, the test files and fixtures, and the `<level>: <kind>` requirements of
 "What each level requires"), and a line that the project writes always wins
 over it. The presets live in one place, `risk_profile_preset` in
 `scripts/lib/risk.sh`, and everything after it is the same implementation:
@@ -2293,7 +2308,7 @@ fingerprints, verification reuse, reviews, triage, and merge approval gate.
 | Profile | What the preset supplies |
 |---|---|
 | none (no `profile:` line) | Nothing: the lines of the file are the policy, as before the profiles existed |
-| `standard` | The policy the template ships: `default: medium`, the `high` class of the workflow and its gate, `tests: tests test`, and `verification: full`, `review: delta`, `triage: full` for every level |
+| `standard` | The policy the template ships: `default: medium`, the `high` class of the workflow and its gate, `tests: tests test`, `test-fixtures: tests/lib-fakes.sh`, and `verification: full`, `review: delta`, `triage: full` for every level |
 | `light` | The same, and a `low` class of the documentation and process files (`docs/` outside `docs/decisions` and the planning documents, `.agents/plans`, `.agents/handoffs`, `.agents/summaries`, and the top-level Markdown files but `AGENTS.md`), `low: review: none`, `low: triage: light`, and `medium: triage: light` |
 
 **Three things with similar names.** A workflow profile decides what a

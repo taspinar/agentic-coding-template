@@ -1,0 +1,18 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "2ebd782e9107d1c9df2ca8523cc63078b9728d18",
+  "commit": {
+    "branch": "feature/226-escalate-an-existing-test",
+    "parent": "8bfb855ab8ff2fb94a1d7c7b9ed3e40a0db546e7",
+    "base": "8bfb855ab8ff2fb94a1d7c7b9ed3e40a0db546e7"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "scripts/lib/risk.sh: the file defines or carries out the workflow and its gate"
+  ],
+  "explanation": "Issue #226: Escalate an existing test file only for removed or changed lines, and shared test fixtures always. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}
