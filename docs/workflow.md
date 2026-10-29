@@ -342,7 +342,7 @@ exits with status 3.
 |---|---|
 | `doctor.sh` | Once after creating a repository from the template, and whenever a tool may be missing |
 | `check-docs.sh` | To check that the Markdown files name files that exist; add it to `scripts/verify.conf` to run it with every verification |
-| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them. A check declared as a budget (`<name> [<group>] budget: <command>`) is a measurement: over its target it is `BUDGET`, with its output, and the verification still passes; the result is given to the reviewer, listed in the commit and the pull request, and never repaired automatically (docs/development.md, "Budgets"). The template ships no budget check |
+| `verify.sh` | Any time; runs the checks in `scripts/verify.conf`, and is run by `review-feature.sh`, `apply-triage.sh`, `finish-feature.sh`, and CI. A pass is recorded for the content it verified, and `verify.sh --reuse` skips a second run on identical content. The workflow self-tests run only when a workflow file changed; `verify.sh --all`, which CI uses, always runs them. A check declared as a budget (`<name> [<group>] budget: <command>`) is a measurement: over its target it is `BUDGET`, with its output, and the verification still passes; the result is given to the reviewer, listed in the commit and the pull request, and never repaired automatically (docs/development.md, "Budgets"). Every check is timed and the durations are recorded; a line `budget-seconds: <n>` sets a target for the duration of the checks of a file, which is a budget in the same way. The template ships no budget check, and `budget-seconds: 600` for its workflow self-tests |
 | `check-review.sh <review-json>` | To see whether a review still matches the content it covers |
 | `check-risk.sh [<base>]` | To see the risk level of the feature in the worktree, every reason for it, and what the level requires of the review rounds; exits 0, 1, or 2 for `low`, `medium`, or `high`, for a CI step |
 | `finish-planning.sh --check` | To see whether the planning approval still matches the planning documents |
@@ -396,7 +396,8 @@ Each kind of state has one place:
 - `.agents/run/`: the final messages of agents that ran unattended. Working
   files.
 - `.agents/verification/`: the record of the last passed verification of the
-  working tree, and the results of its budget checks. Working files.
+  working tree, the durations of its checks, and the results of its budget
+  checks. Working files.
 - `docs/changes/`: one change request per change cycle of the approved
   planning.
 - `.agents/reviews/`: independent-review results as validated JSON, each with a

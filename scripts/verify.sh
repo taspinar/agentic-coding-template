@@ -30,6 +30,14 @@ records_arguments=("$@")
 # finish (a signal, or the status 124 of 'timeout') or could not run (125 to
 # 127, the statuses of 'timeout' and the shell for a command that was not
 # invoked) is a FAIL like any check.
+#
+# Every check is timed. The durations are recorded with the pass and in the
+# run record (lib/verification.sh). Each of the two files may declare one
+# 'budget-seconds: <n>': the target for the duration of all of its checks
+# in one run. A run over it shows BUDGET with the total, the target, and the
+# slowest checks, recorded as a budget result like that of a budget check;
+# it fails nothing. A partial run (--only) and a file whose checks did not
+# run compare with nothing.
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 config="$root/scripts/verify.conf"
@@ -62,12 +70,17 @@ usage() {
   echo "exits non-zero, the summary shows BUDGET with its output, and the verification"
   echo "passes when every other check passed. A budget check that does not finish or"
   echo "cannot run (exit 124 to 127, or a signal) fails: nothing was measured."
+  echo
+  echo "A line 'budget-seconds: <n>' in either file is the target for the duration of"
+  echo "all checks of that file in one run. Over it, the summary shows BUDGET with the"
+  echo "total, the target, and the five slowest checks; the verification still passes"
+  echo "when every check passed. A partial run compares with nothing."
   exit 1
 }
 
 config_fail() {
   echo "Error: $*" >&2
-  echo "Declare required checks as '<name>: <command>', '<name> [<group>]: <command>', or '<name> [<group>] budget: <command>'." >&2
+  echo "Declare required checks as '<name>: <command>', '<name> [<group>]: <command>', or '<name> [<group>] budget: <command>', and a target for their duration as 'budget-seconds: <n>'." >&2
   exit 1
 }
 
@@ -131,23 +144,30 @@ if [[ -z "${RECORDS_VERIFICATION:-}" && -z "${RECORDS_DISABLED:-}" && "$list_gro
     records_reused=false
     [[ ! -e "$records_mark" ]] || records_reused=true
     # The budget results of the run, which the child writes next to the mark
-    # (lib/verification.sh), also for a reused pass.
+    # (lib/verification.sh), also for a reused pass, and the durations of the
+    # checks that ran, which a reused pass has none of.
     records_budgets='[]'
+    records_checks='[]'
     if [[ -f "$root/scripts/lib/verification.sh" ]]; then
       source "$root/scripts/lib/verification.sh"
       records_budgets="$(verification_budgets_json "$records_mark.budgets" 2>/dev/null)" || records_budgets='[]'
+      if declare -F verification_durations_json >/dev/null; then
+        records_checks="$(verification_durations_json "$records_mark.durations" 2>/dev/null)" || records_checks='[]'
+      fi
     fi
-    rm -f "$records_mark" "$records_mark.budgets" 2>/dev/null || true
-    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" all "$records_call" "$records_budgets"
+    rm -f "$records_mark" "$records_mark.budgets" "$records_mark.durations" 2>/dev/null || true
+    records_verification "$records_status" "$(($(date +%s) - records_started))" "$records_reused" all "$records_call" "$records_budgets" "$records_checks"
     exit "$records_status"
   fi
 fi
 
-# Working files of this run: the output of each budget check and the budget
-# results (lib/verification.sh), and the index of a fingerprint.
+# Working files of this run: the output of each budget check, the budget
+# results and the durations of the checks (lib/verification.sh), and the
+# index of a fingerprint.
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/verify.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 budgets_file="$scratch/budgets"
+durations_file="$scratch/durations"
 
 # A passed run is recorded only where the record is a file that Git ignores.
 recordable=0
@@ -175,16 +195,47 @@ hand_budgets_to_run() {
   cp "$budgets_file" "$RECORDS_VERIFICATION.budgets" 2>/dev/null || true
 }
 
+# hand_durations_to_run
+# Gives the durations of the checks that ran to the run that records this
+# verification, as hand_budgets_to_run does.
+hand_durations_to_run() {
+  [[ -n "${RECORDS_VERIFICATION:-}" && -s "$durations_file" ]] || return 0
+  cp "$durations_file" "$RECORDS_VERIFICATION.durations" 2>/dev/null || true
+}
+
+# now_ms: the time in milliseconds; whole seconds where the shell has no
+# EPOCHREALTIME (bash before 5).
+now_ms() {
+  local now="${EPOCHREALTIME:-}"
+
+  if [[ -n "$now" ]]; then
+    now="${now/[.,]/}"
+    echo "$((10#${now:0:${#now}-3}))"
+  else
+    echo "$(($(date +%s) * 1000))"
+  fi
+}
+
+# seconds_text <ms>: '12.3s'.
+seconds_text() {
+  printf '%d.%ds' "$(($1 / 1000))" "$(($1 % 1000 / 100))"
+}
+
 names=()
 commands=()
 groups=()
 budgets=()
 workflow_paths=""
+budget_seconds=""
+project_budget_seconds=""
+workflow_budget_seconds=""
 
 # load_checks <file> <paths-entry>
 # Appends the checks of <file> to names, commands, groups, and budgets ('yes'
 # for a budget check). With <paths-entry> 'yes', the reserved entry 'paths:'
-# sets workflow_paths instead of declaring a check.
+# sets workflow_paths instead of declaring a check. The reserved entry
+# 'budget-seconds:' sets budget_seconds, the target for the duration of the
+# checks of <file>.
 load_checks() {
   local file="$1"
   local paths_entry="$2"
@@ -197,6 +248,7 @@ load_checks() {
   local value
   local existing
 
+  budget_seconds=""
   while IFS= read -r line || [[ -n "$line" ]]; do
     line_number=$((line_number + 1))
     [[ "$line" =~ $comment_pattern ]] && continue
@@ -213,6 +265,16 @@ load_checks() {
       [[ -z "$workflow_paths" ]] ||
         config_fail "'paths' is declared more than once in $label."
       workflow_paths="$value"
+      continue
+    fi
+    if [[ "$name" == "budget-seconds" ]]; then
+      [[ -z "$group" && -z "$budget" ]] ||
+        config_fail "'budget-seconds' is a target, not a check: it takes no group and is no budget check, on line $line_number of $label."
+      [[ "$value" =~ ^[1-9][0-9]*$ ]] ||
+        config_fail "'budget-seconds' needs a whole number of seconds greater than 0, on line $line_number of $label: $value"
+      [[ -z "$budget_seconds" ]] ||
+        config_fail "'budget-seconds' is declared more than once in $label."
+      budget_seconds="$value"
       continue
     fi
     for existing in ${names[@]+"${names[@]}"}; do
@@ -264,6 +326,7 @@ workflow_files_changed() {
 
 [[ -f "$config" ]] || config_fail "verification config not found: $config"
 load_checks "$config" no
+project_budget_seconds="$budget_seconds"
 [[ "${#names[@]}" -gt 0 ]] || config_fail "scripts/verify.conf declares no checks."
 
 # Decide whether the workflow self-tests run. Their checks follow the project
@@ -274,6 +337,7 @@ workflow_skipped=""
 workflow_base=""
 if [[ -f "$workflow_config" ]]; then
   load_checks "$workflow_config" yes
+  workflow_budget_seconds="$budget_seconds"
   workflow_count=$((${#names[@]} - project_count))
   [[ "$workflow_count" -gt 0 ]] || config_fail "scripts/verify-workflow.conf declares no checks."
   [[ -n "$workflow_paths" ]] ||
@@ -335,9 +399,62 @@ if [[ "$recordable" -eq 1 ]]; then
   fi
 fi
 
+# record_duration <index> <ms> <result>
+# Keeps the duration of a check that ran: for the duration budgets below, and
+# with lib/verification.sh for the record and the run record. <result> is
+# 'pass', 'fail', or 'budget'.
+record_duration() {
+  durations[$1]="$2"
+  ! declare -F verification_duration_add >/dev/null ||
+    verification_duration_add "$durations_file" "${names[$1]}" "$(config_of "$1")" "$2" "$3"
+}
+
+# config_of <index>: the file that declares the check.
+config_of() {
+  if [[ "$1" -lt "$project_count" ]]; then echo "scripts/verify.conf"; else echo "scripts/verify-workflow.conf"; fi
+}
+
+# duration_budget <label> <target-seconds> <first-index> <end-index>
+# Compares the duration of the checks <first-index> to <end-index> - 1, the
+# checks of the file <label>, with its target. Over it, the summary shows
+# BUDGET with the total, the target, and the five slowest checks, and the
+# result is kept as a budget result named 'duration of <label>': a
+# measurement that fails nothing. Within it, nothing is shown.
+duration_budget() {
+  local label="$1"
+  local target="$2"
+  local index
+  local total=0
+  local output
+
+  [[ -n "$target" ]] || return 0
+  for ((index = $3; index < $4; index++)); do
+    total=$((total + ${durations[$index]:-0}))
+  done
+  [[ "$total" -gt $((target * 1000)) ]] || return 0
+  output="$scratch/duration-budget.out"
+  {
+    echo "$(seconds_text "$total") in total, target ${target}s; the slowest checks:"
+    for ((index = $3; index < $4; index++)); do
+      [[ -z "${durations[$index]:-}" ]] || printf '%s\t%s\n' "${durations[$index]}" "${names[$index]}"
+    done | sort -t $'\t' -k1,1nr | head -n 5 | while IFS=$'\t' read -r ms check; do
+      echo "$check $(seconds_text "$ms")"
+    done
+  } >"$output"
+  echo "Note: the checks of $label took $(seconds_text "$total"), over the target of ${target}s. A budget is a measurement, not a failure: the verification does not fail for it, and nothing repairs it." >&2
+  results+=("BUDGET  duration of $label ($(seconds_text "$total"), target ${target}s)")
+  while IFS= read -r line; do
+    results+=("        $line")
+  done < <(tail -n +2 "$output")
+  budget_result "duration of $label" exceeded - "$output"
+  duration_exceeded=$((duration_exceeded + 1))
+}
+
 results=()
 failed=0
 exceeded=0
+duration_exceeded=0
+durations=()
 for index in "${!names[@]}"; do
   if [[ "$index" -eq "$project_count" ]]; then
     [[ -z "$workflow_skipped" ]] || break
@@ -363,9 +480,11 @@ for index in "${!names[@]}"; do
     echo "Error: required check '$name' cannot run; '$tool' is missing or not executable." >&2
     results+=("FAIL  $name (missing tool: $tool)")
     failed=1
+    record_duration "$index" 0 fail
     continue
   fi
 
+  started="$(now_ms)"
   set +e
   # A check is not part of the run that verifies: a workflow script that it
   # starts, as the self-tests do, must not write into that run's records, and
@@ -388,6 +507,8 @@ for index in "${!names[@]}"; do
     status=$?
   fi
   set -e
+  elapsed=$(($(now_ms) - started))
+  echo "-- $name took $(seconds_text "$elapsed")"
 
   if [[ "$status" -eq 0 ]]; then
     if [[ "$budget" == "yes" ]]; then
@@ -396,6 +517,7 @@ for index in "${!names[@]}"; do
     else
       results+=("PASS  $name")
     fi
+    record_duration "$index" "$elapsed" pass
   elif [[ "$budget" == "yes" && ("$status" -le 123 || "$status" -eq 128) ]]; then
     # Over the target: a measurement, not a failure. The exit statuses 1..123
     # and 128 are the check's own: 124 of 'timeout' and a death by a signal
@@ -415,6 +537,7 @@ for index in "${!names[@]}"; do
     fi
     budget_result "$name" exceeded "$status" "$output"
     exceeded=$((exceeded + 1))
+    record_duration "$index" "$elapsed" budget
   else
     if [[ "$budget" == "yes" && "$status" -ge 125 && "$status" -le 127 ]]; then
       echo "Error: budget check '$name' could not run (status $status: an error of 'timeout', or a command that is not executable or not found): nothing was measured, so it fails like any check." >&2
@@ -427,17 +550,32 @@ for index in "${!names[@]}"; do
       results+=("FAIL  $name (exit $status)")
     fi
     failed=1
+    record_duration "$index" "$elapsed" fail
   fi
 done
+
+# The targets for the duration of each file's checks, compared only in a
+# complete run of that file.
+if [[ "$partial" -eq 0 ]]; then
+  duration_budget "scripts/verify.conf" "$project_budget_seconds" 0 "$project_count"
+  [[ -n "$workflow_skipped" ]] ||
+    duration_budget "scripts/verify-workflow.conf" "$workflow_budget_seconds" "$project_count" "${#names[@]}"
+fi
 
 echo
 echo "== Verification summary =="
 [[ "${#results[@]}" -eq 0 ]] || printf '%s\n' "${results[@]}"
 [[ -z "$workflow_skipped" ]] || echo "$workflow_skipped"
+if [[ "$duration_exceeded" -gt 0 ]]; then
+  echo "The checks took longer than the target of 'budget-seconds' (BUDGET): a measurement, not a failure. The owner decides whether to change the target or the checks; nothing repairs it automatically."
+fi
 if [[ "$exceeded" -gt 0 ]]; then
   echo "$exceeded budget check(s) exceeded their target (BUDGET): a measurement, not a failure. The owner decides whether to change the budget or the code; nothing repairs it automatically."
 fi
-[[ "$partial" -eq 1 ]] || hand_budgets_to_run
+if [[ "$partial" -eq 0 ]]; then
+  hand_budgets_to_run
+  hand_durations_to_run
+fi
 
 if [[ "$failed" -ne 0 ]]; then
   [[ "$recordable" -eq 0 ]] || verification_forget "$root"
@@ -463,7 +601,7 @@ if [[ "$recordable" -eq 1 ]]; then
     else
       workflow_state="ran"
     fi
-    verification_write "$root" "$tree_before" "$workflow_state" "$budgets_file" ||
+    verification_write "$root" "$tree_before" "$workflow_state" "$budgets_file" "$durations_file" ||
       echo "Warning: could not record the passed verification." >&2
   else
     verification_forget "$root"

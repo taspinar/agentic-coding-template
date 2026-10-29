@@ -1473,4 +1473,29 @@ expect_sessions "$repo" 2 1 0 0
 grep -Fq "cites the budget check 'perf' as evidence of a met criterion" <<<"$(log_of "$repo")" ||
   fail "the record that cites the budget check was not refused: $(log_of "$repo")"
 
+# A target for the duration of the checks ('budget-seconds: <n>' in
+# verify.conf) that a run exceeds is a budget result like that of a budget
+# check: the verification passes, no repair session starts, and the
+# measurement with the slowest checks reaches the handoff note, the log, the
+# reviewer, the commit message, the pull request, and the run record.
+repo="$(VERIFY_CONF=$'budget-seconds: 1\nsound: test ! -e broken.txt\nslow: sleep 1.2' setup_repo duration-budget)"
+run_feature "$repo" 2 thing
+expect_published "$repo"
+expect_sessions "$repo" 1 1 0 0
+if grep -Fq "Repair attempt" <<<"$(log_of "$repo")"; then fail "a repair was started for a duration over its target"; fi
+if grep -Fq "## Verification failed" "$repo-2-thing/.agents/handoffs/2.md"; then fail "a duration over its target was recorded as a failed verification"; fi
+grep -Fq "| commit | budget | budget duration of scripts/verify.conf exceeded |" <<<"$(log_of "$repo")" ||
+  fail "the duration over its target is not in the log of the feature: $(log_of "$repo")"
+grep -Fqx -- "- budget duration of scripts/verify.conf exceeded:" "$repo-2-thing/.agents/handoffs/2.md" &&
+  grep -Eq '^  slow [0-9.]+s$' "$repo-2-thing/.agents/handoffs/2.md" ||
+  fail "the handoff note lacks the duration and the slowest checks: $(cat "$repo-2-thing/.agents/handoffs/2.md")"
+grep -Fqx -- "- budget duration of scripts/verify.conf exceeded:" "$repo.control/reviewer-1.context" || fail "the reviewer's context lacks the duration"
+grep -Fqx -- "- budget duration of scripts/verify.conf exceeded:" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" ||
+  fail "the commit message lacks the duration: $(git -C "$repo-2-thing" log -1 --format=%B)"
+grep -Fqx -- "- budget duration of scripts/verify.conf exceeded:" "$repo.control/pr-body" || fail "the pull request description lacks the duration"
+cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "verification" and .status == 0
+  and (.budgets | any(.name == "duration of scripts/verify.conf" and .status == "exceeded"))
+  and (.checks | any(.name == "slow" and .seconds >= 1.2)))' >/dev/null ||
+  fail "the duration is not in the verification events of the run record"
+
 echo "run-feature tests passed"

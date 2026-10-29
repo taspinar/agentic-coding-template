@@ -57,6 +57,14 @@ when that tool is missing or not executable, when a command exits non-zero, or
 when the configuration is missing, empty, or malformed. All checks run even
 after a failure, and a summary lists each check as `PASS` or `FAIL`.
 
+Every check is timed: `-- <name> took <seconds>s` follows its output, also in
+a partial run. The durations of a run are recorded with the pass in
+`.agents/verification/durations` (see "Recorded verification") and in the
+run record (the `verification` event, `checks`), so the growth of the
+verification shows while it happens; `./scripts/report-runs.sh` lists the
+five slowest checks of every verification of a run ("Slowest checks"). A
+target for the duration of the checks is a budget (see "Budgets").
+
 There is no automatic stack detection and no optional check: remove a check
 from `scripts/verify.conf` rather than letting it be skipped.
 
@@ -158,6 +166,44 @@ The template ships no budget check. A partial run (`--only`) runs the budget
 checks of its groups and shows them the same way; it records nothing, as
 before.
 
+#### A target for the duration of the checks
+
+`scripts/verify.conf` and `scripts/verify-workflow.conf` each accept one
+line that sets the target, in whole seconds, for the duration of all checks
+of that file in one run:
+
+```text
+budget-seconds: 600
+```
+
+It is a budget like a budget check, with the same rules: a measurement, never
+a failure and never a repair order.
+
+- When the checks of the file take longer, the summary shows
+  `BUDGET  duration of <file> (<total>s, target <n>s)` with the five slowest
+  checks of the file under it, and the verification passes when every check
+  passed. A failing check still fails it.
+- The result is recorded as a budget result named `duration of <file>`: with
+  the pass in `.agents/verification/budgets`, in the run record, in the
+  handoff note, the reviewer's context, the commit message, and the pull
+  request, as above. `run-feature.sh` starts no repair for it, and the
+  completion gate refuses a record that cites `budget-seconds` as the
+  evidence of a met criterion.
+- Within the target nothing is shown and no budget result is kept; the
+  durations are recorded either way. Without the line nothing is compared,
+  and the summary is the one it always was.
+- A partial run (`--only`) measures the checks it runs and compares with
+  nothing, and neither does a file whose checks did not run, such as the
+  workflow self-tests when no workflow file changed.
+- The line is reserved: `budget-seconds` is not the name of a check, takes no
+  group, and is declared at most once per file. Like any line of these files,
+  changing or removing it is protected by the merge approval gate.
+
+The template ships `budget-seconds: 600` in `scripts/verify-workflow.conf`,
+a target for its own workflow self-tests, which took 915 s when the line was
+added, and no target in `scripts/verify.conf`. A project changes or removes
+the line like any line of these files.
+
 ### Recorded verification
 
 A run in which every check passed is recorded in `.agents/verification/passed`,
@@ -166,7 +212,10 @@ it verified. Any change to a file that Git does not ignore makes the record
 stale, and a failing run removes it. The results of the budget checks of that
 run, with the output of each, are kept next to it in
 `.agents/verification/budgets`, and go with the record: a reused pass shows
-them, and a failing run removes them.
+them, and a failing run removes them. The durations of its checks are kept
+the same way in `.agents/verification/durations`, one line per check with
+its name, the file that declares it, the duration in milliseconds, and its
+result (`pass` or `budget`), separated by tabs.
 
 `./scripts/verify.sh --reuse` skips the run when the record matches the current
 content exactly, and says so. `review-feature.sh`, `apply-triage.sh`, and
@@ -2355,7 +2404,7 @@ brings the rules.
 | `run-end` | `status`: the exit status; 130 when the run was interrupted. For a status other than 0 also `step` and `reason`: those of the last `stop` of the run, so a failed run always says where and why it ended. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
 | `stop` | `step` and `reason`: where a workflow script stops and the text it tells you. The `step` is the script (`finish-feature.sh`), or for `run-feature.sh` the step of the run (`implementation`, `commit`, ...). A command that fails under `set -e` records `unexpected exit` with the command and its line; a run that ends without a stop gets `exited with status <n> without a recorded reason`, an interruption `interrupted`. The experience record (`derived.stop`) and the Runs table of `report-runs.sh` show them |
 | `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`, and `level` and `selection`: the risk level of the feature that selected the agent, `null` for a planning or an analysis, and where the selection came from, `command-line`, `level-line`, or `plain-line`; see "Configuring agents") and ends (the same, with `status`, `seconds`, `usage`) |
-| `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, `reused`: a recorded pass stood in for the run, and `budgets`: the budget checks of the run, each with `name`, `status` `exceeded` or `within`, `exit`, and `output`; an empty list without one, and the recorded results for a reused pass) |
+| `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, `reused`: a recorded pass stood in for the run, and `budgets`: the budget checks of the run, each with `name`, `status` `exceeded` or `within`, `exit`, and `output`, and the target for the duration of a file's checks that the run exceeded, named `duration of <file>` with `exit` null; an empty list without one, and the recorded results for a reused pass; `checks`: the duration of every check that ran, each with `name`, `config` (the file that declares it), `seconds`, and `result` `pass`, `fail`, or `budget`; an empty list for a reused pass) |
 | `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
 | `wait-start`, `wait` | the pause before a step is tried again: the `planned` seconds, and the `seconds` it really took |
 | `intervention` | `what` you did that a script saw: an approval, a resume by hand, `--implemented`, `--partial` |
@@ -2423,8 +2472,11 @@ agent time, the review rounds, the triage, and the repair sessions, for a
 feature the re-raised findings (unresolved and worsened), the tokens
 per role, model, and run, the calls, the time, and the tokens per risk level
 of the feature, model, and selection of the agent (for the calls that
-recorded a level, see "Configuring agents"), the verification, the steps of
-`run-feature.sh`, the recorded interventions, and the versions the runs used.
+recorded a level, see "Configuring agents"), the verification, the five
+slowest checks of each verification that ran its checks (with the sum of the
+durations of all of them; a reused pass ran none, and a verification
+recorded before the durations has none), the steps of `run-feature.sh`, the
+recorded interventions, and the versions the runs used.
 It reads the run files
 and the copies of the primary checkout; a run is read from its own file while
 that exists and from the copy of its subject otherwise, so nothing is counted
