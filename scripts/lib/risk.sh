@@ -22,10 +22,11 @@
 #    the path rule. No escalation reads the content of a line;
 # 3. what an agent recorded: 'risk' in the implementer's completion record,
 #    and the independent reviewer's architecture_impact, of which major and
-#    breaking count as high.
+#    breaking count as high; and the owner's hints: a risk label of the Issue
+#    and --risk (risk_hints).
 #
-# An agent can raise the level, never lower it: a recorded level below the
-# computed one is ignored and reported. The rules are read from the base
+# An agent or a hint can raise the level, never lower it: a recorded level or
+# a hint below the computed one is ignored and reported. The rules are read from the base
 # branch as it is now, like the merge approval gate's, so a feature cannot
 # relax the rules it is classified by; the diff is taken from where the
 # feature left its base. When that base cannot be determined, or the changes
@@ -732,19 +733,69 @@ risk_claim_below() {
   risk_is_level "$claim" && [[ "$(risk_rank "$claim")" -lt "$(risk_rank "$computed")" ]]
 }
 
-# risk_decision <computed-lines> <completion-record> <review-json>
-# The effective level: the computed one, raised by what the agents recorded,
-# never lowered. Prints the level on the first line and every reason after
-# it. <completion-record> and <review-json> may be empty or missing.
+# The owner's hints, which raise the level of a feature before it has
+# changes: the label 'risk: high' or 'risk: medium' of the Issue, which
+# start-feature.sh reads when it creates the feature and keeps in the Git
+# configuration of the branch for the whole feature, and --risk <level> of
+# start-feature.sh or run-feature.sh, which holds for one run and reaches the
+# scripts of that run in WORKFLOW_RISK_HINT.
+RISK_LABEL_KEY="workflow-risk-label"
+
+# risk_label_level <label>...: the level that the highest risk label names,
+# 'risk: high' or 'risk: medium' as written, in any case; nothing without
+# one. Other labels say nothing about the level.
+risk_label_level() {
+  local label
+  local levels=()
+
+  for label in "$@"; do
+    label="$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    case "$label" in
+      "risk: high" | "risk: medium") levels+=("${label#risk: }") ;;
+    esac
+  done
+  [[ "${#levels[@]}" -eq 0 ]] || risk_highest "${levels[@]}"
+}
+
+# risk_hints <root> <branch>
+# Prints the owner's hints for the feature of <branch>, one '<level> <source>'
+# per line: 'issue-label' from the configuration of the branch, and
+# 'command-line' from WORKFLOW_RISK_HINT. Nothing without a hint.
+risk_hints() {
+  local label=""
+
+  if [[ -n "$2" ]]; then
+    label="$(git -C "$1" config --get "branch.$2.$RISK_LABEL_KEY" 2>/dev/null || true)"
+  fi
+  [[ -z "$label" ]] || printf '%s issue-label\n' "$label"
+  [[ -z "${WORKFLOW_RISK_HINT:-}" ]] || printf '%s command-line\n' "$WORKFLOW_RISK_HINT"
+}
+
+# risk_hint_text <level> <source>: how a reason names the hint.
+risk_hint_text() {
+  case "$2" in
+    issue-label) printf 'the Issue is labelled risk: %s' "$1" ;;
+    *) printf 'the owner gave --risk %s for this run' "$1" ;;
+  esac
+}
+
+# risk_decision <computed-lines> <completion-record> <review-json> [<hints>]
+# The effective level: the computed one, raised by what the agents recorded
+# and by the owner's hints (risk_hints), never lowered. Prints the level on
+# the first line and every reason after it. <completion-record> and
+# <review-json> may be empty or missing.
 risk_decision() {
   local lines="$1"
   local record="$2"
   local review="$3"
+  local hints="${4:-}"
   local computed
   local level
   local claim
   local impact
   local reasons
+  local hint
+  local source
 
   computed="$(printf '%s\n' "$lines" | sed -n 1p)"
   reasons="$(printf '%s\n' "$lines" | sed 1d)"
@@ -763,6 +814,21 @@ risk_decision() {
       reasons+=$'\n'"the implementer recorded risk: $claim in the completion record, the same as computed"
     fi
   fi
+
+  # A hint, like a recorded level, raises the level and never lowers it.
+  while read -r hint source; do
+    [[ -n "$hint" ]] || continue
+    if ! risk_is_level "$hint"; then
+      reasons+=$'\n'"$(risk_hint_text "$hint" "$source") names a risk level that does not exist; it is ignored"
+    elif [[ "$(risk_rank "$hint")" -gt "$(risk_rank "$level")" ]]; then
+      level="$hint"
+      reasons+=$'\n'"$(risk_hint_text "$hint" "$source"), which raises the level to $hint"
+    elif [[ "$(risk_rank "$hint")" -lt "$(risk_rank "$computed")" ]]; then
+      reasons+=$'\n'"$(risk_hint_text "$hint" "$source"), below the computed $computed; a hint cannot lower the computed level and is ignored"
+    else
+      reasons+=$'\n'"$(risk_hint_text "$hint" "$source"); the level is already $level"
+    fi
+  done <<<"$hints"
 
   if [[ -n "$review" && -f "$review" ]]; then
     impact="$(guardrails_review_level "$review")"

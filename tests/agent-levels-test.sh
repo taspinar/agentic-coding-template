@@ -367,6 +367,8 @@ case "${1:-} ${2:-}" in
   "auth status") exit 0 ;;
   "issue view")
     case "$*" in
+      # MOCK_ISSUE_LABELS: the labels of the Issue, one per line.
+      *"--json title,labels"*) echo "Feature with levels"; [[ -z "${MOCK_ISSUE_LABELS:-}" ]] || printf '%s\n' "$MOCK_ISSUE_LABELS" ;;
       *"--json title"*) echo "Feature with levels" ;;
       *) printf 'Title: Feature with levels\n\nThe feature.\n' ;;
     esac
@@ -517,6 +519,84 @@ json="$(cd "$repo" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/report-runs.sh 3 -
 # levels existed read as before.
 report_old="$(cd "$repo_medium" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/report-runs.sh 4)"
 grep -Fq "### Per risk level" <<<"$report_old" || fail "a feature with level calls has no section"
+
+# The owner's hints. A label 'risk: high' on the Issue raises a new feature,
+# which has no changes, to high from its first session, for the whole
+# feature: check-risk.sh names the label, and the run record notes the hint
+# with its source. Other labels say nothing.
+risk_events() {
+  cat "$1"/.agents/run/records/*.jsonl | jq -c -s '[.[] | select(.type == "risk")]'
+}
+check_risk() {
+  (cd "$1" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/check-risk.sh main >"$tmp/risk.out" 2>&1) || true
+}
+repo_label="$(setup_repo label)"
+MOCK_ISSUE_LABELS=$'bug\nrisk: high' run_start "$repo_label" 7 || { cat "$repo_label.out" >&2; fail "starting a labelled feature failed"; }
+worktree_label="$tmp/label-7-feature-with-levels"
+started "$repo_label" claude fable "a new feature labelled risk: high"
+grep -Fq "Level:    high (the default of the risk policy of main; the feature has no changes yet; the Issue is labelled risk: high, which raises the level to high)" "$repo_label.out" ||
+  fail "the label was not given as the reason of the level: $(cat "$repo_label.out")"
+recorded "$repo_label" implementer high level-line "a new feature labelled risk: high"
+[[ "$(jq -c '[.[] | .hints] | .[0]' <<<"$(risk_events "$repo_label")")" == '[{"level":"high","source":"issue-label"}]' ]] ||
+  fail "the run record does not note the label and its source: $(risk_events "$repo_label")"
+check_risk "$worktree_label"
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: high" ]] || fail "check-risk.sh does not count the label: $(cat "$tmp/risk.out")"
+grep -Fxq -- "- the Issue is labelled risk: high, which raises the level to high" "$tmp/risk.out" || fail "check-risk.sh does not name the label: $(cat "$tmp/risk.out")"
+grep -Fxq "hint: high issue-label" "$tmp/risk.out" || fail "check-risk.sh does not name the hint and its source: $(cat "$tmp/risk.out")"
+report="$(cd "$repo_label" && PATH="$tmp/bin:/usr/bin:/bin" ./scripts/report-runs.sh 7)"
+grep -Fq "| high | implementer | claude | fable | level-line | 1 |" <<<"$report" || fail "the report lacks the call at the raised level: $report"
+repo_other="$(setup_repo other-label)"
+MOCK_ISSUE_LABELS=$'bug\nrisk: low\nhigh' run_start "$repo_other" 7 || { cat "$repo_other.out" >&2; fail "starting a feature with other labels failed"; }
+started "$repo_other" codex sonnet "a feature with labels that name no raising level"
+[[ "$(git -C "$repo_other" config --get branch.feature/7-feature-with-levels.workflow-risk-label || true)" == "" ]] ||
+  fail "a label other than risk: high or risk: medium was kept"
+[[ "$(risk_events "$repo_other")" == "[]" ]] || fail "a feature without a hint has a risk event of start-feature.sh: $(risk_events "$repo_other")"
+
+# A label below the level of the diff is ignored and reported: the feature
+# is high by its path, and the label risk: medium does not lower it.
+repo_lower="$(setup_repo lower-label)"
+MOCK_ISSUE_LABELS="risk: medium" run_start "$repo_lower" 8 thing || { cat "$repo_lower.out" >&2; fail "starting a feature labelled risk: medium failed"; }
+mkdir -p "$tmp/lower-label-8-thing/src/auth"
+printf 'login\n' >"$tmp/lower-label-8-thing/src/auth/login.txt"
+check_risk "$tmp/lower-label-8-thing"
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: high" ]] || fail "a label lowered the level of the diff: $(cat "$tmp/risk.out")"
+grep -Fxq -- "- the Issue is labelled risk: medium, below the computed high; a hint cannot lower the computed level and is ignored" "$tmp/risk.out" ||
+  fail "a label below the computed level was not reported: $(cat "$tmp/risk.out")"
+
+# --risk high does the same for one run, recorded with its source; the
+# scripts of a later run do not see it.
+repo_hint="$(setup_repo hint)"
+run_start "$repo_hint" 9 thing --risk high || { cat "$repo_hint.out" >&2; fail "starting a feature with --risk high failed"; }
+started "$repo_hint" claude fable "a new feature with --risk high"
+grep -Fq "the owner gave --risk high for this run, which raises the level to high" "$repo_hint.out" ||
+  fail "--risk high was not given as the reason of the level: $(cat "$repo_hint.out")"
+recorded "$repo_hint" implementer high level-line "a new feature with --risk high"
+[[ "$(jq -c '[.[] | .hints] | .[0]' <<<"$(risk_events "$repo_hint")")" == '[{"level":"high","source":"command-line"}]' ]] ||
+  fail "the run record does not note --risk and its source: $(risk_events "$repo_hint")"
+check_risk "$tmp/hint-9-thing"
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: medium" ]] || fail "--risk outlived its run: $(cat "$tmp/risk.out")"
+(cd "$tmp/hint-9-thing" && PATH="$tmp/bin:/usr/bin:/bin" WORKFLOW_RISK_HINT=high ./scripts/check-risk.sh main >"$tmp/risk.out" 2>&1) || true
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: high" ]] || fail "check-risk.sh does not count --risk of the run: $(cat "$tmp/risk.out")"
+grep -Fxq "hint: high command-line" "$tmp/risk.out" || fail "check-risk.sh does not name --risk and its source: $(cat "$tmp/risk.out")"
+
+# --risk low on a feature that the diff makes medium is ignored and reported.
+repo_low="$(setup_repo low-hint)"
+run_start "$repo_low" 10 thing --risk low || { cat "$repo_low.out" >&2; fail "starting a feature with --risk low failed"; }
+started "$repo_low" codex sonnet "a medium feature with --risk low"
+grep -Fq "the owner gave --risk low for this run, below the computed medium; a hint cannot lower the computed level and is ignored" "$repo_low.out" ||
+  fail "--risk low was not reported as ignored: $(cat "$repo_low.out")"
+recorded "$repo_low" implementer medium plain-line "a medium feature with --risk low"
+printf 'other\n' >"$tmp/low-hint-10-thing/other.txt"
+(cd "$tmp/low-hint-10-thing" && PATH="$tmp/bin:/usr/bin:/bin" WORKFLOW_RISK_HINT=low ./scripts/check-risk.sh main >"$tmp/risk.out" 2>&1) || true
+[[ "$(sed -n 1p "$tmp/risk.out")" == "risk: medium" ]] || fail "--risk low lowered the level of the diff: $(cat "$tmp/risk.out")"
+grep -Fxq -- "- the owner gave --risk low for this run, below the computed medium; a hint cannot lower the computed level and is ignored" "$tmp/risk.out" ||
+  fail "check-risk.sh does not report --risk low as ignored: $(cat "$tmp/risk.out")"
+
+# A --risk without a level stops before anything is created.
+repo_bad_hint="$(setup_repo bad-hint)"
+if run_start "$repo_bad_hint" 11 thing --risk critical; then fail "a feature started with --risk critical"; fi
+grep -Fq -- "--risk requires a level: low, medium, or high." "$repo_bad_hint.out" || fail "an invalid --risk was not named: $(cat "$repo_bad_hint.out")"
+[[ ! -e "$tmp/bad-hint-11-thing" ]] || fail "a worktree was created although --risk is invalid"
 
 # An invalid level line stops the script before anything is created.
 repo_invalid="$(setup_repo invalid)"

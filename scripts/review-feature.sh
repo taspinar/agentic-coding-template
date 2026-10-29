@@ -440,7 +440,7 @@ guardrails="$(printf '%s\n' "$guardrail_findings" |
 # diff, the fixed escalations, and what the implementer recorded, which can
 # raise it. The reviewer is told, and the artifact records it; the reviewer's
 # own classification of the impact can raise it further, never lower it.
-risk_lines="$(risk_decision "$(risk_computed "$root" "$guardrail_rules" "$merge_base")" "$(completion_record "$root" "$issue")" "")"
+risk_lines="$(risk_decision "$(risk_computed "$root" "$guardrail_rules" "$merge_base")" "$(completion_record "$root" "$issue")" "" "$(risk_hints "$root" "$branch")")"
 risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
 risk="$(printf '%s\n' "$risk_lines" | sed 1d |
   jq -Rn --arg level "$risk_level" '{level: $level, reasons: [inputs | select(length > 0)]}')"

@@ -28,7 +28,7 @@ repairs=0
 unstable=0
 
 usage() {
-  echo "Usage: $0 <issue-number> [slug] [base-branch] [--implemented]"
+  echo "Usage: $0 <issue-number> [slug] [base-branch] [--implemented] [--risk <level>]"
   echo
   echo "Runs a feature from its Issue to an open pull request, without questions:"
   echo "start-feature.sh, then review-feature.sh, triage-review.sh, and"
@@ -63,9 +63,15 @@ usage() {
   echo "the run continues with the review without a session of the implementer."
   echo "The completion gate has to pass for that too."
   echo
+  echo "--risk low|medium|high is your hint for this run: the level of the feature"
+  echo "is at least that, for the agents and for what the rounds require, as with the"
+  echo "label 'risk: high' or 'risk: medium' on the Issue. A hint raises the level,"
+  echo "never lowers it; one below the computed level is ignored and reported."
+  echo
   echo "Examples:"
   echo "  $0 3"
   echo "  $0 3 site-skeleton develop"
+  echo "  $0 3 --risk high"
   exit 1
 }
 
@@ -77,12 +83,19 @@ fail() {
 
 implemented=0
 arguments=()
-for argument in "$@"; do
-  case "$argument" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --implemented) implemented=1 ;;
+    --risk)
+      # The owner's hint, which every script of this run reads (lib/risk.sh).
+      [[ $# -ge 2 && "$2" =~ ^(low|medium|high)$ ]] || usage
+      export WORKFLOW_RISK_HINT="$2"
+      shift
+      ;;
     --*) usage ;;
-    *) arguments+=("$argument") ;;
+    *) arguments+=("$1") ;;
   esac
+  shift
 done
 [[ "${#arguments[@]}" -ge 1 && "${#arguments[@]}" -le 3 ]] || usage
 issue="${arguments[0]}"
@@ -489,7 +502,8 @@ report_risk() {
   echo "run-feature.sh: risk level $1: $risk_level"
   printf '%s\n' "$output" | sed '1d; s/^/  /'
   records_risk "$1" "$risk_level" "$(printf '%s\n' "$output" | sed -n 's/^- //p')" \
-    "$(printf '%s\n' "$output" | sed -n 's/^profile: //p' | sed -n 1p | sed 's/;.*//')" 2>/dev/null || true
+    "$(printf '%s\n' "$output" | sed -n 's/^profile: //p' | sed -n 1p | sed 's/;.*//')" \
+    "$(printf '%s\n' "$output" | sed -n 's/^hint: //p')" 2>/dev/null || true
   refused="$(printf '%s\n' "$output" | sed -n 's/^refused: \([a-z]*: triage: .*\)$/\1/p' | sed -n 1p)"
   if [[ -n "$refused" ]]; then
     echo "run-feature.sh: $refused"

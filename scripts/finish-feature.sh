@@ -170,6 +170,9 @@ if [[ -n "$feature_merge_base" ]]; then
 else
   risk_computed_lines="$(risk_undetermined "the base of the feature could not be determined")"
 fi
+# The owner's hints, the risk label of the Issue and --risk of the run, raise
+# the effective level too.
+risk_hint_lines="$(risk_hints "$root" "$branch")"
 if risk_claim_below "$risk_computed_lines" "$completion_file"; then
   echo "Error: the completion record claims risk: $(risk_recorded "$completion_file"), but the feature is $(printf '%s\n' "$risk_computed_lines" | sed -n 1p) by the rules of its base:" >&2
   printf '%s\n' "$risk_computed_lines" | sed '1d; s/^/  - /' >&2
@@ -246,7 +249,7 @@ elif [[ "${#reviews[@]}" -eq 0 ]]; then
   # and the implementer's record, since no reviewer classified it. The merge
   # approval gate then has no classification of the impact, so the owner
   # must approve the merge, as for any feature without one.
-  unreviewed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "" | sed -n 1p)"
+  unreviewed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "" "$risk_hint_lines" | sed -n 1p)"
   review_requirement="$(risk_requirement "$root" "$feature_base_ref" "$unreviewed_level" review)"
   if [[ "$unreviewed_level" == "low" && "$(printf '%s\n' "$review_requirement" | sed -n 1p)" == "none" ]]; then
     echo "No review of this feature exists; it is low risk, and $RISK_CONFIG of the base says 'low: review: none'."
@@ -310,7 +313,7 @@ else
     fail "the latest review (round $round) has $blocking critical or major finding(s). Triage, fix, and review again."
   # The level the commit is decided on, for the triage mode: a light triage
   # is for a low- or medium-risk feature only.
-  committed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest" | sed -n 1p)"
+  committed_level="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest" "$risk_hint_lines" | sed -n 1p)"
 
   # Every round with findings needs an approved triage that was published on
   # the Issue; only the latest round may not have FIX_NOW findings left, since
@@ -428,8 +431,9 @@ if [[ -e "$request_file" ]]; then
 fi
 
 # The effective risk level: the computed one, raised by the implementer's
-# record and by the reviewer's classification of the impact, never lowered.
-risk_lines="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest")"
+# record, the reviewer's classification of the impact, and the owner's
+# hints, never lowered.
+risk_lines="$(risk_decision "$risk_computed_lines" "$completion_file" "$latest" "$risk_hint_lines")"
 risk_level="$(printf '%s\n' "$risk_lines" | sed -n 1p)"
 # The workflow profile of the policy of the base, next to the level.
 risk_lines+=$'\n'"$(risk_profile_note "$root" "$feature_base_ref" "$risk_level" | sed '1s/^/profile: /')"

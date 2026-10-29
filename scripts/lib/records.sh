@@ -52,7 +52,10 @@
 #                workflow: the Issue comments a step passed on to its agent
 #                and what it left out (lib/issue-comments.sh)
 #   risk         when, level, reasons: the risk level of the feature
-#                (lib/risk.sh) as run-feature.sh printed it
+#                (lib/risk.sh) as run-feature.sh printed it, or the level of
+#                the first session of start-feature.sh; and hints, when the
+#                owner gave one: each with level and source ("issue-label"
+#                or "command-line")
 # A run without a run-end was interrupted and is incomplete.
 #
 # usage holds what the provider reported, with its own field names, and
@@ -791,13 +794,16 @@ records_findings() {
     | {round: $round, id, severity} + (if (.previous | type) == "object" then {previous: (.previous | {round, id, relation})} else {} end)' "$1" 2>/dev/null)
 }
 
-# records_risk <when> <level> <reasons> [<profile>]: the risk level of the
-# feature and its reasons, one per line, at a moment of the run, and the
-# workflow profile of the risk policy ('light', 'standard', or 'none').
+# records_risk <when> <level> <reasons> [<profile>] [<hints>]: the risk
+# level of the feature and its reasons, one per line, at a moment of the run,
+# the workflow profile of the risk policy ('light', 'standard', or 'none'),
+# and the owner's hints, one '<level> <source>' per line (lib/risk.sh).
 records_risk() {
-  records_emit risk --arg when "$1" --arg level "$2" --arg reasons "$3" --arg profile "${4:-}" \
+  records_emit risk --arg when "$1" --arg level "$2" --arg reasons "$3" --arg profile "${4:-}" --arg hints "${5:-}" \
     '{when: $when, level: $level, reasons: ($reasons | split("\n") | map(select(length > 0)))}
-     + (if $profile == "" then {} else {profile: $profile} end)'
+     + (if $profile == "" then {} else {profile: $profile} end)
+     + ($hints | split("\n") | map(select(length > 0) | split(" ") | {level: .[0], source: (.[1] // "")})
+        | if length == 0 then {} else {hints: .} end)'
 }
 
 records_note() {

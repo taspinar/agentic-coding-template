@@ -336,6 +336,22 @@ grep -Fqx "Risk: medium" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fa
 cat "$repo"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "risk" and .level == "medium" and (.reasons | length) >= 1)' >/dev/null ||
   fail "the risk level is not in the run records"
 
+# --risk high raises the level of the feature for the run: at the start,
+# before the review, and in the commit, with the hint and its source in the
+# run record. A --risk without a level is refused.
+repo_hint="$(setup_repo hinted)"
+run_feature "$repo_hint" 2 thing --risk high
+expect_published "$repo_hint"
+grep -Fq "run-feature.sh: risk level at the start: high" "$repo_hint.out" || fail "--risk high did not raise the level at the start"
+grep -Fq "run-feature.sh: risk level before round 1: high" "$repo_hint.out" || fail "--risk high did not raise the level before the review"
+grep -Fqx "Risk: high" <<<"$(git -C "$repo_hint-2-thing" log -1 --format=%B)" || fail "the commit does not record the raised level"
+grep -Fqx -- "- the owner gave --risk high for this run, which raises the level to high" <<<"$(git -C "$repo_hint-2-thing" log -1 --format=%B)" ||
+  fail "the commit does not name --risk as a reason"
+cat "$repo_hint"/.agents/run/records/*.jsonl | jq -e -s 'any(.type == "risk" and .when == "at the start" and .hints == [{level: "high", source: "command-line"}])' >/dev/null ||
+  fail "the run record does not note --risk and its source"
+run_feature "$repo_hint" 3 --risk
+[[ "$status" -eq 1 ]] || fail "a --risk without a level was not refused ($status)"
+
 # A finished feature is not run again: a repeated command only publishes.
 run_feature "$repo" 2
 expect_published "$repo"

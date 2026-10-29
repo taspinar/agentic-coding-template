@@ -1,0 +1,24 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "31a3673e9e2d8116c4e67eb0d3659dc3b23573a4",
+  "commit": {
+    "branch": "feature/227-let-the-owner-raise",
+    "parent": "dfe0a72ef7a6469d7dff614cb001ade1c885721f",
+    "base": "dfe0a72ef7a6469d7dff614cb001ade1c885721f"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    "scripts/check-risk.sh: the file defines or carries out the workflow and its gate",
+    "scripts/finish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/lib/risk.sh: the file defines or carries out the workflow and its gate",
+    "scripts/publish-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "scripts/run-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The change adds owner-provided risk inputs to shared risk classification and propagates them through agent selection, review requirements, records, and the merge gate. It also adds start-feature.sh and run-feature.sh command-line options and stores Issue-label risk in branch Git configuration. This changes shared workflow infrastructure and its public interface. The architecture document is still a template and no accepted ADR was present to compare against. "
+  ],
+  "explanation": "Issue #227: Let the owner raise the risk level of a feature before its first session, by an Issue label or --risk. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}
