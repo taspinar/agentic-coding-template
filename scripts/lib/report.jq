@@ -5,8 +5,10 @@
 #   $copies     the events of .agents/records/*.jsonl, as one array
 #   $selection  [{kind, subject}], the subjects to report on
 #   $since, $until, $split   epoch seconds, or null
-#   $declared   {"<agent> <model>": true} for the pairs of agents.conf, or
-#               null without the file
+#   $declared   {pairs: {"<agent> <model>": true}, history: bool}: the pairs
+#               of every version of .agents/agents.conf in the Git history and
+#               of the current file, or of the current file alone (history
+#               false); null without any version
 #   $mode       "json", "markdown", or "summary" (the GitHub summary)
 #
 # A run is read from its own file while that file exists, and from the copy
@@ -94,13 +96,15 @@ def finished_or_open($events; $begin; $stop):
   | $stops + ($events | map(select(.type == $begin and ($stoped["\(.run) \(.id)"] | not))
                        | . + {type: $stop, status: null, seconds: null, usage: null, unfinished: true}));
 
-# A call of an agent and model that agents.conf does not declare, such as a
-# fake call of a self-test written into a record before #186. A call that
-# --agent and --model selected is declared by its record.
+# A call of an agent and model that no version of agents.conf declares, such
+# as a fake call of a self-test written into a record before #186. A call
+# whose event records a selection (plain-line, level-line, command-line) is
+# declared by its record: the script chose it, overrides included. Any other
+# selection value does not exempt the call.
 def undeclared:
-  $declared != null and .selection != "command-line"
+  $declared != null and (.selection | IN("plain-line", "level-line", "command-line") | not)
   and (.agent | type) == "string" and (.model | type) == "string"
-  and ($declared["\(.agent) \(.model)"] | not);
+  and ($declared.pairs["\(.agent) \(.model)"] | not);
 
 def declared_calls($events): finished_or_open($events; "agent-start"; "agent-call") | map(select(undeclared | not));
 
@@ -112,7 +116,9 @@ def left_out($runs):
   | if length == 0 then null else
       {calls: (map(.calls) | add), models: (map(.pairs[].model) | unique), runs: .} end;
 
-def left_out_text: "\(.calls) calls of undeclared models \(.pairs | map(.model) | unique | join(", ")); left out of the totals";
+def left_out_text:
+  "\(.calls) calls of undeclared models \(.pairs | map(.model) | unique | join(", ")); left out of the totals"
+  + (if $declared.history then "" else " (compared with the current .agents/agents.conf alone: its Git history could not be read)" end);
 
 def report_subject($kind; $subject):
   runs_of(events_of($kind; $subject)) as $runs
@@ -305,7 +311,7 @@ def subject_markdown:
 def markdown:
   "# Run report\n\n"
   + (if .warnings == null then "" else
-      "Warnings: calls of an agent and model that `.agents/agents.conf` does not declare are left out of every total.\n\n"
+      "Warnings: calls of an agent and model that no version of `.agents/agents.conf` declares are left out of every total.\n\n"
       + (.warnings | map("- \(.)\n") | add) + "\n" end)
   + (if (.subjects | length) == 0 then "No run was recorded for the selection.\n\n" else "" end)
   + (if (.without_record | length) > 0 then

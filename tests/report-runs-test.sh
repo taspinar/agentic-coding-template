@@ -286,31 +286,53 @@ if report "$repo" --github-summary 31 >/dev/null 2>&1; then fail "a summary of a
 printf 'not json\n' >>"$file"
 [[ "$(report "$repo" 30 --json | jq '.subjects[0].runs.total')" -eq 1 ]] || fail "a damaged line hid the report"
 
-# Calls of an agent and model that agents.conf does not declare, such as the
-# fake calls of the self-tests in old records, are named once per run and
-# left out of every total: the report equals the one of the same record
-# without them. A call that --agent and --model selected is declared by its
-# record.
+# Calls of an agent and model that no version of agents.conf declares, such
+# as the fake calls of the self-tests in old records, are named once per run
+# and left out of every total: the report equals the one of the same record
+# without them. A call whose event records a selection is declared by its
+# record; without one, the pair is looked up in every committed version of
+# the file and in the working tree.
+undeclared_repo() {
+  local repo
+  repo="$(setup_repo "$1")"
+  printf 'implementer: claude opus\nreviewer: codex gpt-old\n' >"$repo/.agents/agents.conf"
+  git -C "$repo" add .agents/agents.conf
+  git -C "$repo" -c user.name=Test -c user.email=test@example.com commit -qm "The old reviewer"
+  printf '# comment\nimplementer: claude opus\nimplementer@high: claude fable\nreviewer: codex gpt-real\n' >"$repo/.agents/agents.conf"
+  git -C "$repo" -c user.name=Test -c user.email=test@example.com commit -qam "The new reviewer"
+  # Not committed: the working tree counts too.
+  printf 'triage: claude gpt-tree\n' >>"$repo/.agents/agents.conf"
+  printf '%s\n' "$repo"
+}
 undeclared_record() {
   local file="$1/.agents/run/records/$2.jsonl"
   event "$file" "$2" 1000 run-start '{"kind":"feature","subject":"50","command":"run-feature.sh","seq":1,"versions":{}}'
+  # Chosen by the script (a selection is recorded): declared by the record,
+  # also when no version of the file names the model.
   event "$file" "$2" 1010 agent-call '{"role":"implementer","agent":"claude","model":"fable","status":0,"seconds":300,"level":"high","selection":"level-line","usage":{"source":"claude-json","total_input":5000,"output_tokens":50}}'
   event "$file" "$2" 1020 agent-call '{"role":"reviewer","agent":"codex","model":"gpt-real","status":0,"seconds":100,"level":"high","selection":"plain-line","usage":{"source":"codex-events","total_input":1000,"output_tokens":10}}'
   event "$file" "$2" 1030 agent-call '{"role":"implementer","agent":"claude","model":"chosen-by-hand","status":0,"seconds":20,"level":"high","selection":"command-line","usage":{"source":"claude-json","total_input":200,"output_tokens":2}}'
+  event "$file" "$2" 1031 agent-call '{"role":"reviewer","agent":"codex","model":"chosen-by-script","status":0,"seconds":10,"level":"high","selection":"plain-line","usage":{"source":"codex-events","total_input":100,"output_tokens":1}}'
+  # Without a selection: the pair of an earlier version of the file, and the
+  # pair of the working tree.
+  event "$file" "$2" 1035 agent-call '{"role":"reviewer","agent":"codex","model":"gpt-old","status":0,"seconds":40,"usage":{"source":"codex-events","total_input":400,"output_tokens":4}}'
+  event "$file" "$2" 1036 agent-call '{"role":"triage","agent":"claude","model":"gpt-tree","status":0,"seconds":5,"usage":{"source":"claude-json","total_input":50,"output_tokens":1}}'
   if [[ "$3" == "with-fakes" ]]; then
     event "$file" "$2" 1040 agent-call '{"role":"reviewer","agent":"codex","model":"model-a","status":0,"seconds":1,"usage":{"source":"codex-events","total_input":null,"output_tokens":null}}'
-    event "$file" "$2" 1041 agent-call '{"role":"reviewer","agent":"codex","model":"model-a","status":0,"seconds":1,"level":"high","selection":"plain-line","usage":{"source":"unavailable"}}'
+    event "$file" "$2" 1041 agent-call '{"role":"reviewer","agent":"codex","model":"model-a","status":0,"seconds":1,"level":"high","usage":{"source":"unavailable"}}'
     event "$file" "$2" 1042 agent-call '{"role":"triage","agent":"claude","model":"model-b","status":0,"seconds":1,"usage":{"source":"unavailable"}}'
     event "$file" "$2" 1043 agent-call '{"role":"triage-implementer","agent":"claude","model":"model-b","status":0,"seconds":1,"usage":{"source":"unavailable"}}'
     # Declared model, other agent: the pair is what counts.
     event "$file" "$2" 1044 agent-call '{"role":"reviewer","agent":"claude","model":"gpt-real","status":0,"seconds":1,"usage":{"source":"unavailable"}}'
+    # A selection value that is not plain-line, level-line, or command-line
+    # exempts nothing: the pair is looked up as without a selection.
+    event "$file" "$2" 1046 agent-call '{"role":"reviewer","agent":"codex","model":"model-a","status":0,"seconds":1,"level":"high","selection":"made-up","usage":{"source":"unavailable"}}'
     event "$file" "$2" 1045 agent-start '{"id":"f1","role":"reviewer","profile":"read-only","agent":"codex","model":"model-a"}'
   fi
   event "$file" "$2" 1100 run-end '{"status":0}'
 }
 for variant in clean with-fakes; do
-  repo="$(setup_repo "undeclared-$variant")"
-  printf '# comment\nimplementer: claude opus\nimplementer@high: claude fable\nreviewer: codex gpt-real\n' >"$repo/.agents/agents.conf"
+  repo="$(undeclared_repo "undeclared-$variant")"
   undeclared_record "$repo" w1 "$variant"
 done
 clean="$tmp/undeclared-clean"
@@ -319,33 +341,50 @@ json="$(report "$fakes" 50 --json)"
 totals='.subjects[0] | del(.undeclared)'
 [[ "$(jq -c "$totals" <<<"$json")" == "$(report "$clean" 50 --json | jq -c "$totals")" ]] ||
   fail "undeclared calls count in the totals: $(jq -c "$totals" <<<"$json")"
-[[ "$(jq -c '.subjects[0] | [.agent_seconds, .rounds.review, .rounds.triage, .rounds.repair, .input.sum, .unfinished_calls]' <<<"$json")" == "[420,1,0,0,6200,0]" ]] ||
+[[ "$(jq -c '.subjects[0] | [.agent_seconds, .rounds.review, .rounds.triage, .rounds.repair, .input.sum, .unfinished_calls]' <<<"$json")" == "[475,3,1,0,6750,0]" ]] ||
   fail "the totals without the undeclared calls are wrong: $(jq -c '.subjects[0]' <<<"$json")"
-[[ "$(jq -c '.subjects[0].undeclared | [.calls, .models, (.runs | length)]' <<<"$json")" == '[6,["gpt-real","model-a","model-b"],1]' ]] ||
+[[ "$(jq -c '.subjects[0].undeclared | [.calls, .models, (.runs | length)]' <<<"$json")" == '[7,["gpt-real","model-a","model-b"],1]' ]] ||
   fail "the JSON does not carry the undeclared calls: $(jq -c '.subjects[0].undeclared' <<<"$json")"
-warning="run w1: 6 calls of undeclared models gpt-real, model-a, model-b; left out of the totals"
+warning="run w1: 7 calls of undeclared models gpt-real, model-a, model-b; left out of the totals"
 [[ "$(jq -c '.warnings' <<<"$json")" == "$(jq -cn --arg w "$warning" '[$w]')" ]] ||
   fail "the JSON does not carry the warning: $(jq -c '.warnings' <<<"$json")"
 markdown="$(report "$fakes" 50)"
 grep -Fxq -- "- $warning" <<<"$markdown" || fail "the Markdown does not show the warning of the JSON"
 [[ "$(grep -c "of undeclared models" <<<"$markdown")" -eq 2 ]] || fail "the warning is not shown once per run and once in the table"
-grep -Fq "| Left out | 6 calls of undeclared models gpt-real, model-a, model-b in 1 runs (see Warnings) |" <<<"$markdown" ||
+grep -Fq "| Left out | 7 calls of undeclared models gpt-real, model-a, model-b in 1 runs (see Warnings) |" <<<"$markdown" ||
   fail "the table of the feature does not note the calls left out"
 [[ "$(grep -v -e "of undeclared models" -e "^Warnings: " <<<"$markdown" | cat -s)" == "$(report "$clean" 50 | cat -s)" ]] ||
   fail "the Markdown counts the undeclared calls"
 [[ "$(report "$fakes" --github-summary 50)" == "$(report "$clean" --github-summary 50)" ]] ||
   fail "the GitHub summary counts the undeclared calls"
-# The call selected on the command line is counted and is no warning.
-[[ "$(jq -c '.subjects[0].levels | map(select(.model == "chosen-by-hand")) | map(.calls)' <<<"$json")" == "[1]" ]] ||
-  fail "a call selected on the command line was left out"
-if grep -Fq "chosen-by-hand" <<<"$(jq -c '.warnings, .subjects[0].undeclared' <<<"$json")"; then
-  fail "a call selected on the command line is a warning"
+# A call with a recorded selection is counted and is no warning, whatever
+# the file says; so is a call whose pair only an earlier version of the file
+# or only the working tree declares.
+[[ "$(jq -c '.subjects[0].levels | map(select(.model == "chosen-by-hand" or .model == "chosen-by-script")) | map(.calls)' <<<"$json")" == "[1,1]" ]] ||
+  fail "a call that the script or the command line selected was left out"
+[[ "$(jq -c '.subjects[0].models | map(select(.model == "gpt-old" or .model == "gpt-tree")) | sort_by(.model) | map(.agent + " " + .model)' <<<"$json")" == '["codex gpt-old","claude gpt-tree"]' ]] ||
+  fail "a pair of an earlier version or of the working tree of agents.conf was left out: $(jq -c '.subjects[0].models' <<<"$json")"
+if grep -q "chosen-by\|gpt-old\|gpt-tree" <<<"$(jq -c '.warnings, .subjects[0].undeclared' <<<"$json")"; then
+  fail "a declared call is a warning: $(jq -c '.warnings' <<<"$json")"
 fi
+[[ "$(jq -c '.subjects[0].levels | map(select(.selection == "made-up")) | length' <<<"$json")" == "0" ]] ||
+  fail "an unknown selection value exempted an undeclared pair: $(jq -c '.subjects[0].levels' <<<"$json")"
 [[ "$(report "$clean" 50 --json | jq -c '[has("warnings"), (.subjects[0] | has("undeclared"))]')" == "[false,false]" ]] ||
   fail "a record without undeclared calls has a warning"
 if grep -q "Warnings\|Left out" <<<"$(report "$clean" 50)"; then
   fail "a record without undeclared calls shows a warning"
 fi
+# Without a committed version of the file, the current file alone is the
+# measure, and the warning says so.
+repo="$(setup_repo undeclared-no-history)"
+cp "$fakes/.agents/agents.conf" "$repo/.agents/agents.conf"
+undeclared_record "$repo" w1 with-fakes
+warning="run w1: 8 calls of undeclared models gpt-old, gpt-real, model-a, model-b; left out of the totals (compared with the current .agents/agents.conf alone: its Git history could not be read)"
+json="$(report "$repo" 50 --json)"
+[[ "$(jq -c '.warnings' <<<"$json")" == "$(jq -cn --arg w "$warning" '[$w]')" ]] ||
+  fail "without a Git history of agents.conf the warning does not say so: $(jq -c '.warnings' <<<"$json")"
+grep -Fxq -- "- $warning" <<<"$(report "$repo" 50)" || fail "the Markdown does not show the warning of the JSON without a Git history"
+[[ "$(jq '.subjects[0].agent_seconds' <<<"$json")" -eq 435 ]] || fail "without a Git history the earlier pair is counted"
 
 # Re-raised findings: the finding events of the reviews that name an earlier
 # finding, per feature, by relation.
