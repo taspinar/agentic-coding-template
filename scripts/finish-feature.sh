@@ -46,6 +46,7 @@ usage() {
 
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -96,6 +97,7 @@ refuse_incomplete() {
   [[ -z "$gate_reasons" ]] || printf '%s\n' "$gate_reasons" | sed 's/^/  - /' >&2
   echo "$2" >&2
   echo "Nothing was committed." >&2
+  records_stop "${0##*/}" "$1"
   exit 1
 }
 case "$gate_status" in
@@ -151,6 +153,7 @@ if feature_base_lines="$(feature_base "$root" "${feature_base_branch:-main}")"; 
       echo "Take these changes out of the feature, and make them through a change cycle:" >&2
       echo "  ./scripts/start-planning.sh <name> --change <file>" >&2
       echo "The architecture and the ADRs may be updated in a feature. Nothing was committed." >&2
+      records_stop "${0##*/}" "this feature changes planning documents that only a planning cycle may change:"
       exit 1
     fi
   fi
@@ -171,6 +174,7 @@ if risk_claim_below "$risk_computed_lines" "$completion_file"; then
   echo "Error: the completion record claims risk: $(risk_recorded "$completion_file"), but the feature is $(printf '%s\n' "$risk_computed_lines" | sed -n 1p) by the rules of its base:" >&2
   printf '%s\n' "$risk_computed_lines" | sed '1d; s/^/  - /' >&2
   echo "A recorded level can raise the computed one, never lower it. Correct or remove 'risk' in $COMPLETION_DIR/$issue.json. Nothing was committed." >&2
+  records_stop "${0##*/}" "the completion record claims risk: $(risk_recorded "$completion_file"), but the feature is $(printf '%s\n' "$risk_computed_lines" | sed -n 1p) by the rules of its base:"
   exit 1
 fi
 
@@ -189,6 +193,7 @@ if [[ "$attribution" == "disabled" ]]; then
     echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but a commit of this feature names an agent as a co-author:" >&2
     printf '%s\n' "$attributed" | attribution_format_commits >&2
     echo "Remove the trailer from the commit (git commit --amend for the last one, an interactive rebase of the feature branch for an earlier one); co-authors who are people stay. Nothing was committed." >&2
+    records_stop "${0##*/}" "agent attribution is disabled ($ATTRIBUTION_CONFIG), but a commit of this feature names an agent as a co-author:"
     exit 1
   fi
 fi
@@ -259,6 +264,7 @@ elif [[ "${#reviews[@]}" -eq 0 ]]; then
       fi
       echo "Run ./scripts/review-feature.sh $issue, or use --no-review for a low-risk change. Nothing was committed."
     } >&2
+    records_stop "${0##*/}" "no review of this feature exists, and it is $unreviewed_level risk:"
     exit 1
   fi
 else
@@ -475,6 +481,7 @@ commit_options=(--edit)
 [[ "$unattended" -eq 0 ]] || commit_options=(--quiet)
 if ! git -C "$root" commit "${commit_options[@]}" -F "$message_file"; then
   echo "Error: the commit was not created. The changes remain staged." >&2
+  records_stop "${0##*/}" "the commit was not created. The changes remain staged."
   exit 1
 fi
 
@@ -492,6 +499,7 @@ if [[ "$attribution" == "disabled" ]]; then
     echo "Error: agent attribution is disabled ($ATTRIBUTION_CONFIG), but the commit message carries it:" >&2
     printf '%s\n' "$attributed" | sed 's/^/  /' >&2
     echo "The commit was undone; the changes remain staged. Run finish-feature.sh again with a message that leaves it out." >&2
+    records_stop "${0##*/}" "agent attribution is disabled ($ATTRIBUTION_CONFIG), but the commit message carries it:"
     exit 1
   fi
 fi
@@ -505,6 +513,7 @@ if [[ "$committed_tree" != "$content_tree" ]]; then
   git -C "$root" reset --soft --quiet HEAD^
   echo "Error: the content of the commit (content tree ${committed_tree:-unknown}) is not the content that was verified and reviewed (content tree $content_tree): a file changed during the commit, for example by a commit hook." >&2
   echo "The commit was undone; the changes remain staged. Look at what changed, verify and review it, and run finish-feature.sh again." >&2
+  records_stop "${0##*/}" "the content of the commit (content tree ${committed_tree:-unknown}) is not the content that was verified and reviewed (content tree $content_tree): a file changed during the commit, for example by a commit hook."
   exit 1
 fi
 

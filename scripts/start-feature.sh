@@ -94,6 +94,7 @@ run_session() {
       echo "Error: Git does not ignore .agents/run/ in $session_worktree, so the final message of an unattended session would become part of the feature." >&2
       echo "Add '.agents/run/' to .gitignore there, or take over the template's .gitignore with ./scripts/sync-template.sh." >&2
       echo "The feature worktree is preserved. Then continue with: $0 $issue --resume --unattended" >&2
+      records_stop "${0##*/}" "Git does not ignore .agents/run/ in $session_worktree, so the final message of an unattended session would become part of the feature."
       exit 1
     fi
     mkdir -p "$(dirname "$final_message")"
@@ -116,12 +117,14 @@ $AGENT_UNATTENDED_PROMPT" "$final_message" || agent_status=$?
     echo "The implementer stopped because it needs you: $blocked" >&2
     echo "The feature worktree is preserved at: $session_worktree" >&2
     echo "Answer in the handoff note or change the Issue, then continue with: $0 $issue --resume" >&2
+    records_stop "${0##*/}" "The implementer stopped because it needs you: $blocked"
     exit 3
   fi
   if [[ "$agent_status" -ne 0 ]]; then
     echo "Error: the implementation agent exited with status $agent_status." >&2
     echo "The feature worktree is preserved at: $session_worktree" >&2
     echo "Continue the work with: $0 $issue --resume" >&2
+    records_stop "${0##*/}" "the implementation agent exited with status $agent_status."
     # The statuses 3, 4, and 5 have a meaning of their own in the workflow:
     # a blocked session, a failed verification, and a changed review or
     # triage. An agent that happens to exit with one of them just failed.
@@ -286,6 +289,7 @@ if [[ -z "$slug" ]]; then
     fi
     if [[ "$gh_attempt" -ge 3 ]]; then
       echo "Error: could not read the title of Issue #$issue after $gh_attempt attempts: $gh_error. Try again later, or pass a slug." >&2
+      records_stop "${0##*/}" "could not read the title of Issue #$issue after $gh_attempt attempts: $gh_error. Try again later, or pass a slug."
       exit 75
     fi
     echo "Reading Issue #$issue failed ($gh_error); trying again in $gh_wait seconds." >&2
@@ -338,6 +342,7 @@ echo
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   echo "Error: this checkout has uncommitted changes to tracked files."
   echo "Commit or stash them before starting a feature."
+  records_stop "${0##*/}" "this checkout has uncommitted changes to tracked files."
   exit 1
 fi
 
@@ -359,11 +364,13 @@ git fetch origin "$base"
 # Prevent accidental duplicate branch/worktree creation.
 if git show-ref --verify --quiet "refs/heads/$branch"; then
   echo "Error: branch already exists: $branch"
+  records_stop "${0##*/}" "branch already exists: $branch"
   exit 1
 fi
 
 if [[ -e "$worktree" ]]; then
   echo "Error: worktree path already exists: $worktree"
+  records_stop "${0##*/}" "worktree path already exists: $worktree"
   exit 1
 fi
 

@@ -72,6 +72,10 @@ def runs_of($events):
     | {run: $start.run, command: $start.command, seq: $start.seq,
        start: $start.epoch, end: ($finish | if . == null then null else .epoch end),
        status: ($finish | if . == null then null else .status end), state: state_of($finish),
+       # Where and why a run with a status other than 0 stopped; null for a
+       # run recorded before the end carried them.
+       step: ($finish | if . == null then null else .step end),
+       reason: ($finish | if . == null then null else .reason end),
        versions: ($start.versions // {}),
        events: .})
   | map(select(($since == null or .start >= $since) and ($until == null or .start < $until)))
@@ -138,7 +142,7 @@ def report_subject($kind; $subject):
            input: input_of, output: output_of})
        | sort_by(({low: 0, medium: 1, high: 2}[.level] // 3), (.role as $role | roles | index([$role]) // 99), .agent, .model, .selection)),
      by_run: ($runs | map(finished_or_open(.events; "agent-start"; "agent-call") as $c | {
-       run, command, seq, state, status,
+       run, command, seq, state, status, step, reason,
        seconds: (if .end == null then null else .end - .start end),
        input: ($c | input_of), output: ($c | output_of),
        # The verifications of the run that ran checks (a reused pass ran
@@ -155,6 +159,13 @@ def report_subject($kind; $subject):
        repair: (($calls | map(select(.role == "triage-implementer")) | length)
                + ($runs | map(select(.command == "revise-planning.sh") | .events[]
                    | select(.type == "agent-call" and .role == "project-planner")) | length))},
+     # The findings of a review that continue an earlier finding
+     # (review-feature.sh, the finding events): a fix that did not hold, or
+     # an accepted or deferred finding that the change made worse.
+     reraises: ($events | map(select(.type == "finding" and (.previous | type) == "object")) | {
+       count: length,
+       unresolved: (map(select(.previous.relation == "unresolved")) | length),
+       worsened: (map(select(.previous.relation == "worsened")) | length)}),
      interventions: ($events | map(select(.type == "intervention")) | group_by(.what)
                      | map({what: first.what, count: length})),
      resumed: ($events | map(select(.type == "resumed")) | length),
@@ -222,6 +233,12 @@ def token_text:
   else "\(.sum)" end;
 
 # The elapsed time of a subject as text: "at least" when a run has no end.
+# The step and the reason of a stop as text for a cell of a table.
+def stop_text:
+  if .status == null or .status == 0 or (.step == null and .reason == null) then ""
+  else " at \(.step // "an unknown step"): \(.reason // "no reason recorded")" | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|")
+  end;
+
 def elapsed_text:
   if .runs_without_end > 0 then "at least \(.seconds | duration) (\(.runs_without_end) runs without an end)"
   else .seconds | duration end;
@@ -236,6 +253,7 @@ def subject_markdown:
   + "| Review rounds | \(.rounds.review) |\n"
   + "| Triage | \(.rounds.triage) |\n"
   + "| Repair sessions | \(.rounds.repair) |\n"
+  + (if .kind == "feature" then "| Re-raised findings | \(.reraises.count)\(if .reraises.count > 0 then " (\(.reraises.unresolved) unresolved, \(.reraises.worsened) worsened)" else "" end) |\n" else "" end)
   + "| Input tokens | \(.input | token_text) |\n"
   + "| Output tokens | \(.output | token_text) |\n"
   + "| Verification | \(.verification.count) runs, \(.verification.seconds | duration), \(.verification.reused) reused, \(.verification.failed) failed\(if .verification.interrupted > 0 then ", \(.verification.interrupted) interrupted" else "" end) |\n"
@@ -254,7 +272,7 @@ def subject_markdown:
       + (.steps | map("| \(.name) | \(.count) | \(.seconds | duration) | \(.failed) | \(.unfinished) |\n") | add)
     end)
   + "\n### Runs\n\n| # | Command | State | Time | Input tokens | Output tokens |\n|---|---|---|---|---|---|\n"
-  + (.by_run | map("| \(.seq // "–") | \(.command) | \(.state)\(if .status != null and .status != 0 then " (\(.status))" else "" end) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
+  + (.by_run | map("| \(.seq // "–") | \(.command) | \(.state)\(if .status != null and .status != 0 then " (\(.status))" else "" end)\(stop_text) | \(.seconds | duration) | \(.input | token_text) | \(.output | token_text) |\n") | add)
   + ([.by_run[] as $run | $run.verifications[] | {seq: $run.seq, command: $run.command} + .] as $verifications
      | if ($verifications | length) == 0 then "" else
       "\n### Slowest checks\n\nThe five slowest checks of each verification that ran its checks, with the sum of the durations of all of its checks.\n\n| # | Command | Verification | Checks | Slowest checks |\n|---|---|---|---|---|\n"

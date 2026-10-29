@@ -315,6 +315,40 @@ grep -Eq '^\| 1 \| run-feature.sh \| passed, [0-9]+s \| 1s \| slow 1s, medium 0s
 # Runs recorded before the durations have no slowest checks and no section.
 if grep -Fq "### Slowest checks" <<<"$(report "$tmp/basic" 12)"; then fail "runs without durations have a section of slowest checks"; fi
 
+# Re-raised findings: the finding events of the reviews that name an earlier
+# finding, per feature, by relation.
+repo="$(setup_repo reraises)"
+run_file "$repo" r1 31 review-feature.sh 1000 1100 0
+for fields in '{"round":2,"id":"M1","severity":"major","previous":{"round":1,"id":"M1","relation":"unresolved"}}' \
+  '{"round":2,"id":"MIN1","severity":"minor","previous":{"round":1,"id":"MIN2","relation":"worsened"}}' \
+  '{"round":2,"id":"S1","severity":"suggestion"}'; do
+  event "$repo/.agents/run/records/r1.jsonl" r1 1050 finding "$fields"
+done
+run_file "$repo" r2 32 review-feature.sh 1000 1100 0
+[[ "$(report "$repo" 31 --json | jq -c '.subjects[0].reraises')" == '{"count":2,"unresolved":1,"worsened":1}' ]] ||
+  fail "the re-raises of a feature are not counted: $(report "$repo" 31 --json | jq -c '.subjects[0].reraises')"
+[[ "$(report "$repo" 32 --json | jq -c '.subjects[0].reraises')" == '{"count":0,"unresolved":0,"worsened":0}' ]] ||
+  fail "a feature without re-raises shows some"
+grep -Fq "| Re-raised findings | 2 (1 unresolved, 1 worsened) |" <<<"$(report "$repo" 31)" ||
+  fail "the Markdown does not show the re-raises"
+
 [[ ! -e "$tmp/network" ]] || fail "the report called the network"
+
+# A run that stopped shows where and why, in the Runs table and in the JSON;
+# a run that ended with status 0, or one recorded before the end carried a
+# stop, is shown as before.
+repo="$(setup_repo stops)"
+run_file "$repo" s1 14 review-feature.sh 1000 1100 0
+run_file "$repo" s2 14 run-feature.sh 2000 2100 1
+event "$repo/.agents/run/records/s3.jsonl" s3 3000 run-start '{"kind":"feature","subject":"14","command":"finish-feature.sh","seq":null,"versions":{}}'
+event "$repo/.agents/run/records/s3.jsonl" s3 3100 run-end '{"status":1,"step":"finish-feature.sh","reason":"the commit was not created | a hook\nrefused it"}'
+json="$(report "$repo" 14 --json)"
+[[ "$(jq -c '.subjects[0].by_run | map([.step, .reason])' <<<"$json")" == '[[null,null],[null,null],["finish-feature.sh","the commit was not created | a hook\nrefused it"]]' ]] ||
+  fail "the runs of the JSON lack the step and the reason of a stop: $(jq -c '.subjects[0].by_run' <<<"$json")"
+markdown="$(report "$repo" 14)"
+grep -Fq '| finish-feature.sh | failed (1) at finish-feature.sh: the commit was not created \| a hook refused it |' <<<"$markdown" ||
+  fail "the Runs table does not show the step and the reason of a stop: $markdown"
+grep -Fq '| review-feature.sh | completed |' <<<"$markdown" || fail "a run that ended with status 0 is shown otherwise"
+grep -Fq '| run-feature.sh | failed (1) |' <<<"$markdown" || fail "a run without a recorded stop is shown otherwise"
 
 echo "report-runs tests passed"

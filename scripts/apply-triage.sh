@@ -71,6 +71,7 @@ prompt_file="$root/.agents/prompts/triage-implementer.md"
 
 if [[ ! -f "$triage_input" ]]; then
   echo "Error: triage artifact not found: $triage_input"
+  records_stop "${0##*/}" "triage artifact not found: $triage_input"
   exit 1
 fi
 
@@ -80,11 +81,13 @@ triage_path="$triage_dir/$(basename "$triage_input")"
 if [[ "$triage_path" != "$root/.agents/triage/"*.json ]]; then
   echo "Error: triage artifact must match .agents/triage/*.json (the generated .md report is not an input)."
   echo "Received: $triage_path"
+  records_stop "${0##*/}" "triage artifact must match .agents/triage/*.json (the generated .md report is not an input)."
   exit 1
 fi
 
 if [[ ! -f "$prompt_file" ]]; then
   echo "Error: triage implementer prompt not found: $prompt_file"
+  records_stop "${0##*/}" "triage implementer prompt not found: $prompt_file"
   exit 1
 fi
 
@@ -105,15 +108,18 @@ model="$AGENT_MODEL"
 source_review_relative="$(triage_source_review "$triage_path")"
 if [[ -z "$source_review_relative" ]]; then
   echo "Error: the file is not a triage/v1 artifact with a source review: $triage_input"
+  records_stop "${0##*/}" "the file is not a triage/v1 artifact with a source review: $triage_input"
   exit 1
 fi
 if [[ ! "$source_review_relative" =~ ^\.agents/reviews/[^/]+\.json$ ]]; then
   echo "Error: source review must match .agents/reviews/*.json: $source_review_relative"
+  records_stop "${0##*/}" "source review must match .agents/reviews/*.json: $source_review_relative"
   exit 1
 fi
 source_review_path="$root/$source_review_relative"
 if [[ ! -f "$source_review_path" ]]; then
   echo "Error: source review artifact not found: $source_review_relative"
+  records_stop "${0##*/}" "source review artifact not found: $source_review_relative"
   exit 1
 fi
 
@@ -131,6 +137,7 @@ review_path="$source_review_path"
 review_relative="$source_review_relative"
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -166,27 +173,32 @@ branch="$(git branch --show-current)"
 if [[ "$branch" != feature/* ]]; then
   echo "Error: apply-triage.sh must run in an existing feature worktree."
   echo "Current branch: $branch"
+  records_stop "${0##*/}" "apply-triage.sh must run in an existing feature worktree."
   exit 1
 fi
 
 if [[ "$branch" != feature/${source_issue}-* ]]; then
   echo "Error: current branch does not match source Issue #$source_issue."
   echo "Current branch: $branch"
+  records_stop "${0##*/}" "current branch does not match source Issue #$source_issue."
   exit 1
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: GitHub CLI 'gh' is not installed."
+  records_stop "${0##*/}" "GitHub CLI 'gh' is not installed."
   exit 1
 fi
 if ! gh auth status >/dev/null 2>&1; then
   echo "Error: GitHub CLI is not authenticated."
   echo "Run: gh auth login"
+  records_stop "${0##*/}" "GitHub CLI is not authenticated."
   exit 1
 fi
 resolved_issue="$(gh issue view "$source_issue" --json number --template '{{.number}}')"
 if [[ "$resolved_issue" != "$source_issue" ]]; then
   echo "Error: could not validate source Issue #$source_issue."
+  records_stop "${0##*/}" "could not validate source Issue #$source_issue."
   exit 1
 fi
 
@@ -334,14 +346,17 @@ review_signature_after="$(file_signature "$source_review_path")"
 triage_signature_after="$(file_signature "$triage_path")"
 
 protected_artifact_changed=0
+protected_artifact_reason=""
 if [[ "$review_signature_before" != "$review_signature_after" ]]; then
   echo "Error: implementation agent modified the source review artifact."
   protected_artifact_changed=1
+  protected_artifact_reason="implementation agent modified the source review artifact."
 fi
 
 if [[ "$triage_signature_before" != "$triage_signature_after" ]]; then
   echo "Error: implementation agent modified the approved triage artifact."
   protected_artifact_changed=1
+  protected_artifact_reason="implementation agent modified the approved triage artifact."
 fi
 
 # The fixed content must pass verification. A pass that the agent's own run
@@ -369,6 +384,7 @@ if [[ "$protected_artifact_changed" -ne 0 ]]; then
   # Status 5: a session changed the review or the triage it works from. It
   # is not tried again and not continued; the mark is removed.
   rm -f "$started_mark"
+  records_stop "${0##*/}" "$protected_artifact_reason"
   exit 5
 fi
 
@@ -378,6 +394,7 @@ if [[ "$agent_status" -eq 0 && -n "$blocked" ]]; then
   if [[ "$verification_status" -ne 0 ]]; then
     echo "Repository verification also failed with status $verification_status." >&2
   fi
+  records_stop "${0##*/}" "The implementer stopped because it needs you: $blocked"
   exit 3
 fi
 
@@ -387,6 +404,7 @@ if [[ "$agent_status" -ne 0 ]]; then
   if [[ "$verification_status" -ne 0 ]]; then
     echo "Repository verification also failed with status $verification_status."
   fi
+  records_stop "${0##*/}" "implementation agent exited with status $agent_status."
   # The statuses 3, 4, and 5 have a meaning of their own in the workflow:
   # a blocked session, a failed verification, and a changed review or
   # triage. An agent that happens to exit with one of them just failed.
@@ -398,6 +416,7 @@ if [[ "$verification_status" -ne 0 ]]; then
   echo "Error: repository verification failed with status $verification_status."
   # Status 4 tells a caller that the fixes were made and the verification
   # failed, apart from a failed agent.
+  records_stop "${0##*/}" "repository verification failed with status $verification_status."
   exit 4
 fi
 

@@ -1,0 +1,22 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "3859ec4748c58c67b6add673a533338603fdd7fa",
+  "commit": {
+    "branch": "feature/217-give-every-later-review",
+    "parent": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1",
+    "base": "1b44dd4d7578ffe8d9e8e543501ff547e693c7c1"
+  },
+  "review": {
+    "round": 5,
+    "verdict": "PASS WITH MINOR FINDINGS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".agents/prompts/reviewer.md: the file defines or carries out the workflow and its gate",
+    ".agents/schemas/feature-review.schema.json: the file defines or carries out the workflow and its gate",
+    "scripts/lib/review-data.sh: the file defines or carries out the workflow and its gate",
+    "scripts/review-feature.sh: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: This changes shared review validation, reviewer input, and run reporting that feature workflows depend on. The change fits the documented architecture but expands shared workflow behavior. "
+  ],
+  "explanation": "Issue #217: Give every later review round the earlier decisions, and make a re-raised finding name its predecessor. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

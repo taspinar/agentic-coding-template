@@ -53,6 +53,25 @@ _review_data_rules='
        else "architecture_impact.checked_against must be a list of the ADRs and rules it was checked against" end)
     end;
 
+  # The earlier finding that a finding continues, as the reviewer declares
+  # it: null or absent for a new finding. Input: the value of previous.
+  def previous_rules($where):
+    if . == null then empty
+    elif type != "object" then "\($where): previous must be null or an object with round, id, relation, and reason"
+    else
+      unexpected(["id", "reason", "relation", "round"]; "\($where): previous"),
+      (if (.round | positive_integer) then empty else "\($where): previous.round must be a positive integer" end),
+      (if (.id | type) == "string" and (.id | test("^(C|M|MIN|S)[1-9][0-9]*$")) then empty
+       else "\($where): previous.id must be a finding id such as M1" end),
+      (if (.relation | IN("unresolved", "worsened")) then empty
+       else "\($where): previous.relation must be unresolved or worsened" end),
+      (if .reason == null or (.reason | type) == "string" then empty
+       else "\($where): previous.reason must be a string" end),
+      (if .relation == "worsened" and (.reason | nonempty | not) then
+         "\($where): a worsened finding needs a reason that says how the change made it worse"
+       else empty end)
+    end;
+
   # Input: {verdict, findings, limitations}, and for a feature review
   # architecture_impact.
   def review_result_rules:
@@ -72,12 +91,13 @@ _review_data_rules='
            if ($f | type) != "object" then
              "finding \($n) is not an object"
            else
-             ($f | unexpected(["evidence", "impact", "recommendation", "severity", "title"]; "finding \($n)")),
+             ($f | unexpected(["evidence", "impact", "previous", "recommendation", "severity", "title"]; "finding \($n)")),
              (if ($f.severity | IN("critical", "major", "minor", "suggestion")) then empty
               else "finding \($n) has an invalid severity" end),
              (("title", "evidence", "impact", "recommendation") as $field |
                if ($f[$field] | nonempty) then empty
-               else "finding \($n) has an empty \($field)" end)
+               else "finding \($n) has an empty \($field)" end),
+             ($f.previous | previous_rules("finding \($n)"))
            end),
          ([.findings[] | objects | .severity] as $severities
           | ($severities | map(select(. == "critical" or . == "major")) | length) as $blocking
@@ -191,7 +211,8 @@ feature_review_result_errors() {
 
 # review_result_with_ids <result-file>
 # Prints the validated result, reduced to its known fields, with a stable
-# identifier per finding: C1, M1, MIN1, S1.
+# identifier per finding: C1, M1, MIN1, S1. A finding keeps previous only
+# when it names an earlier finding.
 review_result_with_ids() {
   jq '
     def prefix: {"critical": "C", "major": "M", "minor": "MIN", "suggestion": "S"}[.];
@@ -208,21 +229,70 @@ review_result_with_ids() {
               evidence: $f.evidence,
               impact: $f.impact,
               recommendation: $f.recommendation
-            }]
+            } + (if ($f.previous | type) == "object" then {previous: $f.previous} else {} end)]
         ) | .out
       )
     } + (if has("architecture_impact") then {architecture_impact} else {} end)
   ' "$1"
 }
 
+# review_earlier_decisions <review-json> <issue> <round>
+# Prints, as JSON, the rounds of a feature before <round>: {rounds: [<round>,
+# ...], findings: [{round, id, severity, title, decision, rationale}, ...]}.
+# They are the review artifacts next to <review-json> (which need not exist
+# yet), of the same branch and Issue. decision and rationale come from the
+# newest valid, approved triage of a round (review_approved_triage), and are
+# null when the round has none: such a finding counts as to be fixed. A
+# review outside .agents/reviews/ has no earlier rounds.
+review_earlier_decisions() {
+  local dir
+  local name
+  local prefix
+  local root
+  local candidate
+  local triage
+
+  dir="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || dir=""
+  name="$(basename "$1")"
+  prefix="${name%-[0-9][0-9].json}"
+  if [[ "$dir" != */.agents/reviews || "$prefix" == "$name" || ! "$2" =~ ^[0-9]+$ || ! "$3" =~ ^[0-9]+$ ]]; then
+    echo '{"rounds": [], "findings": []}'
+    return 0
+  fi
+  root="${dir%/.agents/reviews}"
+
+  for candidate in "$dir/$prefix"-[0-9][0-9].json; do
+    [[ -f "$candidate" && "$candidate" != "$dir/$name" ]] || continue
+    review_data_is_json "$candidate" || continue
+    triage="$(review_approved_triage "$root" "$candidate")"
+    jq -c --argjson issue "$2" --argjson before "$3" --slurpfile triage "${triage:-/dev/null}" '
+      select(type == "object" and .schema == "review/v1" and (.kind // "feature") == "feature"
+             and .issue == $issue and (.round | type) == "number" and .round < $before
+             and (.findings | type) == "array")
+      | .round as $round
+      | (($triage[0].decisions // []) | map({(.finding_id): .}) | add // {}) as $decisions
+      | {round: $round,
+         findings: [.findings[] | objects | {round: $round, id, severity, title,
+                    decision: ($decisions[.id].decision // null),
+                    rationale: ($decisions[.id].rationale // null)}]}' "$candidate"
+  done | jq -cs '{rounds: (map(.round) | unique), findings: (sort_by(.round) | map(.findings[]))}'
+}
+
 # review_artifact_errors <review-json>: rules for a stored review artifact.
+# A finding that names an earlier finding (previous) is checked against the
+# earlier rounds of the feature and their approved triages.
 review_artifact_errors() {
+  local earlier='{"rounds": [], "findings": []}'
+
   review_data_is_json "$1" || {
     echo "the review is not exactly one JSON value"
     return 0
   }
+  if jq -e 'any(.findings[]? | objects; (.previous | type) == "object")' "$1" >/dev/null 2>&1; then
+    earlier="$(review_earlier_decisions "$1" "$(jq -r '.issue' "$1")" "$(jq -r '.round' "$1")")"
+  fi
 
-  jq -r "$_review_data_rules"'
+  jq -r --argjson earlier "$earlier" "$_review_data_rules"'
     if type != "object" or .schema != "review/v1" then
       "the file is not a review/v1 artifact"
     else
@@ -275,7 +345,28 @@ review_artifact_errors() {
               and ((.id | sub("[0-9]+$"; "")) == ({"critical": "C", "major": "M", "minor": "MIN", "suggestion": "S"}[.severity])) then empty
            else "finding id \(.id | tostring) does not match its severity \(.severity | tostring)" end),
          ([.findings[] | .id] as $ids
-          | if ($ids | unique | length) != ($ids | length) then "finding ids must be unique" else empty end)
+          | if ($ids | unique | length) != ($ids | length) then "finding ids must be unique" else empty end),
+         # The predecessor must be a finding of an earlier round. Only a
+         # finding that was to be fixed can be unresolved, and it keeps its
+         # severity; an accepted or deferred one comes back only when the
+         # change made it worse. Either way the earlier decision stands.
+         (.round as $round | .findings[]
+          | select((.previous | type) == "object" and (.previous.round | positive_integer))
+          | .id as $id | .previous as $p
+          | ($earlier.findings | map(select(.round == $p.round and .id == $p.id)) | first) as $before
+          | if ($round | positive_integer) and $p.round >= $round then
+              "finding \($id) names round \($p.round) as its predecessor, which is not an earlier round"
+            elif ($earlier.rounds | any(.[]; . == $p.round) | not) then
+              "finding \($id) names round \($p.round) as its predecessor, but the feature has no review of that round"
+            elif $before == null then
+              "finding \($id) names \($p.id) of round \($p.round) as its predecessor, but that round has no such finding"
+            elif $p.relation == "unresolved" and ($before.decision | IN("ACCEPT", "DEFER")) then
+              "finding \($id) is unresolved \($p.id) of round \($p.round), which the approved triage decided \($before.decision); an accepted or deferred finding comes back only as worsened, with a reason"
+            elif $p.relation == "unresolved" and .severity != $before.severity then
+              "finding \($id) is unresolved \($p.id) of round \($p.round), which was \($before.severity), but is \(.severity); an unresolved finding keeps the severity of its predecessor"
+            elif $p.relation == "worsened" and ($before.decision | IN("ACCEPT", "DEFER") | not) then
+              "finding \($id) is worsened \($p.id) of round \($p.round), which was to be fixed (\($before.decision // "not triaged")); only an accepted or deferred finding comes back as worsened, one to fix comes back as unresolved with its severity"
+            else empty end)
        else empty end),
       ({
         verdict,
@@ -288,15 +379,23 @@ review_artifact_errors() {
   ' "$1"
 }
 
+# The earlier finding a finding continues, as text. Input: its previous.
+_review_data_previous_text='
+  def previous_text:
+    "\(.id) of round \(.round), \(.relation)"
+    + (if (.reason | type) == "string" and (.reason | test("\\S")) then ": \(.reason)" else "" end);
+'
+
 # review_render_markdown <review-json> <source-name>
 review_render_markdown() {
-  jq -r --arg source "$2" '
+  jq -r --arg source "$2" "$_review_data_previous_text"'
     def section($severity; $heading):
       "## \($heading)\n\n" +
       ([.findings[] | select(.severity == $severity)] as $items
        | if ($items | length) == 0 then "None.\n"
          else ($items | map(
            "### \(.id). \(.title)\n\n" +
+           (if (.previous | type) == "object" then "**Continues:** \(.previous | previous_text)\n\n" else "" end) +
            "**Evidence:** \(.evidence)\n\n" +
            "**Impact:** \(.impact)\n\n" +
            "**Recommended action:** \(.recommendation)\n"
@@ -569,4 +668,34 @@ review_latest_triage() {
     fi
   done
   printf '%s' "$best"
+}
+
+# review_approved_triage <root> <review-json>
+# Prints the newest triage of a review that is a valid, approved triage of it
+# (triage_artifact_errors), or nothing. A newer triage artifact that is
+# invalid, or not approved, does not hide an earlier approved one: the
+# decisions the owner approved stay in force until a valid later triage
+# replaces them.
+review_approved_triage() {
+  local base
+  local number
+  local newest=0
+  local candidate
+  local candidates=()
+
+  base="$1/.agents/triage/$(basename "$2" .json)"
+  [[ ! -f "$base-triage.json" ]] || { candidates[1]="$base-triage.json"; newest=1; }
+  for candidate in "$base-triage-"[0-9][0-9].json; do
+    [[ -f "$candidate" ]] || continue
+    number="${candidate%.json}"
+    number="${number##*-}"
+    candidates[10#$number]="$candidate"
+    ((10#$number <= newest)) || newest=$((10#$number))
+  done
+  for ((number = newest; number >= 1; number--)); do
+    candidate="${candidates[$number]:-}"
+    [[ -n "$candidate" && -z "$(triage_artifact_errors "$candidate" "$2")" ]] || continue
+    printf '%s' "$candidate"
+    return 0
+  done
 }

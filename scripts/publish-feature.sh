@@ -39,6 +39,7 @@ usage() {
 
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -193,6 +194,7 @@ if [[ "$closes" -eq 0 ]]; then
     printf '%s\n' "$closing_commits" | sed 's/^/  /' >&2
     echo "GitHub closes the Issue when such a commit is merged, whatever the pull request says." >&2
     echo "Reword the commit (for example 'Refs #$issue'), or complete the feature and commit it with ./scripts/finish-feature.sh. Nothing was pushed." >&2
+    records_stop "${0##*/}" "this work may not close Issue #$issue ($not_closing), but a commit of the branch says that it does:"
     exit 1
   fi
 fi
@@ -307,6 +309,11 @@ if [[ "$attribution" == "disabled" ]]; then
   fi
   if [[ -n "$attributed_commits" || -n "$attributed_text" ]]; then
     echo "Nothing was pushed." >&2
+    if [[ -n "$attributed_commits" ]]; then
+      records_stop "${0##*/}" "agent attribution is disabled ($ATTRIBUTION_CONFIG), but a commit of this branch names an agent as a co-author:"
+    else
+      records_stop "${0##*/}" "agent attribution is disabled ($ATTRIBUTION_CONFIG), but the pull request description would carry it:"
+    fi
     exit 1
   fi
 fi
@@ -476,6 +483,7 @@ if [[ "$status" -ne 0 ]]; then
   echo "Error: a check of the pull request failed or did not finish. Do not merge it." >&2
   echo "  See which check failed, with its link:  gh pr checks $branch" >&2
   echo "  Fix it in this worktree, then review, finish, and publish again." >&2
+  records_stop "${0##*/}" "a check of the pull request failed or did not finish. Do not merge it."
   exit 1
 fi
 

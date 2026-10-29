@@ -198,6 +198,10 @@ experience_record() {
         | select($verifications[$i + 1:] | any(.status == 0 and (.groups == "all" or .groups == $groups))))
         | length) as $repaired
     | ($events | map(select(.type == "note")) | last) as $note
+    # Why the run stopped, as the script that stopped recorded it
+    # (lib/records.sh, records_stop); a run recorded before that has only the
+    # notes of run-feature.sh.
+    | ($events | map(select(.type == "stop")) | last // $note) as $stop
     | ($events | map(select(.type == "completion-gate"))) as $gates
     | [ ($round_reviews[] as $review | ($review.findings // [])[] as $finding
          | ($decisions | map(select(.finding_id == $finding.id and (._triage | contains("review-\($review.round | tostring | if length < 2 then "0" + . else . end)")))) | first) as $decision
@@ -216,7 +220,7 @@ experience_record() {
            what: "The run stopped with status \($status)\(if $status == 3 then ", for a decision of the human" elif $status == 130 then ", interrupted" else "" end)",
            evidence: ([{type: "run-record", ref: "\($run)#run-end"}]
                       + (if $status == 3 and $handoff != "" then [{type: "handoff", ref: $handoff}] else [] end))}
-          + (if $note != null and ($note.reason // "") != "" then {circumstances: "\($note.step): \($note.reason)"} else {} end)
+          + (if $stop != null and ($stop.reason // "") != "" then {circumstances: "\($stop.step): \($stop.reason)"} else {} end)
          else empty end),
         ($gates | to_entries[] | .key as $i | .value as $gate
          | ($gate.check // ($i + 1)) as $check
@@ -244,7 +248,7 @@ experience_record() {
          findings: ($round_reviews | map(.findings[]?.severity) | group_by(.) | map({key: .[0], value: length}) | from_entries),
          decisions: ($decisions | map(.decision) | group_by(.) | map({key: .[0], value: length}) | from_entries),
          verification: {runs: ($verifications | length), failed: ($failed | length), repaired: $repaired},
-         stop: (if $status == 0 then null else {status: $status, step: $note.step?, reason: $note.reason?} end),
+         stop: (if $status == 0 then null else {status: $status, step: $stop.step?, reason: $stop.reason?} end),
          completion_gates: ($gates | to_entries | map(.key as $i | .value | {check: (.check // ($i + 1)), sessions, session, status, content})),
          completion: (if ($completion | type) == "object" then
            {status: $completion.status, criteria: (($completion.criteria // []) | length),

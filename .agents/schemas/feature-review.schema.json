@@ -26,7 +26,8 @@
           "title",
           "evidence",
           "impact",
-          "recommendation"
+          "recommendation",
+          "previous"
         ],
         "properties": {
           "severity": {
@@ -49,6 +50,41 @@
           },
           "recommendation": {
             "type": "string"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "round",
+                  "id",
+                  "relation",
+                  "reason"
+                ],
+                "properties": {
+                  "round": {
+                    "type": "integer"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "relation": {
+                    "type": "string",
+                    "enum": [
+                      "unresolved",
+                      "worsened"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
           }
         }
       }

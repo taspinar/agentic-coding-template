@@ -71,6 +71,7 @@ usage() {
 
 fail() {
   echo "Error: $*" >&2
+  records_stop "${0##*/}" "$*"
   exit 1
 }
 
@@ -108,6 +109,8 @@ stop() {
   local reason="$2"
 
   shift 2
+  # The step where the run stopped, as the steps of the run are named.
+  records_stop "${run_step:-run-feature.sh}" "$reason"
   {
     echo
     echo "run-feature.sh stopped: $reason"
@@ -266,6 +269,7 @@ retrying() {
     step_started="$(date +%s)"
     step_id="$(records_id)"
     records_step_start "$step_id" "$title"
+    run_step="$title"
     (cd "$worktree" && "$@" </dev/null) 2>&1 | tee "$log" || step_status=$?
     records_step "$title" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
     case "$step_status" in
@@ -437,6 +441,7 @@ step_once() {
   step_started="$(date +%s)"
   step_id="$(records_id)"
   records_step_start "$step_id" "$title"
+  run_step="$title"
   (cd "$worktree" && "$@" </dev/null) || step_status=$?
   records_step "$title" "$step_status" "$(($(date +%s) - step_started))" "$step_id"
   [[ "$step_status" -eq 0 ]] || note "$title" "failed" "the step exited with status $step_status" "Stopping"
@@ -538,6 +543,7 @@ if [[ -z "$worktree" ]]; then
   step_started="$(date +%s)"
   step_id="$(records_id)"
   records_step_start "$step_id" "implementation"
+  run_step="implementation"
   # Status 75: reading the Issue failed for a moment, before a worktree
   # existed. That is tried again, like any temporary failure.
   first_attempt=0
@@ -984,6 +990,7 @@ if uncommitted; then
   done
 
   # ---------------------------------------------------------------- finish
+  run_step="commit"
   title="$(gh issue view "$issue" --json title --jq '.title' </dev/null)" ||
     stop 1 "could not read the title of Issue #$issue for the commit message." \
       "cd \"$worktree\"" "./scripts/finish-feature.sh $issue \"<commit summary>\""

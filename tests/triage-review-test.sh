@@ -788,4 +788,25 @@ repo="$(setup_repo comments-unreadable)"
 MOCK_GH_COMMENTS_FAIL=1 expect_no_triage "$repo" "the comments of the Issue cannot be read" "$review"
 [[ ! -e "$repo.log" ]] || fail "the triage agent started without the comments of the Issue"
 
+# A finding that continues an earlier one is shown with its predecessor, and
+# the triage agent gets it with the findings; a review whose predecessor does
+# not exist is refused.
+predecessor_findings='[
+  {"id": "C1", "severity": "critical", "title": "Correctness regression is unresolved", "evidence": "src/a.sh:3", "impact": "Wrong result.", "recommendation": "Fix the branch.",
+   "previous": {"round": 1, "id": "C1", "relation": "unresolved", "reason": "The branch still returns early."}},
+  {"id": "MIN1", "severity": "minor", "title": "Missing edge-case coverage", "evidence": "tests/a.sh:9", "impact": "A regression would go unnoticed.", "recommendation": "Add a test."},
+  {"id": "S1", "severity": "suggestion", "title": "Rename local helper", "evidence": "src/a.sh:8", "impact": "Readability.", "recommendation": "Rename it."}
+]'
+repo="$(setup_repo predecessor 2)"
+round2=".agents/reviews/feature-5-test-review-02.json"
+jq --argjson findings "$predecessor_findings" '.findings = $findings' "$repo/$round2" >"$repo/$round2.tmp"
+mv "$repo/$round2.tmp" "$repo/$round2"
+run_triage "$repo" n "$round2" && fail "a review whose predecessor round does not exist was triaged: $(cat "$repo.out")"
+grep -Fq "the feature has no review of that round" "$repo.out" || fail "the unknown predecessor was not reported: $(cat "$repo.out")"
+jq '.round = 1 | .findings |= map(del(.previous))' "$repo/$round2" >"$repo/.agents/reviews/feature-5-test-review-01.json"
+run_triage "$repo" n "$round2" || true
+grep -Fqx "  Continues: C1 of round 1, unresolved: The branch still returns early." "$repo.out" ||
+  fail "the proposal does not show the predecessor: $(cat "$repo.out")"
+grep -Fq '"relation": "unresolved"' "$repo.log.stdin" || fail "the triage agent was not given the predecessor"
+
 echo "triage-review tests passed"

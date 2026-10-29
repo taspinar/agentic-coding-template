@@ -145,6 +145,20 @@ for nothing in 'Remaining: none.' '**Remaining:** nothing' '- **Remaining:** n/a
   '**Remaining:** -' 'Remaining: nothing remains.'; do
   expect_remaining "nothing remains: $nothing" "$nothing\n" ""
 done
+# A labelled line that says a category has nothing left is not work (#218);
+# a label followed by anything else still is.
+for nothing in 'FIX_NOW findings: none.' 'Open findings: nothing' '- Manual steps: n/a' \
+  '- **FIX_NOW findings:** none' 'Follow-ups: no.' 'Deferred: -'; do
+  expect_remaining "a labelled none line: $nothing" "**Remaining:**\n$nothing\n" ""
+done
+expect_remaining "a labelled none line after the label" '**Remaining:** FIX_NOW findings: none.\n' ""
+expect_remaining "labelled work" \
+  'Remaining: Plan steps 3 to 9\n' "Plan steps 3 to 9|"
+expect_remaining "labelled work in a list" \
+  '## Remaining\n- Tests: the integration test\n- Plan steps: 3 to 9\n- the documentation\n- Findings: none of them fixed yet\n- Docs: no section yet\n' \
+  "Tests: the integration test|Plan steps: 3 to 9|the documentation|Findings: none of them fixed yet|Docs: no section yet|"
+expect_remaining "labelled none lines beside work" \
+  '**Remaining:**\n- FIX_NOW findings: none.\n- step 3\n' "step 3|"
 # The clarification line of the implementer is a part of its own, not work
 # that remains.
 expect_remaining "the clarification line after the list" \
@@ -269,6 +283,11 @@ expect_gate "a complete record against a note with remaining work" partial \
   "remaining: steps 3 to 9."
 printf 'Issue 7 is complete.\n' >"$note"
 expect_gate "a complete record with a note that agrees" complete
+# A labelled none line under Remaining says that a category has nothing left,
+# so the gate agrees with the record (#218).
+printf '**Remaining:**\nFIX_NOW findings: none.\n' >"$note"
+expect_gate "a complete record with a labelled none line under Remaining" complete
+printf 'Issue 7 is complete.\n' >"$note"
 
 # The statement that finish-feature.sh puts in the commit message.
 [[ "$(completion_commit_lines "$root" 7)" == "Completion: complete
