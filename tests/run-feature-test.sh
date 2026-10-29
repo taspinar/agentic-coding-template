@@ -260,6 +260,13 @@ expect_stopped() {
   }
   grep -Fq "Then run again: ./scripts/run-feature.sh 2" "$repo.out" ||
     fail "$(basename "$repo"): the command that continues was not given"
+  # The end of the run records the step where it stopped and the reason it
+  # gave.
+  local end
+  end="$(cat "$repo"/.agents/run/records/*.jsonl | jq -c -s 'map(select(.type == "run-end")) | sort_by(.epoch) | last')"
+  jq -e --argjson status "$expected" --arg reason "$reason" \
+    '.status == $status and (.step | type == "string" and length > 0) and (.reason | contains($reason))' <<<"$end" >/dev/null ||
+    fail "$(basename "$repo"): the end of the run lacks the step or the reason of the stop: $end"
   [[ "$(pull_requests "$repo")" -eq 0 ]] || fail "$(basename "$repo"): a stopped run opened a pull request"
   [[ -d "$repo-2-thing" ]] || fail "$(basename "$repo"): the worktree of a stopped run is gone"
 }
@@ -624,6 +631,8 @@ printf '%s\n' "question='does the Issue override ADR 002?'; $ask; reply=\"BLOCKE
 run_feature "$repo" 2 thing
 expect_stopped "$repo" 3 "the implementer needs a decision of yours"
 grep -Fq "the Issue contradicts ADR 002" "$repo.out" || fail "the question of the implementer was not shown"
+[[ "$(cat "$repo"/.agents/run/records/*.jsonl | jq -r 'select(.type == "run-end") | .step')" == "implementation" ]] ||
+  fail "the stop of a blocked implementation does not name its step"
 expect_sessions "$repo" 1 0 0 0
 grep -Fq "| blocked |" <<<"$(log_of "$repo")" || fail "the blocked session is not in the log of the feature"
 # The run records what a script can see, without claiming that a person did
@@ -1092,6 +1101,15 @@ if grep -Fq "## Verification of the content under review" "$repo.control/reviewe
   fail "the closing round was not made on the full verification"
 grep -q "^Review: round 3, PASS" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not rest on the closing round"
 grep -Fqx "Risk: high" <<<"$(git -C "$repo-2-thing" log -1 --format=%B)" || fail "the commit does not record the high level"
+# The complete closing round gets the decisions of the approved triages of
+# every earlier round, not only those of the round before.
+grep -Fqx "## Decisions of the earlier rounds" "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the earlier decisions"
+grep -Eq '^- Round 1, M1 \[major\] .+: FIX_NOW — It is wrong\.$' "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the decision to fix of round 1"
+grep -Eq '^- Round 1, MIN1 \[minor\] .+: DEFER — Later\.$' "$repo.control/reviewer-3.context" ||
+  fail "the closing round was not given the deferred finding of round 1"
+grep -Fqx -- "- Round 2: no findings." "$repo.control/reviewer-3.context" || fail "the closing round was not told about round 2"
 # The same partial check when round 2 is a complete review by policy: it is
 # still an intermediate round, and a complete review on the full
 # verification follows before the commit.

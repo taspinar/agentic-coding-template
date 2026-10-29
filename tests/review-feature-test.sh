@@ -105,6 +105,22 @@ expect_no_review() {
   fi
 }
 
+# expect_no_review_round <repo> <round> <description> [args...]: the review
+# fails and stores no artifact of that round.
+expect_no_review_round() {
+  local repo="$1"
+  local round="$2"
+  local description="$3"
+  shift 3
+
+  if run_review "$repo" 7 "$@"; then
+    cat "$repo.out" >&2
+    fail "expected failure: $description"
+  fi
+  [[ ! -e "$repo/.agents/reviews/feature-7-marker-review-$(printf '%02d' "$round").json" ]] ||
+    fail "a review was stored although: $description"
+}
+
 # The script stores the validated result as JSON with script-assigned finding
 # identifiers and a generated report; the reviewer runs read-only and receives
 # the Issue and the complete diff on standard input.
@@ -435,6 +451,54 @@ run_review "$repo" 7 || fail "a complete third round failed"
 third="$repo/.agents/reviews/feature-7-marker-review-03.json"
 [[ "$(jq -r '.scope.kind' "$third")" == "full" ]] || fail "a round without --changes is not a complete review"
 grep -Fq "untracked marker" "$repo.log.stdin" || fail "a complete later round was not given the complete diff"
+# Every later round, a complete one too, gets the decisions of the approved
+# triages of all earlier rounds; a round without an approved triage is named
+# without its findings.
+grep -Fq "## Decisions of the earlier rounds" "$repo.log.stdin" || fail "a complete later round was not given the earlier decisions"
+grep -Fq -- "- Round 1, M1 [major] Marker content is unchecked: FIX_NOW — The content must be checked." "$repo.log.stdin" ||
+  fail "a complete later round was not given the decision to fix of round 1"
+grep -Fq -- "- Round 1, MIN1 [minor] Marker name is vague: ACCEPT — The name is fine." "$repo.log.stdin" ||
+  fail "a complete later round was not given the accepted finding of round 1"
+grep -Fq -- "- Round 2: no approved triage; its findings count as to be fixed (.agents/reviews/feature-7-marker-review-02.json)." "$repo.log.stdin" ||
+  fail "a later round was not told that round 2 has no approved triage"
+grep -Fq 'under "Decisions of the earlier rounds"' "$repo.log" || fail "the prompt of a later round does not point to the earlier decisions"
+
+# A finding that names an earlier finding (previous) is checked against the
+# approved triage: an accepted finding cannot come back as unresolved, and
+# the round fails without a review. A finding to fix that is unresolved, and
+# an accepted one that the change made worse, are stored with their
+# predecessor, and the run record notes each re-raise.
+reraise_result() {
+  printf '{"architecture_impact": {"level": "minor", "rationale": "Stays within the accepted architecture.", "checked_against": []}, "verdict": "CHANGES_REQUIRED", "limitations": "", "findings": [%s]}' "$1"
+}
+with_previous() {
+  printf '{"severity": "%s", "title": "%s", "evidence": "marker.txt:1", "impact": "The marker is never read.", "recommendation": "Read the marker.", "previous": %s}' "$1" "$2" "$3"
+}
+repo="$(setup_repo reraise)"
+printf '.agents/run/\n' >>"$repo/.gitignore"
+git -C "$repo" add .gitignore
+git -C "$repo" commit -qm "Keep run records"
+run_review "$repo" 7 || fail "the complete first round failed"
+add_first_triage "$repo"
+printf 'the fix\n' >>"$repo/feature.txt"
+MOCK_OUTPUT="$(reraise_result "$(with_previous major "Marker name is still vague" '{"round": 1, "id": "MIN1", "relation": "unresolved", "reason": ""}')")" \
+  expect_no_review_round "$repo" 2 "an accepted finding came back as unresolved"
+grep -Fq "finding M1 is unresolved MIN1 of round 1, which the approved triage decided ACCEPT" "$repo.out" ||
+  fail "the refused re-raise was not reported: $(cat "$repo.out")"
+MOCK_OUTPUT="$(reraise_result "$(with_previous major "Marker content is still unchecked" '{"round": 1, "id": "M1", "relation": "unresolved", "reason": ""}'), $(with_previous minor "Marker name is now misleading" '{"round": 1, "id": "MIN1", "relation": "worsened", "reason": "The fix renamed it to something wrong."}'), $(with_previous suggestion "A new idea" null)")" \
+  run_review "$repo" 7 || {
+  cat "$repo.out" >&2
+  fail "a review with re-raised findings failed"
+}
+second="$repo/.agents/reviews/feature-7-marker-review-02.json"
+[[ "$(jq -c '[.findings[] | [.id, .previous.id, .previous.relation]]' "$second")" == '[["M1","M1","unresolved"],["MIN1","MIN1","worsened"],["S1",null,null]]' ]] ||
+  fail "the re-raised findings were not stored with their predecessors: $(jq -c '.findings' "$second")"
+[[ "$(jq '.findings[2] | has("previous")' "$second")" == "false" ]] || fail "a new finding was stored with previous"
+grep -Fq "**Continues:** MIN1 of round 1, worsened: The fix renamed it to something wrong." "${second%.json}.md" ||
+  fail "the report does not name the predecessor"
+(cd "$repo" && ./scripts/check-review.sh "$second" >/dev/null) || fail "check-review.sh refused a review with valid predecessors"
+[[ "$(cat "$repo"/.agents/run/records/*.jsonl | jq -c -s '[.[] | select(.type == "finding" and .round == 2) | [.id, .previous.relation]]')" == '[["M1","unresolved"],["MIN1","worsened"],["S1",null]]' ]] ||
+  fail "the run record does not note the re-raises"
 
 # Findings that were never triaged are supplied as to be fixed.
 repo="$(setup_repo changes-untriaged)"

@@ -1084,9 +1084,12 @@ GitHub with a separate identity (#99).
 The gate passes when the record is valid and says `complete` or
 `awaiting_evidence`, and the handoff note lists nothing under "Remaining".
 The note outweighs the record: remaining work listed there means not complete,
-whatever the record says. Two things are never evidence: a partial run of the
-checks (`verify.sh --only`), which is not a verification, and a budget check
-of `scripts/verify.conf` or `scripts/verify-workflow.conf` (see "Budgets"),
+whatever the record says. A line there that only says a category has nothing
+left, a label followed by `none`, `nothing`, `n/a`, `no` or `-` (such as
+`FIX_NOW findings: none.`), is not work; a label followed by anything else
+is. Two things are never evidence: a partial run of the checks
+(`verify.sh --only`), which is not a verification, and a budget check of
+`scripts/verify.conf` or `scripts/verify-workflow.conf` (see "Budgets"),
 which is a measurement that never fails the verification. A record whose
 evidence for a met criterion names such a run, or names a budget check as a
 word, is invalid.
@@ -1352,6 +1355,52 @@ fields the scripts own, so editing a stored artifact cannot weaken a decision.
 
 Documents that people maintain, such as the roadmap, requirements, and
 architecture, keep Markdown as their source.
+
+### Earlier rounds and re-raised findings
+
+Every round after the first, a review of the changes or of the complete
+feature, whether `run-feature.sh` starts it or you do, gets what the approved
+triages of all earlier rounds of the feature decided, under "Decisions of the
+earlier rounds": per finding its round, identifier, severity, title,
+decision, and rationale. The decisions come from the newest triage of each
+round that is valid and approved for that round (a newer triage artifact that
+is invalid does not hide it); a round without one is named without its
+findings, which count as to be fixed. The reviewer does not
+raise an accepted or deferred finding again unless the change made it worse.
+
+A finding that continues an earlier one names it in `previous` (the finding
+schema, `.agents/schemas/feature-review.schema.json`):
+
+```json
+"previous": {"round": 1, "id": "M1", "relation": "unresolved", "reason": ""}
+```
+
+- `unresolved`: a finding that was to be fixed (`FIX_NOW`, or never triaged)
+  is not, or not fully, resolved.
+- `worsened`: an accepted or deferred finding that the change made worse;
+  `reason` says how and is required. It is a legitimate re-raise and is
+  triaged like any finding.
+
+A new finding has `previous: null`; the stored review keeps the field only
+when it names a finding, and a review without it is valid as before. The
+field is the reviewer's declaration; the scripts check it against the
+recorded decisions. `review_artifact_errors` (`scripts/lib/review-data.sh`,
+used by `review-feature.sh`, `check-review.sh`, `triage-review.sh`, and
+`finish-feature.sh`) makes a review invalid when `previous` names a round
+that is not an earlier review of the feature, or a finding that round does
+not have, when an `unresolved` finding names one that its approved triage
+accepted or deferred or has another severity than its predecessor, when a
+`worsened` finding names one that was to be fixed (`FIX_NOW` or never
+triaged), or when a `worsened` finding has no reason. The earlier decision
+and severity therefore stand: a re-raise cannot lower a blocking finding.
+`review-feature.sh` then stores nothing and the round fails, as for any
+invalid review. A finding to fix that is really unresolved is still reported
+with its severity, and still blocks.
+
+`triage-review.sh` shows the predecessor next to a finding, the report of
+the review names it, and the run record has one `finding` event per finding
+with its `previous`, so that `report-runs.sh` counts the re-raises per
+feature.
 
 ### Reviewing only the changes
 
@@ -1674,9 +1723,10 @@ From the primary checkout it runs:
 
 It uses at most five review rounds. The first round reviews the complete
 feature; a round after fixes reviews only what changed since the round before
-it (`review-feature.sh --changes`). That review knows what was decided about
-the earlier findings, so a finding that was deferred or accepted is not
-reported, triaged, and turned into a follow-up Issue again in every round.
+it (`review-feature.sh --changes`). Every round after the first knows what
+the approved triages of all earlier rounds decided, so a finding that was
+deferred or accepted is not reported, triaged, and turned into a follow-up
+Issue again in every round (see "Earlier rounds and re-raised findings").
 The round that ends the run reviews the complete feature again, against the
 Issue and the completion record: a feature with one fix round therefore has
 three reviews, the complete feature, the fix, and the complete feature.
@@ -2302,7 +2352,8 @@ brings the rules.
 | `type` | Fields |
 |---|---|
 | `run-start` | `kind` (`feature` or `planning`), `subject` (the Issue or the name of the planning), `command`, `seq` (the number of the run within its subject, which orders runs that start in the same second; claimed with a link in `.agents/run/records/.sequence/`, `null` when it could not be claimed), `previous` (the run before it of the same subject), `repository` (owner/name), `versions` (the template commit, a hash of the prompts and of `agents.conf`) |
-| `run-end` | `status`: the exit status; 130 when the run was interrupted. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
+| `run-end` | `status`: the exit status; 130 when the run was interrupted. For a status other than 0 also `step` and `reason`: those of the last `stop` of the run, so a failed run always says where and why it ended. A run without an end was killed and is incomplete, and a start without its end shows what was going on |
+| `stop` | `step` and `reason`: where a workflow script stops and the text it tells you. The `step` is the script (`finish-feature.sh`), or for `run-feature.sh` the step of the run (`implementation`, `commit`, ...). A command that fails under `set -e` records `unexpected exit` with the command and its line; a run that ends without a stop gets `exited with status <n> without a recorded reason`, an interruption `interrupted`. The experience record (`derived.stop`) and the Runs table of `report-runs.sh` show them |
 | `agent-start`, `agent-call` | an agent call begins (`id`, `role`, `profile`, `agent`, `model`, and `level` and `selection`: the risk level of the feature that selected the agent, `null` for a planning or an analysis, and where the selection came from, `command-line`, `level-line`, or `plain-line`; see "Configuring agents") and ends (the same, with `status`, `seconds`, `usage`) |
 | `verification-start`, `verification` | a verification begins (`id`, `groups`: always `all`, since a partial run with `--only` is not recorded) and ends (with `status`, `seconds`, `reused`: a recorded pass stood in for the run, and `budgets`: the budget checks of the run, each with `name`, `status` `exceeded` or `within`, `exit`, and `output`; an empty list without one, and the recorded results for a reused pass) |
 | `step-start`, `step` | a step of `run-feature.sh` begins (`id`, `name`) and ends (with `status` and `seconds`) |
@@ -2312,6 +2363,7 @@ brings the rules.
 | `note` | a line of the log of `run-feature.sh` (`.agents/run/<issue>-log`), which is written from the same event |
 | `completion-gate` | one check of the completion gate: `check` (its number in the run), `sessions` (the sessions of the implementer and the triage implementer that the run recorded before it, a repair or a retry too), `session` (the last of them, which the check judges; a check without a new session judges it again), `status`, `reasons`, and `content`, the fingerprint of what it judged |
 | `artifact` | a review or a triage that the run wrote: `kind` and `path` |
+| `finding` | a finding of a feature review that the run stored: `round`, `id`, `severity`, and `previous` (`round`, `id`, `relation`) when it continues an earlier finding; see "Earlier rounds and re-raised findings" |
 | `risk` | the risk level of the feature as `run-feature.sh` printed it: `when` (at the start, or before a review round), `level`, and `reasons` |
 | `issue-comments` | the comments of the Issue that a step read for its agent: `issue`, `role` (`implementer`, `reviewer`, or `triage agent`), `passed` and the `authors` of the passed comments, `left_out` (by the size limit), `others` (comments of other authors), and `workflow` (the workflow's own reports) |
 | `experience-notes` | a session of the run changed the agent's experience notes: the `call` and the `hash` of the notes |
@@ -2367,7 +2419,8 @@ them (see "Reporting on the records"); such records are not repaired.
 ```
 
 A report shows per subject the outcome of its runs, the elapsed time, the
-agent time, the review rounds, the triage, and the repair sessions, the tokens
+agent time, the review rounds, the triage, and the repair sessions, for a
+feature the re-raised findings (unresolved and worsened), the tokens
 per role, model, and run, the calls, the time, and the tokens per risk level
 of the feature, model, and selection of the agent (for the calls that
 recorded a level, see "Configuring agents"), the verification, the steps of
