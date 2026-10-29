@@ -68,6 +68,12 @@ Add or update:
 
 where required by the issue or architecture.
 
+Documentation is `docs/` and the ADRs, and the documentation site
+(`documentation/`) where it describes the behavior you changed: update the
+site in the same feature; a project without the site skips this. Write it in
+the site's own voice and markup: it summarizes `docs/development.md`, it does
+not add to it.
+
 Follow the "Meaningful tests" principle in `docs/evaluation.md` when adding or
 changing tests.
 

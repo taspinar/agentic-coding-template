@@ -1,0 +1,18 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "6f732e0004ab5619f1cc4882b884d2606b019127",
+  "commit": {
+    "branch": "feature/231-make-the-documentation-site",
+    "parent": "5b73b19f36f49aaa86a7add0cba391d9ae173804",
+    "base": "5b73b19f36f49aaa86a7add0cba391d9ae173804"
+  },
+  "review": {
+    "round": 1,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".agents/prompts/reviewer.md: the file defines or carries out the workflow and its gate"
+  ],
+  "explanation": "Issue #231: Make the documentation site part of the Definition of Done where it describes the changed behavior. The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}
