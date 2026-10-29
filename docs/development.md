@@ -2352,8 +2352,8 @@ tests, `model-` followed by a letter or a word (`model-a`, `model-b`,
 `model-t`, `model-claude`, `model-codex`), mostly with usage figures `null`.
 The same runs hold many `verification-start` and `verification` events within
 seconds, and review or triage rounds that the run never had.
-`report-runs.sh` counts these events like the others; such records are not
-repaired.
+`report-runs.sh` leaves their agent calls out of the totals and warns about
+them (see "Reporting on the records"); such records are not repaired.
 
 ### Reporting on the records
 
@@ -2395,6 +2395,21 @@ Some figures need care:
   with partial or unknown figures out of the means of tokens and says how
   many.
 - **A subject without any record** is named and left out, not counted as zero.
+- **Calls of undeclared models.** The report compares the agent and model of
+  every `agent-start` and `agent-call` with the lines of
+  `.agents/agents.conf` of the primary checkout, its plain and level lines of
+  every role. A call whose pair no line declares, such as a fake call of a
+  self-test in an old record, is left out of the call counts, the times, the
+  tokens, the review rounds, the triage, and the repair sessions, and once per
+  run a warning names it ("run <id>: 62 calls of undeclared models model-a,
+  model-b; left out of the totals"), with a "Left out" line in the table of
+  the subject. `--json` carries the same warnings in `warnings` and the calls
+  left out in the subject's `undeclared`; both are absent when no call is
+  undeclared, so such a report is unchanged. A call selected with `--agent`
+  and `--model` (`selection: command-line`) is declared by its record and is
+  no warning. Without `agents.conf` nothing is compared. Since the file of
+  today is the measure, a model that a project used and then removed from the
+  file is left out too, with the same warning.
 - **A comparison** names what differs between the subjects: the template
   commit, the prompts, `agents.conf`, and the models. It and `--split` say
   that totals and means show no cause: features differ in size and

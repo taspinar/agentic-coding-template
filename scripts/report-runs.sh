@@ -106,12 +106,21 @@ if [[ ${#subjects[@]} -eq 0 ]]; then
   subjects=("feature:$issue")
 fi
 
+# The agent and model pairs that agents.conf of the primary checkout declares,
+# on the plain and the level lines of every role; null without the file, so
+# that every call counts.
+declared="null"
+if [[ -f "$primary/.agents/agents.conf" ]]; then
+  declared="$(sed -nE 's/^[a-z][a-z-]*(@[a-z]+)?:[[:space:]]*([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]*$/\2 \3/p' \
+    "$primary/.agents/agents.conf" | jq -R . | jq -cs 'map({key: ., value: true}) | from_entries')"
+fi
+
 selection="$(printf '%s\n' "${subjects[@]}" | jq -R '{kind: (split(":")[0]), subject: (split(":")[1:] | join(":"))}' | jq -cs 'unique')"
 
 result="$(jq -n -r \
   --slurpfile active "$work/active.json" --slurpfile copies "$work/copies.json" \
   --argjson selection "$selection" --argjson since "$since" --argjson until "$until" \
-  --argjson split "$split" --arg mode "$mode" --argjson period "$([[ "$since$until" == nullnull ]] && echo false || echo true)" \
+  --argjson split "$split" --argjson declared "$declared" --arg mode "$mode" --argjson period "$([[ "$since$until" == nullnull ]] && echo false || echo true)" \
   '$active[0] as $active | $copies[0] as $copies | '"$(cat "$script_dir/lib/report.jq")")"
 
 if [[ "$mode" == "summary" && "$result" == "null" ]]; then
