@@ -1,0 +1,324 @@
+---
+// The workflow as one line map (DESIGN.md, "Route map with switches"):
+// project planning on the ink line, feature execution on the green line,
+// with the switches that redraw it for a part of the workflow, the way of
+// running a feature, a risk level, a profile and a situation, and a
+// walkthrough that follows the route of the current state.
+//
+// The build renders the initial state of src/lib/workflow.ts, which is the
+// complete drawing without JavaScript; the script below renders every other
+// state from the same function. Every element whose look changes carries
+// data-key, every text that changes data-label. The words list is the map's
+// text alternative and its form on narrow screens.
+import agentsConf from "../../../.agents/agents.conf?raw";
+import { switches, initial, describe, classesOf, parseAgents } from "../lib/workflow";
+
+// The agents of the roles, as .agents/agents.conf of the repository sets them.
+const models = parseAgents(agentsConf);
+const view = describe(initial, models);
+const c = (key: string) => classesOf(view, key);
+const label = (key: string) => view.labels[key];
+
+// Stations: x on their row, the shape, the name and the sub-label (mono when
+// it is a value), and an optional second sub-label.
+type Station = { key: string; x: number; shape: "ring" | "gate"; name: string; sub?: string; k?: boolean; sub2?: string };
+const planningRow: Station[] = [
+  { key: "p-idea", x: 50, shape: "ring", name: "Idea", sub: "your description" },
+  { key: "p-req", x: 210, shape: "ring", name: "Requirements", sub: "start-planning.sh", k: true, sub2: "p-req.sub2" },
+  { key: "p-approve-req", x: 360, shape: "gate", name: "Approve", sub: "the requirements" },
+  { key: "p-plan", x: 510, shape: "ring", name: "Plan", sub: "architecture, roadmap" },
+  { key: "p-review", x: 670, shape: "ring", name: "Plan review", sub: "review-planning.sh", k: true, sub2: "p-review.sub2" },
+  { key: "p-approve", x: 830, shape: "gate", name: "Approve the plan", sub: "finish-planning.sh", k: true },
+  { key: "p-merge", x: 980, shape: "gate", name: "Merge the plan", sub: "planning pull request" },
+];
+const featureRow: Station[] = [
+  { key: "f-issue", x: 50, shape: "ring", name: "Feature Issue", sub: "from the roadmap" },
+  { key: "f-implement", x: 210, shape: "ring", name: "Implement", sub: "f-implement.sub", k: true },
+  { key: "f-checks", x: 370, shape: "ring", name: "Checks", sub: "verify.sh", k: true },
+  { key: "f-review", x: 520, shape: "ring", name: "Review", sub: "f-review.sub", k: true },
+  { key: "f-commit", x: 830, shape: "ring", name: "Commit", sub: "f-commit.sub" },
+  { key: "f-pr", x: 970, shape: "ring", name: "Pull request", sub: "CI checks" },
+  { key: "f-merge", x: 1130, shape: "gate", name: "Merge", sub: "f-merge.sub" },
+];
+const P = 110; // the planning row
+const F = 330; // the feature row
+const segments = [
+  { key: "s-p-req", d: `M50 ${P} H210`, plan: true },
+  { key: "s-p-approve-req", d: `M210 ${P} H360`, plan: true },
+  { key: "s-p-plan", d: `M360 ${P} H510`, plan: true },
+  { key: "s-p-review", d: `M510 ${P} H670`, plan: true },
+  { key: "s-p-approve", d: `M670 ${P} H830`, plan: true },
+  { key: "s-p-merge", d: `M830 ${P} H980`, plan: true },
+  // From the merged plan to each feature: create-feature-issue.sh.
+  { key: "s-f-issue", d: `M980 ${P} H1130 V205 H50 V${F}`, plan: true },
+  { key: "s-f-implement", d: `M50 ${F} H210` },
+  { key: "s-f-checks", d: `M210 ${F} H370` },
+  { key: "s-f-out", d: `M370 ${F} H450` },
+  { key: "s-f-review", d: `M450 ${F} H520` },
+  { key: "s-f-findings", d: `M520 ${F} H690` },
+  { key: "s-f-in", d: `M690 ${F} H755` },
+  { key: "s-f-commit", d: `M755 ${F} H830` },
+  { key: "s-f-pr", d: `M830 ${F} H970` },
+  { key: "s-f-merge", d: `M970 ${F} H1130` },
+];
+const text = (value?: string) => (value && value in view.labels ? view.labels[value] : value);
+const labelKey = (value?: string) => (value && value in view.labels ? value : undefined);
+
+// The words list: each station with its sub-label and its conditions.
+type Word = { key: string; name: string; sub?: string; k?: boolean; cond?: string; you?: boolean; gate?: boolean };
+const planningWords: Word[] = [
+  { key: "p-idea", name: "Describe the idea", sub: "docs/PROJECT_DESCRIPTION.md", k: true, cond: "In your own words; no agent changes it." },
+  { key: "p-req", name: "Clarify the requirements", sub: "start-planning.sh", k: true, cond: "Project Grill asks about the goals, the users, the scope and the constraints, then drafts docs/PROJECT_REQUIREMENTS.md." },
+  { key: "p-approve-req", name: "Approve the requirements", sub: "by you", you: true, cond: "The planning goes on only after your approval." },
+  { key: "p-plan", name: "Create the plan", sub: "architecture, roadmap, ADRs", cond: "A fresh planning session writes docs/architecture.md, docs/roadmap.md and the ADRs that are needed." },
+  { key: "p-review", name: "Review the plan", sub: "review-planning.sh", k: true, cond: "An independent, read-only reviewer. With findings, revise-planning.sh proposes a decision per finding, you approve them, and the plan is reviewed again, until a round changes nothing." },
+  { key: "p-approve", name: "Approve the plan", sub: "finish-planning.sh", k: true, you: true, cond: "Records your approval with a fingerprint of the requirements and the roadmap; a later change to them makes it stale. Refused while the review is stale or a required decision is missing." },
+  { key: "p-merge", name: "Merge the planning pull request", sub: "by you", you: true, cond: "The plan is on main. A later change of the plan goes through this line again: start-planning.sh <name> --change <file>." },
+];
+const featureWords: Word[] = [
+  { key: "f-issue", name: "Create a feature Issue", sub: "create-feature-issue.sh", k: true, cond: "One roadmap feature; refused while the approval of the plan is stale." },
+  { key: "f-implement", name: "Implement the feature", sub: "f-implement.sub", k: true, cond: "w-f-implement.cond" },
+  { key: "f-checks", name: "Run the checks", sub: "verify.sh", k: true, cond: "w-f-checks.cond" },
+  { key: "f-review", name: "Review the code", sub: "f-review.sub", k: true, cond: "w-f-review.cond" },
+  { key: "f-findings", name: "Decide on the findings", sub: "f-findings.sub", gate: true, cond: "w-f-findings.cond" },
+  { key: "f-commit", name: "Commit the feature", sub: "finish-feature.sh", k: true, cond: "w-f-commit.cond" },
+  { key: "f-pr", name: "Open the pull request", sub: "publish-feature.sh", k: true, cond: "Pushes the branch and opens the pull request with the verification, the review, the risk level and whether the merge needs your approval; CI runs the checks again. Unfinished work becomes a draft that leaves the Issue open." },
+  { key: "f-merge", name: "Merge", sub: "f-merge.sub", you: true, cond: "w-f-merge.cond" },
+];
+---
+<figure class="route workflow" id="workflow" aria-labelledby="workflow-title" data-workflow data-models={JSON.stringify(models)}>
+  <div class="route-head">
+    <h2 id="workflow-title">The workflow, from the idea to the merge</h2>
+    <form class="switches" aria-label="Show the workflow for">
+      {switches.map((s) => (
+        <fieldset class="switch">
+          <legend>{s.legend}</legend>
+          {s.options.map(([value, name]) => (
+            <label><input type="radio" name={s.name} value={value} checked={initial[s.name] === value} /><span>{name}</span></label>
+          ))}
+        </fieldset>
+      ))}
+    </form>
+  </div>
+
+  <svg class="map" viewBox="-30 0 1260 482" role="img" aria-labelledby="workflow-map-title" aria-describedby="workflow-words">
+    <title id="workflow-map-title">The workflow as a line map: project planning on one line, from the idea to the merged plan, then each feature on a second line from its Issue to the merge, with the owner's decisions, the loops for a clarification, a failed check and review findings, and the review bypass of low risk under a policy without review for it.</title>
+    <text class:list={["stage", c("t-planning")]} data-key="t-planning" x="-20" y="28">Plan the project: once, and for each change of the plan</text>
+    <text class:list={["stage", c("t-feature")]} data-key="t-feature" x="80" y="240">Build each feature: in its own branch and worktree</text>
+
+    <!-- loops above the lines -->
+    <path class:list={["branch", c("b-revise")]} data-key="b-revise" d={`M662 ${P - 6} L626 ${P - 42} H554 L518 ${P - 6}`} />
+    <text class="note" x="590" y={P - 52} text-anchor="middle">findings: revise, you approve, review again</text>
+    <path class:list={["branch", c("b-clarify")]} data-key="b-clarify" d={`M204 ${F - 6} L172 ${F - 38}`} />
+    <rect class:list={["gate-o", c("f-answer")]} data-key="f-answer" x="157" y={F - 53} width="15" height="15" transform={`rotate(45 164.5 ${F - 45.5})`} />
+    <text class="note" x="148" y={F - 68} text-anchor="middle">unclear: you answer</text>
+    <path class:list={["branch", c("b-repair")]} data-key="b-repair" d={`M362 ${F - 6} L326 ${F - 42} H254 L218 ${F - 6}`} />
+    <text class="note" x="290" y={F - 52} text-anchor="middle">checks fail: repair</text>
+    <path class:list={["branch", c("b-fix")]} data-key="b-fix" d={`M682 ${F - 6} L640 ${F - 48} H420 L378 ${F - 6}`} />
+    <text class="note" x="530" y={F - 58} text-anchor="middle">findings to fix: fix, checks, review again</text>
+
+    <!-- the lines -->
+    {segments.map((s) => <path class:list={["trunk", { plan: s.plan }, c(s.key)]} data-key={s.key} d={s.d} />)}
+
+    <!-- the review bypass: low risk with low: review: none -->
+    <path class:list={["branch", c("b-bypass")]} data-key="b-bypass" d={`M450 ${F + 6} V${F + 70} L472 ${F + 92} H733 L755 ${F + 70} V${F + 6}`} />
+    <text class:list={["note", c("n-bypass")]} data-key="n-bypass" x="602" y={F + 116} text-anchor="middle">low risk with low: review: none: no review, and the merge needs your approval</text>
+    <text class:list={["note", c("n-unattended")]} data-key="n-unattended" x="590" y={F + 140} text-anchor="middle">unattended: run-feature.sh runs from the implementation to the pull request, and never merges</text>
+
+    <!-- stations -->
+    {[planningRow.map((s) => ({ ...s, y: P })), featureRow.map((s) => ({ ...s, y: F }))].flat().map((s) => (
+      <g class:list={c(s.key)} data-key={s.key}>
+        {s.shape === "ring"
+          ? <circle class="dot" cx={s.x} cy={s.y} r="10" />
+          : <rect class="gate" x={s.x - 10} y={s.y - 10} width="20" height="20" transform={`rotate(45 ${s.x} ${s.y})`} />}
+        <text class="st" x={s.x} y={s.y + 37} text-anchor="middle">{s.name}</text>
+        {s.sub && <text class:list={["sub", { k: s.k }]} x={s.x} y={s.y + 56} text-anchor="middle" data-label={labelKey(s.sub)}>{text(s.sub)}</text>}
+        {s.sub2 && <text class="sub k" x={s.x} y={s.y + 74} text-anchor="middle" data-label={labelKey(s.sub2)}>{text(s.sub2)}</text>}
+      </g>
+    ))}
+    <!-- the findings: an owner gate step by step, a step of the triage agent unattended -->
+    <g class:list={c("f-findings")} data-key="f-findings">
+      <circle class:list={["dot", c("f-findings-ring")]} data-key="f-findings-ring" cx="690" cy={F} r="10" />
+      <rect class:list={["gate", c("f-findings-gate")]} data-key="f-findings-gate" x="680" y={F - 10} width="20" height="20" transform={`rotate(45 690 ${F})`} />
+      <text class="st" x="690" y={F + 37} text-anchor="middle">Findings</text>
+      <text class="sub" x="690" y={F + 56} text-anchor="middle" data-label="f-findings.sub">{label("f-findings.sub")}</text>
+    </g>
+    <text class:list={["sub", "flag", c("n-stop")]} data-key="n-stop" x="210" y={F + 74} text-anchor="middle">stops until you answer</text>
+    <text class:list={["sub", "flag", c("f-merge-approval")]} data-key="f-merge-approval" x="1130" y={F + 74} text-anchor="middle">approval required</text>
+  </svg>
+
+  <ul class="legend" aria-hidden="true">
+    <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--ink)" stroke-width="6" stroke-linecap="round" /></svg>planning</li>
+    <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--line)" stroke-width="6" stroke-linecap="round" /></svg>a feature</li>
+    <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--rule-strong)" stroke-width="3" stroke-dasharray="6 5" /></svg>only when needed</li>
+    <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--off)" stroke-width="6" stroke-linecap="round" /></svg>not on this route</li>
+    <li><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--ink)" stroke-width="2.5" /></svg>a step that a script or an agent runs</li>
+    <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--ink)" /></svg>you decide</li>
+    <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="none" stroke="var(--ink)" stroke-width="2" /></svg>you answer, only when asked</li>
+  </ul>
+
+  <figcaption class="caption" aria-live="polite"><strong data-caption="lead">{view.caption.lead}</strong> <span data-caption="text">{view.caption.text}</span></figcaption>
+
+  <div class="map-actions" role="group" aria-label="Walkthrough and list">
+    <button type="button" data-action="play">Play walkthrough</button>
+    <button type="button" data-action="previous" hidden>Previous step</button>
+    <button type="button" data-action="next" hidden>Next step</button>
+    <button type="button" data-action="finish" hidden>Show the complete workflow</button>
+    <button type="button" class="list-toggle" data-action="list" aria-expanded="false" aria-controls="workflow-words">Show the steps as a list</button>
+  </div>
+
+  <div class="words-set" id="workflow-words">
+    <div class:list={c("w-planning")} data-key="w-planning">
+      <h3>Plan the project</h3>
+      <ol class="words">
+        {planningWords.map((w) => (
+          <li class:list={[{ you: w.you }, c(w.key)]} data-key={w.key}>
+            <b>{w.name}</b>{w.sub && <small class:list={{ k: w.k }}>{w.sub}</small>}{w.cond && <p class="cond">{w.cond}</p>}
+          </li>
+        ))}
+      </ol>
+    </div>
+    <div class:list={c("w-feature")} data-key="w-feature">
+      <h3>Build each feature</h3>
+      <ol class="words">
+        {featureWords.map((w) => (
+          <li class:list={[{ you: w.you }, c(w.key), c(`w-${w.key}`)]} data-key={w.key} data-word={`w-${w.key}`} data-gate={w.gate ? "" : undefined}>
+            <b>{w.name}</b>
+            {w.sub && <small class:list={{ k: w.k }} data-label={labelKey(w.sub)}>{labelKey(w.sub) ? label(w.sub) : w.sub}</small>}
+            {w.cond && <p class="cond" data-label={labelKey(w.cond)}>{labelKey(w.cond) ? label(w.cond) : w.cond}</p>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  </div>
+</figure>
+
+<script>
+  // Redraws the map for the state of the switches and plays the walkthrough
+  // of that state: one step at a time, as a change of stroke colour only.
+  // With prefers-reduced-motion: reduce, nothing advances by itself; the
+  // reader moves with Previous and Next.
+  import { describe, stateOf, classesOf, type Models, type View } from "../lib/workflow";
+
+  const figure = document.querySelector<HTMLElement>("[data-workflow]");
+  const form = figure?.querySelector<HTMLFormElement>("form");
+  if (figure && form) {
+    const models = JSON.parse(figure.dataset.models ?? "{}") as Models;
+    const keyed = Array.from(figure.querySelectorAll<HTMLElement | SVGElement>("[data-key]"));
+    const labelled = Array.from(figure.querySelectorAll<HTMLElement | SVGElement>("[data-label]"));
+    const lead = figure.querySelector<HTMLElement>('[data-caption="lead"]')!;
+    const caption = figure.querySelector<HTMLElement>('[data-caption="text"]')!;
+    const button = (action: string) => figure.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!;
+    const play = button("play"), previous = button("previous"), next = button("next"), finish = button("finish"), list = button("list");
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const pace = 2200;
+
+    let view: View = describe(stateOf({}), models);
+    let at = -1; // the step of the walkthrough, -1 for the complete drawing
+    let playing = false;
+    let timer = 0;
+
+    const values = () => Object.fromEntries(Array.from(new FormData(form).entries(), ([name, value]) => [name, String(value)]));
+
+    function render() {
+      const lit = at < 0 ? undefined : new Set(view.walk.slice(0, at + 1).flatMap((step) => step.lights));
+      const current = at < 0 ? undefined : view.walk[at];
+      for (const element of keyed) {
+        const key = element.dataset.key!;
+        const word = element.dataset.word;
+        const classes = classesOf(view, key, lit);
+        if (word && view.hidden.includes(word)) classes["is-hidden"] = true;
+        for (const [name, on] of Object.entries(classes)) {
+          if (name !== "you" || element.hasAttribute("data-gate")) element.classList.toggle(name, on);
+        }
+        if (element.tagName === "LI") {
+          if (current?.key === key) element.setAttribute("aria-current", "step");
+          else element.removeAttribute("aria-current");
+        }
+      }
+      for (const element of labelled) element.textContent = view.labels[element.dataset.label!] ?? element.textContent;
+      if (current) {
+        lead.textContent = `Step ${at + 1} of ${view.walk.length}.`;
+        caption.textContent = current.text;
+      } else {
+        lead.textContent = view.caption.lead;
+        caption.textContent = view.caption.text;
+      }
+      const walking = at >= 0;
+      figure.classList.toggle("walking", walking);
+      const last = at === view.walk.length - 1;
+      play.hidden = reduced.matches && walking;
+      play.textContent = playing ? "Pause" : !walking ? (reduced.matches ? "Walk through the steps" : "Play walkthrough") : last ? "Play again" : "Resume";
+      previous.hidden = next.hidden = finish.hidden = !walking;
+      previous.setAttribute("aria-disabled", String(at <= 0));
+      next.setAttribute("aria-disabled", String(last));
+    }
+
+    function stop() {
+      playing = false;
+      window.clearTimeout(timer);
+    }
+    function advance() {
+      window.clearTimeout(timer);
+      if (!playing) return;
+      timer = window.setTimeout(() => {
+        if (at < view.walk.length - 1) {
+          at += 1;
+          if (at === view.walk.length - 1) playing = false;
+          render();
+          advance();
+        }
+      }, pace);
+    }
+
+    form.addEventListener("change", () => {
+      stop();
+      at = -1;
+      view = describe(stateOf(values()), models);
+      render();
+    });
+    play.addEventListener("click", () => {
+      if (playing) {
+        stop();
+      } else {
+        if (at < 0 || at === view.walk.length - 1) at = 0;
+        playing = !reduced.matches;
+        advance();
+      }
+      render();
+      if (play.hidden) next.focus();
+    });
+    previous.addEventListener("click", () => {
+      if (at <= 0) return;
+      stop();
+      at = Math.max(0, at - 1);
+      render();
+    });
+    next.addEventListener("click", () => {
+      if (at >= view.walk.length - 1) return;
+      stop();
+      at = Math.min(view.walk.length - 1, at + 1);
+      render();
+    });
+    finish.addEventListener("click", () => {
+      stop();
+      at = -1;
+      render();
+      play.focus();
+    });
+    list.addEventListener("click", () => {
+      const shown = list.getAttribute("aria-expanded") !== "true";
+      list.setAttribute("aria-expanded", String(shown));
+      list.textContent = shown ? "Hide the list" : "Show the steps as a list";
+      figure.dataset.list = shown ? "shown" : "";
+    });
+    reduced.addEventListener("change", () => {
+      if (reduced.matches) stop();
+      render();
+    });
+
+    // A reload can restore the switches the reader had chosen.
+    view = describe(stateOf(values()), models);
+    render();
+  }
+</script>

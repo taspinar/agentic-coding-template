@@ -413,3 +413,54 @@ html:not(.js) .docs-search { display: none; }
 .docs-body .prose table { display: block; overflow-x: auto; }
 .docs-body .prose pre { overflow-x: auto; }
 @media (max-width: 1100px) { .docs-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* The workflow map (/workflow): one drawing whose states the switches set
+   (src/lib/workflow.ts). An element off the route of the state, or ahead of
+   the walkthrough, turns to the off colour; a branch the state takes is
+   drawn as the route. */
+.map .stage { font-weight: var(--w-bold); font-size: var(--t-map-sub); fill: var(--ink-2); }
+.map .trunk.plan { stroke: var(--ink); }
+.map .sub.flag { fill: var(--ink); }
+.map .is-hidden, .words-set .is-hidden { display: none; }
+.map .branch.is-taken { stroke: var(--line); stroke-dasharray: none; stroke-width: var(--stroke); stroke-linecap: round; }
+.map :is(.trunk, .branch).is-off, .map :is(.trunk, .branch).is-ahead, .map .is-off .dot, .map .is-ahead .dot, .map .gate-o.is-off, .map .gate-o.is-ahead { stroke: var(--off); }
+.map .is-off .gate, .map .is-ahead .gate { fill: var(--off); }
+.map .is-off text, .map .is-ahead text, .map text.is-off { fill: var(--ink-3); }
+/* Five switch groups: each wraps within the width, a pill stays on one line. */
+.workflow .switch { flex-wrap: wrap; min-width: 0; }
+.workflow .switch span { white-space: nowrap; }
+.workflow .words { display: block; }
+.words-set h3 { font-size: var(--t-md); margin-top: var(--s-5); }
+.words li.is-off, .words li.is-ahead { color: var(--ink-3); }
+.words li.is-off small, .words li.is-ahead small, .words li.is-off .cond, .words li.is-ahead .cond { color: var(--ink-3); }
+.words li.is-off::before, .words li.is-ahead::before { border-color: var(--off); }
+.words li.you.is-off::before, .words li.you.is-ahead::before { background: var(--off); }
+.words li[aria-current="step"] b { text-decoration: underline var(--line); text-decoration-thickness: 3px; text-underline-offset: 0.22em; }
+.map-actions { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-3); margin-top: var(--s-4); }
+.map-actions button { font: var(--w-semibold) var(--t-sm) var(--sans); padding: var(--s-chip); border: 1px solid var(--rule); background: none; color: var(--ink); border-radius: 2px; cursor: pointer; }
+.map-actions button:hover { border-color: var(--rule-strong); }
+.map-actions button[aria-disabled="true"] { color: var(--ink-3); border-color: var(--rule); cursor: default; }
+.map-actions [hidden] { display: none; }
+html:not(.js) .map-actions { display: none; }
+/* Above 1100px the words list is read by screen readers and shown on request;
+   below, it is the map. Without JavaScript it is always shown. */
+@media (min-width: 1101px) {
+  html.js .workflow:not([data-list="shown"]) .words-set { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 1100px) { .list-toggle { display: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .map .branch, .map .dot, .map .gate, .map .gate-o, .map text { transition: stroke 160ms ease-out, fill 160ms ease-out; }
+}
+
+/* Every step in detail (/workflow): a step with its facts as label and value. */
+.stage-title { font-size: var(--t-xl); font-weight: var(--w-heavy); }
+.stage-note { color: var(--ink-2); }
+.step { border-top: 1px solid var(--rule); padding-top: var(--s-4); }
+.step h4 { font-size: var(--t-md); font-weight: var(--w-bold); margin: 0 0 var(--s-2); }
+.facts { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--s-2) var(--s-4); margin: 0; font-size: var(--t-sm); max-width: var(--measure-wide); }
+.facts dt { font: var(--w-bold) var(--t-xs)/var(--lh-body) var(--sans); color: var(--ink-3); }
+.facts dd { margin: 0; }
+@media (max-width: 760px) {
+  .facts { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .facts dd { margin-bottom: var(--s-2); }
+}
