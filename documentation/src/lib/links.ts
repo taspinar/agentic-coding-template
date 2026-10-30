@@ -17,6 +17,11 @@ export function issue(number: number): string {
   return `${site.repository}/issues/${number}`;
 }
 
+/** A link to a pull request of the repository. */
+export function pull(number: number): string {
+  return `${site.repository}/pull/${number}`;
+}
+
 /** The sections of the site, in the order of the navigation. */
 export const sections = [
   { path: "workflow/", label: "Workflow" },
