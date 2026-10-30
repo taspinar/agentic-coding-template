@@ -11,15 +11,17 @@
 # - every page has a title, a description and a canonical address, and every
 #   address of sitemap.xml is a page of the output;
 # - every colour, font and spacing value of the style sheets in src/styles/ is
-#   a design token (--tokens).
+#   a design token (--tokens);
+# - the unit tests of the site's scripts pass (src/**/*.test.ts, --build).
 #
 # The design reference (design/) is not part of the build and not checked.
 #
 # Usage:
 #   ./documentation/check.sh --build
-#       Checks the tokens of src/styles/, builds the site under the project
-#       path (/agentic-coding-template/) and under the root (/), and checks
-#       both outputs. Needs the dependencies: npm ci in documentation/ first.
+#       Runs the unit tests of src/, checks the tokens of src/styles/, builds
+#       the site under the project path (/agentic-coding-template/) and under
+#       the root (/), and checks both outputs. Needs the dependencies: npm ci
+#       in documentation/ first.
 #   ./documentation/check.sh <output> <base-path> [<site-url>]
 #       Checks an output that is already built for that base path.
 #   ./documentation/check.sh --tokens <style sheet>...
@@ -149,6 +151,8 @@ if [[ "${1:-}" == "--build" ]]; then
   [[ -d "$site/node_modules" ]] || { echo "documentation: run npm ci in $site first" >&2; exit 1; }
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
+  (cd "$site" && node --test "src/**/*.test.ts" >"$work/tests.log" 2>&1) ||
+    { cat "$work/tests.log" >&2; problem "the unit tests of src/ fail"; }
   for css in "$site"/src/styles/*.css; do check_tokens "$css"; done
   for base in /agentic-coding-template/ /; do
     output="$work/output-$(echo "$base" | tr -d /)"
