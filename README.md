@@ -71,3 +71,7 @@ the template itself.
 
 The rules for agents are in `AGENTS.md`; their boundaries are in
 `.agents/policies/`.
+
+## Licence
+
+The template is released under the MIT licence; see [LICENSE](LICENSE).
