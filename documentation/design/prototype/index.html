@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Coding Template (ACT): autonomous coding, accountable engineering</title>
+<meta name="description" content="An open-source, risk-aware workflow for AI coding agents. From requirements to verified pull requests, with independent reviews, traceable evidence and human control.">
+<link rel="preload" href="fonts/overpass-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<script>document.documentElement.classList.add("js");try{var t=localStorage.getItem("act-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="./" aria-label="ACT, Agentic Coding Template: home"><b>ACT</b><span>Agentic Coding Template</span></a>
+    <nav class="nav" aria-label="Site">
+      <a href="workflow/">Workflow</a>
+      <a href="features/">Features</a>
+      <a href="examples/">Examples</a>
+      <a class="keep" href="docs/">Docs</a>
+      <a href="about/">About</a>
+      <a class="keep" href="https://github.com/taspinar/agentic-coding-template">GitHub</a>
+      <button class="theme" type="button" aria-label="Switch colour theme"><span>Dark</span></button>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="hero wrap" data-risk="medium" data-profile="standard" id="lifecycle">
+    <div class="hero-grid"><h1>Autonomous coding. <em>Accountable engineering.</em></h1>
+    <div class="hero-side"><p class="lede">An open-source, risk-aware workflow for AI coding agents. From requirements to verified pull requests, with independent reviews, traceable evidence and human control.</p>
+    <div class="actions">
+      <a class="btn" href="docs/getting-started/">Get started</a>
+      <a href="https://github.com/taspinar/agentic-coding-template">Source on GitHub</a>
+      <a href="workflow/">How the workflow runs</a>
+    </div></div></div>
+
+    <figure class="route" aria-labelledby="route-title">
+      <div class="route-head">
+        <h2 id="route-title">The route of one feature</h2>
+        <form class="switches" aria-label="Show the route for">
+          <fieldset class="switch">
+            <legend>risk</legend>
+            <label><input type="radio" name="risk" value="low"><span>low</span></label>
+            <label><input type="radio" name="risk" value="medium" checked><span>medium</span></label>
+            <label><input type="radio" name="risk" value="high"><span>high</span></label>
+          </fieldset>
+          <fieldset class="switch">
+            <legend>profile</legend>
+            <label><input type="radio" name="profile" value="standard" checked><span>standard</span></label>
+            <label><input type="radio" name="profile" value="light"><span>light</span></label>
+          </fieldset>
+        </form>
+      </div>
+
+      <svg class="map" viewBox="-30 0 1260 262" role="img" aria-labelledby="map-title" aria-describedby="route-words">
+        <title id="map-title">The route of one feature from Issue to merge, with its loops, a clarification stop and a review bypass that applies only to low risk under the light profile.</title>
+        <!-- loops above the line -->
+        <path class="branch" d="M362 124 L326 88 H254 L218 124"/>
+        <text class="note" x="290" y="78" text-anchor="middle">checks fail: repair</text>
+        <path class="branch" d="M672 124 L630 82 H420 L378 124"/>
+        <text class="note" x="525" y="72" text-anchor="middle">findings fixed: checks, review again</text>
+        <path class="branch" d="M204 124 L172 92"/>
+        <rect class="gate-o" x="157" y="77" width="15" height="15" transform="rotate(45 164.5 84.5)"/>
+        <text class="note" x="148" y="60" text-anchor="middle">unclear: you answer</text>
+        <!-- the route -->
+        <path class="trunk" d="M50 130 H450"/>
+        <path class="trunk reviewed" d="M450 130 H755"/>
+        <path class="trunk" d="M755 130 H1130"/>
+        <!-- review bypass: low risk under the light profile -->
+        <path class="branch bypass" d="M450 136 V200 L472 222 H733 L755 200 V136"/>
+        <text class="note bypass-note" x="602" y="250" text-anchor="middle">low risk, light profile: no review, and the merge needs your approval</text>
+        <!-- stations -->
+        <g><circle class="dot" cx="50" cy="130" r="10"/><text class="st" x="50" y="167" text-anchor="middle">Issue</text><text class="sub" x="50" y="186" text-anchor="middle">from the roadmap</text></g>
+        <g><circle class="dot" cx="210" cy="130" r="10"/><text class="st" x="210" y="167" text-anchor="middle">Implement</text><text class="sub k" x="210" y="186" text-anchor="middle" data-k="impl">claude opus</text></g>
+        <g><circle class="dot" cx="370" cy="130" r="10"/><text class="st" x="370" y="167" text-anchor="middle">Checks</text><text class="sub k" x="370" y="186" text-anchor="middle">verify.sh</text></g>
+        <g class="r-dim"><circle class="dot" cx="530" cy="130" r="10"/><text class="st" x="530" y="167" text-anchor="middle">Review</text><text class="sub k" x="530" y="186" text-anchor="middle" data-k="review">codex, read-only</text></g>
+        <g class="r-dim"><circle class="dot" cx="680" cy="130" r="10"/><text class="st" x="680" y="167" text-anchor="middle">Findings</text><text class="sub" x="680" y="186" text-anchor="middle" data-k="triage">full triage</text></g>
+        <g><circle class="dot" cx="830" cy="130" r="10"/><text class="st" x="830" y="167" text-anchor="middle">Commit</text><text class="sub" x="830" y="186" text-anchor="middle">completion gate</text></g>
+        <g><circle class="dot" cx="970" cy="130" r="10"/><text class="st" x="970" y="167" text-anchor="middle">Pull request</text><text class="sub" x="970" y="186" text-anchor="middle">CI checks</text></g>
+        <g><rect class="gate" x="1120" y="120" width="20" height="20" transform="rotate(45 1130 130)"/><text class="st" x="1130" y="167" text-anchor="middle">Merge</text><text class="sub" x="1130" y="186" text-anchor="middle">by you</text><text class="sub bypass-note" x="1130" y="204" text-anchor="middle">approval required</text></g>
+      </svg>
+      <ul class="legend" aria-hidden="true">
+        <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/></svg>the route</li>
+        <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--rule-strong)" stroke-width="3" stroke-dasharray="6 5"/></svg>only when needed</li>
+        <li><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--ink)" stroke-width="2.5"/></svg>a step that a script or an agent runs</li>
+        <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--ink)"/></svg>you decide</li>
+        <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>you answer, only when asked</li>
+      </ul>
+
+      <ol class="words" id="route-words">
+        <li><b>Issue</b><small>from the roadmap</small></li>
+        <li><b>Implement</b><small class="k" data-k="impl">claude opus</small><p class="cond">If a decision that matters is unclear, the implementer stops with its questions and you answer.</p></li>
+        <li><b>Checks</b><small class="k">verify.sh</small><p class="cond">If a check fails, the implementer repairs it.</p></li>
+        <li class="r-word"><b>Review</b><small class="k" data-k="review">codex, read-only</small></li>
+        <li class="r-word"><b>Findings</b><small data-k="triage">full triage</small><p class="cond">Fixes are checked and reviewed again.</p></li>
+        <li><b>Commit</b><small>completion gate</small></li>
+        <li><b>Pull request</b><small>CI checks</small></li>
+        <li class="you"><b>Merge</b><small data-k="merge">by you</small></li>
+      </ol>
+      <figcaption class="caption" aria-live="polite" data-k="caption"><strong>Medium risk.</strong> Claude implements and Codex reviews, so the reviewer always comes from another provider, and the merge stays with you.</figcaption>
+    </figure>
+  </div>
+
+  <section id="why" aria-labelledby="why-h">
+    <div class="wrap sec">
+      <header><h2 id="why-h">Writing the code is the fast part</h2></header>
+      <div class="body">
+        <p>Claude Code and Codex produce working changes in minutes. What they do not settle on their own is whether the change does what was asked, whether someone other than its author checked it, whether the checks ran on exactly that code, and who decided it may ship.</p>
+        <p>ACT is the workflow around the agents. It does not write code. It turns an approved plan into Issues, has one agent implement and an agent of another provider review, records the evidence for every acceptance criterion, and leaves the merge to you. Everything runs from your repository with shell scripts and plain files; there is no platform to host.</p>
+        <div class="ledger" role="group" aria-label="Who does what">
+          <div><h3>The agents</h3><ul><li>Write the code and the tests</li><li>Review a change, read-only</li><li>Propose what to do with each finding</li></ul></div>
+          <div><h3>ACT</h3><ul><li>Computes the risk level of each change</li><li>Picks the agent and model for the level</li><li>Refuses a review by the implementer's own provider</li><li>Commits only verified, reviewed, complete work</li></ul></div>
+          <div><h3>You</h3><ul><li>Approve the plan</li><li>Answer what the agents cannot decide</li><li>Approve protected changes</li><li>Merge</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" aria-labelledby="how-h">
+    <div class="wrap sec">
+      <header><h2 id="how-h">Plan once, then one line per feature</h2><p>Every step on the <a href="workflow/">workflow page</a>.</p></header>
+      <div class="body">
+        <figure class="plain">
+          <svg class="lines" viewBox="-20 0 1140 200" role="img" aria-labelledby="lines-t">
+            <title id="lines-t">Planning runs once: idea, requirements, plan, plan review, your approval. From the approved plan, each feature runs its own line from Issue to merge.</title>
+            <path class="l1" d="M40 50 H700"/>
+            <path class="l2" d="M700 50 L780 130 H1080"/>
+            <circle class="dot" cx="40" cy="50" r="9"/><text class="st" x="40" y="26" text-anchor="middle">Idea</text>
+            <circle class="dot" cx="210" cy="50" r="9"/><text class="st" x="210" y="26" text-anchor="middle">Requirements</text><text class="sub" x="210" y="80" text-anchor="middle">Project Grill</text>
+            <circle class="dot" cx="380" cy="50" r="9"/><text class="st" x="380" y="26" text-anchor="middle">Plan</text><text class="sub" x="380" y="80" text-anchor="middle">architecture, roadmap</text>
+            <circle class="dot" cx="550" cy="50" r="9"/><text class="st" x="550" y="26" text-anchor="middle">Plan review</text><text class="sub" x="550" y="80" text-anchor="middle">another provider</text>
+            <rect class="gate" x="690" y="40" width="20" height="20" transform="rotate(45 700 50)"/><text class="st" x="700" y="26" text-anchor="middle">You approve</text>
+            <circle class="dot" cx="800" cy="130" r="9"/><text class="st" x="800" y="166" text-anchor="middle">Feature Issue</text>
+            <circle class="dot" cx="940" cy="130" r="9"/><text class="st" x="940" y="166" text-anchor="middle">Run</text><text class="sub" x="940" y="186" text-anchor="middle">build, check, review</text>
+            <rect class="gate" x="1070" y="120" width="20" height="20" transform="rotate(45 1080 130)"/><text class="st" x="1080" y="166" text-anchor="middle">Merge</text>
+          </svg>
+          <ol class="words lines-words">
+            <li><b>Idea</b></li>
+            <li><b>Requirements</b><small>Project Grill</small></li>
+            <li><b>Plan</b><small>architecture, roadmap</small></li>
+            <li><b>Plan review</b><small>another provider</small></li>
+            <li class="you"><b>You approve</b><p class="cond">Then, per feature:</p></li>
+            <li><b>Feature Issue</b></li>
+            <li><b>Run</b><small>build, check, review</small></li>
+            <li class="you"><b>Merge</b><small>by you</small></li>
+          </ol>
+        </figure>
+        <p>A planning change, a new requirement or a changed roadmap, goes back through the plan review and your approval before features are built on it. Each feature runs step by step, with you approving the triage, or in one unattended command, <code>run-feature.sh</code>, which stops whenever it needs you.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="risk" aria-labelledby="risk-h">
+    <div class="wrap sec">
+      <header><h2 id="risk-h">Effort follows risk</h2><p>Configured in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/policies/risk.conf"><code>risk.conf</code></a> and <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/agents.conf"><code>agents.conf</code></a>.</p></header>
+      <div class="body">
+        <p>Each change gets a risk level, computed from what it touches, and each project picks a workflow profile. They are separate settings: the level describes the change, the profile describes how much ceremony the project wants for low and medium risk.</p>
+        <div class="scroll"><table class="stack">
+          <thead><tr><th scope="col">setting</th><th scope="col">decided by</th><th scope="col">values</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Risk level</th><td data-col="decided by">The changed paths, fixed escalations (a policy, prompt or schema; removed or changed lines in an existing test; shared test fixtures; the verification configuration), and what the agents assess. You can raise it with the Issue label <code>risk: high</code> or <code>--risk</code>, but nobody can lower it.</td><td data-col="values" class="k">low · medium · high</td></tr>
+            <tr><th scope="row">Workflow profile</th><td data-col="decided by">One line in <code>risk.conf</code>. Without it, the project keeps the policy it has.</td><td data-col="values" class="k">standard · light</td></tr>
+            <tr><th scope="row">Agent permissions</th><td data-col="decided by">The role: implementers write, reviewers only read, unattended sessions ask nothing.</td><td data-col="values" class="k">write · read-only · unattended</td></tr>
+          </tbody>
+        </table></div>
+        <div class="scroll"><table class="matrix">
+          <caption>Under both profiles every commit needs the full verification and only you merge. The light column shows what changes from standard.</caption>
+          <thead><tr><th scope="col">level</th><th scope="col">standard</th><th scope="col">light</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><span class="lvl low">low</span></th>
+              <td data-col="standard"><p>Reviewed by another provider; full triage.</p><p>As shipped there is no low class: changes start at medium.</p></td>
+              <td data-col="light" class="changed"><p><span class="chg">changed</span> Documentation and process files are low. No review: the commit says so, and the merge needs your approval.</p></td></tr>
+            <tr><th scope="row"><span class="lvl medium">medium</span></th>
+              <td data-col="standard"><p>Reviewed; full triage.</p><p>Implementer: Claude opus.</p></td>
+              <td data-col="light" class="changed"><p><span class="chg">changed</span> Reviewed; light triage: minor findings and suggestions can be accepted or deferred without a fix round.</p></td></tr>
+            <tr><th scope="row"><span class="lvl high">high</span></th>
+              <td data-col="standard"><p>Reviewed; full triage.</p><p>Implementer: Claude fable.</p></td>
+              <td data-col="light"><p>Unchanged: reviewed, full triage, the stronger model. No profile can remove these.</p></td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="trace" aria-labelledby="trace-h">
+    <div class="wrap sec">
+      <header><h2 id="trace-h">Every claim has a record</h2><p>From the pull request of <a href="https://github.com/taspinar/agentic-coding-template/pull/222">#222</a>, written by <code>finish-feature.sh</code>.</p></header>
+      <div class="body">
+        <div class="artifact">
+          <pre class="record" aria-label="Excerpt of the description of pull request 222"><span class="src">github.com/taspinar/agentic-coding-template/pull/222 · excerpt</span><span class="pin" aria-hidden="true">1</span><mark>Completion: complete</mark>
+- met: A complete review in round 3 or later, started
+  by run-feature.sh or by hand without --changes,
+  receives the decisions of every approved triage …
+
+<span class="pin" aria-hidden="true">2</span><mark>Verification:</mark>
+- ./scripts/verify.sh passed
+
+<span class="pin" aria-hidden="true">3</span><mark>Review: round 5, PASS WITH MINOR FINDINGS,</mark>
+<mark>by codex (gpt-6-luna)</mark>; triage published on #217
+
+<span class="pin" aria-hidden="true">4</span><mark>Risk: high</mark>
+- .agents/prompts/reviewer.md: a policy, an agent
+  contract, or a schema is changed
+
+<span class="pin" aria-hidden="true">5</span><mark>Merge approval:</mark>
+- required from the project owner, for exactly
+  this commit</pre>
+          <ol class="notes">
+            <li><span class="pin" aria-hidden="true">1</span><div><b>Completion record</b><span>The implementer's claim, criterion by criterion, with evidence. A session that ends is not a finished Issue.</span></div></li>
+            <li><span class="pin" aria-hidden="true">2</span><div><b>Verification</b><span>A recorded run on exactly this content; reused while nothing changes, never a partial check.</span></div></li>
+            <li><span class="pin" aria-hidden="true">3</span><div><b>Independent review</b><span>Another provider, read-only. Every later round gets the earlier decisions; a re-raised finding names the one it continues.</span></div></li>
+            <li><span class="pin" aria-hidden="true">4</span><div><b>Risk level</b><span>Computed again at every step from the diff and the rules of the base branch, with its reasons.</span></div></li>
+            <li><span class="pin" aria-hidden="true">5</span><div><b>Your approval</b><span>Protected changes wait for you; the approval is bound to the commit.</span></div></li>
+          </ol>
+        </div>
+        <div class="split">
+          <div><h3>ACT enforces</h3><ul>
+            <li>The risk level, and that no agent lowers it</li>
+            <li>A reviewer of another provider than the implementer</li>
+            <li>Verification before review and before commit</li>
+            <li>A current review of the complete feature before commit</li>
+            <li>The completion gate and the triage rules</li>
+            <li>Read-only reviewers and sandboxed implementers</li>
+            <li>Rules read from the base branch, so a change cannot loosen its own checks</li>
+          </ul></div>
+          <div><h3>Your GitHub settings enforce</h3><ul>
+            <li>A ruleset on <code>main</code> that requires a pull request and the CI check</li>
+            <li>Code-owner review for protected paths</li>
+            <li>Who may bypass the rules</li>
+            <li>An approval the agent cannot give itself: needs a separate agent identity, <a href="https://github.com/taspinar/agentic-coding-template/issues/99">not built yet</a></li>
+          </ul></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="runs" aria-labelledby="runs-h">
+    <div class="wrap sec">
+      <header><h2 id="runs-h">ACT builds ACT</h2><p>Recent changes to this repository, made with its own workflow. <a href="examples/">Followed in detail</a>.</p></header>
+      <div class="body">
+        <div class="scroll"><table class="stack">
+          <caption>From the run records and the reviews published on each Issue. Verification is one full run of <code>verify.sh</code> on the maintainer's server.</caption>
+          <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col">risk</th><th scope="col">implementer</th><th scope="col">review rounds</th><th scope="col" class="num">verify</th><th scope="col">result</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/217">#217</a></th><td data-col="change">Give every later review round the earlier decisions</td><td data-col="risk"><span class="lvl high">high</span></td><td data-col="implementer" class="k">claude opus</td><td data-col="review rounds">5: two majors fixed, one minor accepted</td><td data-col="verify" class="num">1046 s</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/222">PR #222</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/193">#193</a></th><td data-col="change">Treat performance budgets as measurements</td><td data-col="risk"><span class="lvl high">high</span></td><td data-col="implementer" class="k">claude fable</td><td data-col="review rounds">4: a major re-raised as unresolved, then fixed</td><td data-col="verify" class="num">761 s</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/199">PR #199</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/189">#189</a></th><td data-col="change">Compute the risk level from one policy</td><td data-col="risk"><span class="lvl high">high</span></td><td data-col="implementer" class="k">claude fable</td><td data-col="review rounds">3, after a defect the owner found</td><td data-col="verify" class="num">572 s</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/194">PR #194</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/16">#16</a></th><td data-col="change">Stop for questions before implementing</td><td data-col="risk"><span class="lvl high">high</span></td><td data-col="implementer" class="k">claude opus</td><td data-col="review rounds">1, no findings</td><td data-col="verify" class="num">849 s</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/213">PR #213</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/157">#157</a></th><td data-col="change">Detect workflow complexity creep</td><td data-col="risk"><span class="lvl high">high</span></td><td data-col="implementer" class="k">claude fable</td><td data-col="review rounds">13 over two attempts, a finding open at the end of each</td><td data-col="verify" class="num off">–</td><td data-col="result" class="off">parked</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="learn" aria-labelledby="learn-h">
+    <div class="wrap sec">
+      <header><h2 id="learn-h">Learn from your runs</h2><p>With <code>report-runs.sh</code>, <code>show-experience.sh</code> and <code>analyze-runs.sh</code>. <a href="docs/technical-reference/">The records in detail</a>.</p></header>
+      <div class="body">
+        <p>Every run leaves a record: the review rounds and their findings, what the triage decided, the checks that failed, why a run stopped, and the time and tokens of each step. After a number of features you ask a read-only analyst what keeps costing rounds, and it proposes what to change.</p>
+        <figure class="plain">
+          <svg class="lines learn" viewBox="0 0 1240 236" role="img" aria-labelledby="learn-t" aria-describedby="learn-words">
+            <title id="learn-t">The run records of several features run into one analysis. Its proposals pass your decision, and each goes to its own place with the review that applies there.</title>
+            <text class="note" x="110" y="14" text-anchor="middle">the last n features</text>
+            <path class="l2" d="M40 30 H200 L280 110"/>
+            <path class="l2" d="M40 70 H200 L240 110"/>
+            <path class="l2" d="M40 110 H500"/>
+            <path class="l2" d="M40 150 H200 L240 110"/>
+            <path class="l2" d="M40 190 H200 L280 110"/>
+            <circle class="dot" cx="200" cy="30" r="8"/><circle class="dot" cx="200" cy="70" r="8"/><circle class="dot" cx="200" cy="110" r="8"/><circle class="dot" cx="200" cy="150" r="8"/><circle class="dot" cx="200" cy="190" r="8"/>
+            <text class="sub" x="200" y="226" text-anchor="middle">run records</text>
+            <path class="l1" d="M500 110 H620 L680 50 H900 M620 110 H900 M620 110 L680 170 H900"/>
+            <circle class="dot" cx="400" cy="110" r="10"/><text class="st" x="400" y="86" text-anchor="middle">Analysis</text><text class="sub k" x="400" y="142" text-anchor="middle">analyze-runs.sh</text><text class="sub" x="400" y="162" text-anchor="middle">read-only</text>
+            <rect class="gate" x="510" y="100" width="20" height="20" transform="rotate(45 520 110)"/><text class="st" x="520" y="86" text-anchor="middle">You decide</text>
+            <circle class="dot" cx="900" cy="50" r="8"/><text class="sub" x="918" y="55">ADR, instruction, skill, docs</text>
+            <circle class="dot" cx="900" cy="110" r="8"/><text class="sub" x="918" y="115">a check in a script</text>
+            <circle class="dot" cx="900" cy="170" r="8"/><text class="sub" x="918" y="175">an Issue, here or in the template</text>
+            <text class="note" x="760" y="226" text-anchor="middle">each with the review that applies there</text>
+          </svg>
+          <ol class="words lines-words" id="learn-words">
+            <li><b>Run records</b><small>of the last n features: rounds, findings, triage, stops, time and tokens</small></li>
+            <li><b>Analysis</b><small class="k">analyze-runs.sh --last 10</small><p class="cond">A read-only agent; it changes nothing.</p></li>
+            <li class="you"><b>You decide</b></li>
+            <li><b>Each proposal in its place</b><small>an ADR, an agent instruction, a skill, the documentation, a check in a script, or an Issue, here or in the template</small><p class="cond">with the review that applies there</p></li>
+          </ol>
+        </figure>
+        <ul class="rules">
+          <li><b>A finding needs two runs.</b> One observation stays a hypothesis, and “not enough evidence” is a valid outcome.</li>
+          <li><b>Every conclusion cites its records,</b> and says which differences in task size, model and workflow version it considered.</li>
+          <li><b>Nothing changes by itself.</b> Each proposal names its place, and you take it through the review and approval there.</li>
+          <li><b>Repeatable, and nothing counted twice.</b> Each analysis keeps its input and sources; evidence an earlier analysis used is marked as such.</li>
+        </ul>
+        <p class="needs">ACT ran it on itself on 28 October 2026: 41 runs of 19 features. Among the findings: in five runs the reviewer raised a fixed finding again as unresolved; six of seven failed runs recorded no reason for the stop; the self-test suite had grown from 463 s to 915 s in two days. Five proposals became Issues, all merged:</p>
+        <div class="scroll"><table class="stack">
+          <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col">result</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/216">#216</a></th><td data-col="change">Record the step and the reason of every stop</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/223">PR #223</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/217">#217</a></th><td data-col="change">Give every later review round the earlier decisions</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/222">PR #222</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/218">#218</a></th><td data-col="change">Stop a false partial completion in the handoff note</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/221">PR #221</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/219">#219</a></th><td data-col="change">Time every check and budget the self-test suite</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/224">PR #224</a></td></tr>
+            <tr><th scope="row"><a href="https://github.com/taspinar/agentic-coding-template/issues/220">#220</a></th><td data-col="change">Warn about calls of models that agents.conf does not declare</td><td data-col="result"><a href="https://github.com/taspinar/agentic-coding-template/pull/225">PR #225</a></td></tr>
+          </tbody>
+        </table></div>
+        <p class="needs">You start an analysis by hand; running it periodically is an open Issue (<a href="https://github.com/taspinar/agentic-coding-template/issues/131">#131</a>).</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="start" aria-labelledby="start-h">
+    <div class="wrap sec">
+      <header><h2 id="start-h">Start a project</h2><p>The full <a href="docs/getting-started/">getting-started guide</a>.</p></header>
+      <div class="body">
+        <pre class="term" aria-label="Terminal commands"><span class="c"># a new repository from the template</span>
+<span class="p">$ </span>gh repo create my-project --template taspinar/agentic-coding-template --private --clone
+<span class="p">$ </span>cd my-project
+<span class="p">$ </span>./scripts/doctor.sh
+<span class="c"># plan once: requirements, architecture, roadmap; you approve</span>
+<span class="p">$ </span>./scripts/start-planning.sh --description idea.md
+<span class="c"># then each feature, from Issue to pull request</span>
+<span class="p">$ </span>./scripts/create-feature-issue.sh F01
+<span class="p">$ </span>./scripts/run-feature.sh 1</pre>
+        <p class="needs">You need Git, the GitHub CLI, <code>jq</code>, Claude Code and Codex: as shipped, Claude implements and Codex reviews, and a review by the implementer's own provider is refused. <code>doctor.sh</code> checks all of it, including the Codex sandbox and your Git identity.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Agentic Coding Template (ACT), an open-source workflow for AI coding agents. MIT licence.</span>
+    <nav aria-label="Project">
+      <a href="https://github.com/taspinar/agentic-coding-template">Source</a>
+      <a href="https://github.com/taspinar/agentic-coding-template/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/taspinar/agentic-coding-template/blob/main/LICENSE">Licence</a>
+      <a href="about/">About</a>
+    </nav>
+  </div>
+</footer>
+<script src="map.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+---
+// The head of an inner page: its title and one lede paragraph.
+interface Props { title: string; lede?: string }
+const { title, lede } = Astro.props;
+---
+<div class="page-head wrap">
+  <h1>{title}</h1>
+  {lede && <p class="lede">{lede}</p>}
+  <slot />
+</div>

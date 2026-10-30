@@ -1,0 +1,15 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Section from "../components/Section.astro";
+import { site } from "../../site.config";
+import { issue, repoFile } from "../lib/links";
+---
+<Base title="About" description="Why ACT exists, where it comes from, and how to contribute.">
+  <PageHead title="About" lede={`${site.name} (${site.shortName}): where it comes from and how to take part.`} />
+  <Section id="coming" title="What comes here">
+    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
+    <p>The origin of the project, its engineering principles, and the work that is open.</p>
+    <p>Contributions follow <a href={repoFile("CONTRIBUTING.md")}><code>CONTRIBUTING.md</code></a>; the open work is in the <a href={`${site.repository}/issues`}>Issues</a>.</p>
+  </Section>
+</Base>

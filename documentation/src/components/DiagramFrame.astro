@@ -1,0 +1,21 @@
+---
+// The frame of a line map (DESIGN.md, "Route map with switches"): a heading,
+// optional controls, the SVG map with its legend, the words list that is the
+// map's text alternative and its form on narrow screens, and a caption.
+//
+// Slots: "controls" (beside the heading), default (the SVG, which names the
+// words list in aria-describedby), "legend", "words" (an ol.words), and
+// "caption".
+interface Props { id: string; title: string }
+const { id, title } = Astro.props;
+---
+<figure class="route" aria-labelledby={`${id}-title`}>
+  <div class="route-head">
+    <h2 id={`${id}-title`}>{title}</h2>
+    <slot name="controls" />
+  </div>
+  <slot />
+  <slot name="legend" />
+  <slot name="words" />
+  {Astro.slots.has("caption") && <figcaption class="caption" aria-live="polite"><slot name="caption" /></figcaption>}
+</figure>

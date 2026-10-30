@@ -1,0 +1,9 @@
+---
+// A table in its horizontal scroll wrapper. "stack" turns its rows into
+// blocks at narrow widths; each cell then needs its column in data-col.
+interface Props { stack?: boolean; matrix?: boolean; label?: string }
+const { stack = true, matrix = false, label } = Astro.props;
+---
+<div class="scroll" role={label ? "region" : undefined} aria-label={label} tabindex={label ? 0 : undefined}>
+  <table class:list={{ stack: stack && !matrix, matrix }}><slot /></table>
+</div>

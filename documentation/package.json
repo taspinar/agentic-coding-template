@@ -1,0 +1,19 @@
+{
+  "name": "act-documentation",
+  "private": true,
+  "type": "module",
+  "description": "The website of the Agentic Coding Template (ACT), built with Astro.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "./check-test.sh && ./check.sh --build"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "8.0.3",
+    "astro": "7.3.8"
+  }
+}

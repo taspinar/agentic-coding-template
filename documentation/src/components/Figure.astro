@@ -1,0 +1,9 @@
+---
+// A drawing, table or record with its caption below.
+interface Props { caption?: string }
+const { caption } = Astro.props;
+---
+<figure class="figure">
+  <slot />
+  {(caption || Astro.slots.has("caption")) && <figcaption>{caption}<slot name="caption" /></figcaption>}
+</figure>

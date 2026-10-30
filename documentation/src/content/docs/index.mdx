@@ -1,0 +1,37 @@
+---
+title: Documentation
+description: How to set up, run and configure the Agentic Coding Template (ACT).
+---
+import CodeBlock from "../../components/CodeBlock.astro";
+import Note from "../../components/Note.astro";
+import Table from "../../components/Table.astro";
+
+The documentation moves onto this site in step 6 of the website ([#240](https://github.com/taspinar/agentic-coding-template/issues/240)): getting started, the workflow, configuration, and the technical reference.
+
+Until then it lives in the repository:
+
+<Table label="Where the documentation is now">
+  <thead><tr><th scope="col">for</th><th scope="col">read</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">The steps of the workflow</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/workflow.md"><code>docs/workflow.md</code></a></td></tr>
+    <tr><th scope="row">Commands and settings</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md"><code>docs/development.md</code></a></td></tr>
+    <tr><th scope="row">The repository settings</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md"><code>docs/repository-setup.md</code></a></td></tr>
+    <tr><th scope="row">Where each file belongs</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/project-map.md"><code>docs/project-map.md</code></a></td></tr>
+  </tbody>
+</Table>
+
+## Start a project
+
+<CodeBlock label="Terminal commands" code={`# a new repository from the template
+gh repo create my-project --template taspinar/agentic-coding-template --private --clone
+cd my-project
+./scripts/doctor.sh
+# plan once: requirements, architecture, roadmap; you approve
+./scripts/start-planning.sh --description idea.md
+# then each feature, from Issue to pull request
+./scripts/create-feature-issue.sh F01
+./scripts/run-feature.sh 1`} />
+
+<Note title="You need">
+  Git, the GitHub CLI, `jq`, Claude Code and Codex. `doctor.sh` checks all of it.
+</Note>

@@ -1,0 +1,41 @@
+---
+// Sticky header: the mark, the sections, the repository and the theme toggle.
+import { site } from "../../site.config";
+import { href, sections } from "../lib/links";
+
+const here = Astro.url.pathname;
+---
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href={href()} aria-label={`${site.shortName}, ${site.name}: home`}><b>{site.shortName}</b><span>{site.name}</span></a>
+    <nav class="nav" aria-label="Site">
+      {sections.map((section) => {
+        const target = href(section.path);
+        const current = here === target ? "page" : here.startsWith(target) ? "true" : undefined;
+        return <a class:list={[{ keep: "keep" in section && section.keep }]} href={target} aria-current={current}>{section.label}</a>;
+      })}
+      <a class="keep" href={site.repository}>GitHub</a>
+      <button class="theme" type="button" aria-label="Switch colour theme"><span>Dark</span></button>
+    </nav>
+  </div>
+</header>
+
+<script>
+  // The theme toggle names the theme it switches to and keeps the choice in
+  // localStorage ("act-theme"), which the head applies before the first paint.
+  const button = document.querySelector<HTMLButtonElement>(".theme");
+  const label = button?.querySelector("span");
+  if (button && label) {
+    const current = () =>
+      document.documentElement.dataset.theme ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const show = () => { label.textContent = current() === "dark" ? "Light" : "Dark"; };
+    show();
+    button.addEventListener("click", () => {
+      const next = current() === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("act-theme", next); } catch (e) {}
+      show();
+    });
+  }
+</script>

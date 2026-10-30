@@ -1,0 +1,39 @@
+---
+// The home page. Its content, with the route map of one feature, is step 4
+// of the website (#238); until then it states the product and what comes.
+import Base from "../layouts/Base.astro";
+import Section from "../components/Section.astro";
+import Note from "../components/Note.astro";
+import { site } from "../../site.config";
+import { href, issue, repoFile } from "../lib/links";
+
+const [first, second] = site.tagline.split(/(?<=\.) /);
+---
+<Base description={site.description}>
+  <div class="hero wrap">
+    <div class="hero-grid">
+      <h1>{first} <em>{second}</em></h1>
+      <div class="hero-side">
+        <p class="lede">{site.description}</p>
+        <div class="actions">
+          <a class="btn" href={href("docs/")}>Get started</a>
+          <a href={site.repository}>Source on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <Section id="site" title="This site is being rebuilt">
+    <Fragment slot="note">Tracked in <a href={issue(234)}>#234</a>.</Fragment>
+    <p>The pages are in place; their content follows step by step.</p>
+    <ul>
+      <li>This page: the route of one feature from Issue to merge, by risk level and profile (<a href={issue(238)}>#238</a>).</li>
+      <li><a href={href("workflow/")}>Workflow</a>: every step of the workflow, drawn and explained (<a href={issue(239)}>#239</a>).</li>
+      <li><a href={href("docs/")}>Docs</a>: the documentation, moved onto this site (<a href={issue(240)}>#240</a>).</li>
+      <li><a href={href("features/")}>Features</a>, <a href={href("examples/")}>Examples</a> and <a href={href("about/")}>About</a> (<a href={issue(241)}>#241</a>).</li>
+    </ul>
+    <Note title="Until then">
+      <p>The repository is the reference: start with the <a href={repoFile("README.md")}>README</a> and <a href={repoFile("docs/workflow.md")}><code>docs/workflow.md</code></a>.</p>
+    </Note>
+  </Section>
+</Base>
