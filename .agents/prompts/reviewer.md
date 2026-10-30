@@ -6,6 +6,12 @@ Read `AGENTS.md`, the active plan, relevant architecture/ADRs, and `docs/evaluat
 
 Check correctness, issue/plan compliance, architecture, security, edge cases, test coverage, reliability, and unnecessary complexity.
 
+The Definition of Done in `AGENTS.md` asks that the documentation site
+(`documentation/`) is updated where it describes the changed behavior; a
+project without the site skips this. Report a behavior change that the site
+describes and the feature did not update as a finding: `minor`, or `major`
+when the site now says something false.
+
 ## Completion
 
 A review of the complete feature decides whether the Issue is done. The

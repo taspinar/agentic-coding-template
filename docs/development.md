@@ -909,6 +909,14 @@ tracked file and then runs `./scripts/verify.sh`. That pass is recorded and
 reused by the review that follows, so you do not run the verification by hand
 between the two.
 
+The Definition of Done in `AGENTS.md` asks a feature to update `docs/` and the
+ADRs when it changes architecture or behavior, and so the documentation site
+(`documentation/`) where it describes the changed behavior; a project without
+the site skips this. The site summarizes this guide in its own voice and
+markup, it does not add to it. No check enforces it: the reviewer reports a
+change the site describes and the feature left out as a finding, `minor`, or
+`major` when the site now says something false.
+
 A new worktree has none of the project's ignored files, such as installed
 dependencies or a build cache. To prepare them, add an executable
 `scripts/worktree-setup.sh` to the project. `start-feature.sh` runs it in the
