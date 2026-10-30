@@ -1,0 +1,13 @@
+---
+// A section of a page: the heading column (h2 and a short note naming the
+// source) beside the body column. The heading column is sticky while the grid
+// has two columns.
+interface Props { id: string; title: string }
+const { id, title } = Astro.props;
+---
+<section id={id} aria-labelledby={`${id}-h`}>
+  <div class="wrap sec">
+    <header><h2 id={`${id}-h`}>{title}</h2>{Astro.slots.has("note") && <p><slot name="note" /></p>}</header>
+    <div class="body"><slot /></div>
+  </div>
+</section>

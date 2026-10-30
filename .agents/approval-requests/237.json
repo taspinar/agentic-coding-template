@@ -1,0 +1,21 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "504b081d6064842b40d5fb0c5e01897d9ac0b7cf",
+  "commit": {
+    "branch": "feature/237-build-the-website-architecture",
+    "parent": "ea137be0e6b3dc5ed0be86d3a1b543a144d417f5",
+    "base": "ea137be0e6b3dc5ed0be86d3a1b543a144d417f5"
+  },
+  "review": {
+    "round": 6,
+    "verdict": "PASS",
+    "reviewer": "codex (gpt-6-luna)"
+  },
+  "reasons": [
+    ".github/workflows/ci.yml: the file defines or carries out the workflow and its gate",
+    ".github/workflows/pages.yml: the file defines or carries out the workflow and its gate",
+    "scripts/verify.conf: an existing check or line is changed or removed",
+    "the independent review classified the impact on the architecture as major: The change replaces the hand-written site with an Astro static build and changes CI and Pages build/deployment infrastructure. These are within the Issue scope. The architecture document is a template placeholder, and docs/decisions contains no accepted ADRs to compare against. "
+  ],
+  "explanation": "Issue #237: Build the website architecture in Astro with the design system, base path and Pages build (website step 3). The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}

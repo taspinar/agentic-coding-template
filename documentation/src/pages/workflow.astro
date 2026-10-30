@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Section from "../components/Section.astro";
+import Note from "../components/Note.astro";
+import { issue, repoFile } from "../lib/links";
+---
+<Base title="Workflow" description="How the ACT workflow runs: planning once, then each feature from Issue to merge, step by step or unattended.">
+  <PageHead title="Workflow" lede="How a project is planned once and how each feature then runs from Issue to merge." />
+  <Section id="coming" title="What comes here">
+    <Fragment slot="note">Step 5 of the website, <a href={issue(239)}>#239</a>.</Fragment>
+    <p>The workflow as a line map: planning, then each feature with its checks, review and triage, step by step or in one unattended run, with the place of every decision that stays with you.</p>
+    <Note title="Until then">
+      <p>The steps are described in <a href={repoFile("docs/workflow.md")}><code>docs/workflow.md</code></a>.</p>
+    </Note>
+  </Section>
+</Base>

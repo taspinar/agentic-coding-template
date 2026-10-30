@@ -1,0 +1,4 @@
+# Build output and the caches of Astro and npm.
+node_modules/
+dist/
+.astro/

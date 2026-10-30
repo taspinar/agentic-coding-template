@@ -1,0 +1,15 @@
+---
+import { site } from "../../site.config";
+import { href, repoFile } from "../lib/links";
+---
+<footer>
+  <div class="wrap">
+    <span>{site.name} ({site.shortName}), an open-source workflow for AI coding agents.</span>
+    <nav aria-label="Project">
+      <a href={site.repository}>Source</a>
+      <a href={repoFile("CONTRIBUTING.md")}>Contributing</a>
+      <a href={href("fonts/OFL.txt")}>Font licence</a>
+      <a href={href("about/")}>About</a>
+    </nav>
+  </div>
+</footer>

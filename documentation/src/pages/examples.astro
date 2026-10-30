@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Section from "../components/Section.astro";
+import Note from "../components/Note.astro";
+import { issue, repoFile } from "../lib/links";
+---
+<Base title="Examples" description="Real features of this repository, followed from Issue to merged pull request, with their reviews, triage and evidence.">
+  <PageHead title="Examples" lede="Features of this repository, built with its own workflow, followed from Issue to pull request." />
+  <Section id="coming" title="What comes here">
+    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
+    <p>Real runs with their published reviews and triage: a feature end to end, the owner in the loop, a short path, and a stop for clarification.</p>
+    <Note title="Until then">
+      <p>A worked example is in <a href={repoFile("docs/example.md")}><code>docs/example.md</code></a>.</p>
+    </Note>
+  </Section>
+</Base>

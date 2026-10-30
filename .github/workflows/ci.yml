@@ -9,5 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The documentation site of the template is built by the verification
+      # and needs the Node version it pins. A project has no site and skips
+      # this step.
+      - if: hashFiles('documentation/.nvmrc') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: documentation/.nvmrc
+          cache: npm
+          cache-dependency-path: documentation/package-lock.json
       - name: Verify template/project
         run: ./scripts/verify.sh --all

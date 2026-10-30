@@ -1,0 +1,10 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import { href } from "../lib/links";
+---
+<Base title="Page not found" description="This page does not exist.">
+  <PageHead title="Page not found" lede="There is no page at this address.">
+    <div class="actions"><a class="btn" href={href()}>Home</a><a href={href("docs/")}>Documentation</a></div>
+  </PageHead>
+</Base>

@@ -1,0 +1,8 @@
+---
+// A block of code, highlighted at build time and drawn as the terminal.
+import { Code } from "astro:components";
+
+interface Props { code: string; lang?: string; label?: string }
+const { code, lang = "sh", label } = Astro.props;
+---
+<Code code={code} lang={lang as any} theme="css-variables" aria-label={label} />

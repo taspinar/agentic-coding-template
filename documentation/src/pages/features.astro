@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import PageHead from "../components/PageHead.astro";
+import Section from "../components/Section.astro";
+import Note from "../components/Note.astro";
+import { issue, repoFile } from "../lib/links";
+---
+<Base title="Features" description="What ACT does around AI coding agents: risk levels, independent review, verification, completion records and the merge that stays with you.">
+  <PageHead title="Features" lede="What ACT enforces around the agents, and what your repository settings enforce." />
+  <Section id="coming" title="What comes here">
+    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
+    <p>The controls of the workflow, each with the script or policy file that implements it: risk levels and workflow profiles, the reviewer of another provider, verification evidence, the completion gate, triage, and the run records.</p>
+    <Note title="Until then">
+      <p>The commands and settings are in <a href={repoFile("docs/development.md")}><code>docs/development.md</code></a>.</p>
+    </Note>
+  </Section>
+</Base>
