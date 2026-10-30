@@ -99,7 +99,7 @@ A partial run is never a verification. With `--only` nothing is recorded as
 passed, nothing is written into the record of a run it was started in, and
 `--reuse` is refused, so `review-feature.sh` and `finish-feature.sh` still run
 every check. The one place the workflow uses a partial run is an intermediate
-review round of a `high` feature whose risk policy names groups for it
+review round of a feature at any level whose risk policy names groups for it
 (`review-feature.sh --checks`, see "What each level requires"): that review
 records the content as partially checked, and the commit still needs the full
 verification. A failing partial run removes an
@@ -2403,8 +2403,8 @@ profile adds an interview to a feature, so clear work is not asked
 anything; an implementer that cannot continue without your decision records
 the question under "Open questions" in the handoff note and stops with
 `BLOCKED:` ("Running feature steps without questions"), under every profile.
-A targeted clarification gate before feature planning is the subject of its
-own Issue (#16); a profile neither replaces nor skips it.
+The targeted clarification gate is available (Issue #16, merged in PR #213);
+a profile neither replaces nor skips it.
 
 **Existing projects.** A project whose policy has no `profile:` line keeps
 exactly its behavior and is reported as `profile: none`, not as

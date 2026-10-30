@@ -1,25 +1,43 @@
 ---
-// The pages of the documentation, one per entry of the "docs" collection
-// (src/content/docs/); index.mdx is /docs/.
 import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
 import PageHead from "../../components/PageHead.astro";
 import Prose from "../../components/Prose.astro";
+import DocsSearch from "../../components/DocsSearch.astro";
+import { href } from "../../lib/links";
 
 export async function getStaticPaths() {
-  const pages = await getCollection("docs");
-  return pages.map((page) => ({
-    params: { slug: page.id === "index" ? undefined : page.id },
-    props: { page },
+  return (await getCollection("docs")).map(page => ({
+    params: { slug: page.id === "index" ? undefined : page.id }, props: { page },
   }));
 }
-
 const { page } = Astro.props;
-const { Content } = await render(page);
+const { Content, headings } = await render(page);
+const pages = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const position = pages.findIndex(entry => entry.id === page.id);
+const previous = pages[position - 1];
+const next = pages[position + 1];
+const link = (entry: typeof page) => href(`docs/${entry.id === "index" ? "" : entry.id + "/"}`);
 ---
 <Base title={page.data.title} description={page.data.description}>
   <PageHead title={page.data.title} lede={page.data.description} />
-  <div class="wrap">
-    <Prose><Content /></Prose>
+  <div class="wrap docs-layout">
+    <aside class="docs-sidebar">
+      <DocsSearch />
+      <nav aria-label="Documentation">
+        <ul>{pages.map(entry => <li><a href={link(entry)} aria-current={entry.id === page.id ? "page" : undefined}>{entry.data.title}</a></li>)}</ul>
+      </nav>
+    </aside>
+    <div class="docs-body">
+      {headings.length > 0 && <nav class="docs-toc" aria-label="On this page">
+        <b>On this page</b>
+        <ul>{headings.filter(h => h.depth <= 3).map(h => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}</ul>
+      </nav>}
+      <article data-search><Prose><Content /></Prose></article>
+      <nav class="docs-pagination" aria-label="Previous and next pages">
+        {previous && <a rel="prev" href={link(previous)}>Previous: {previous.data.title}</a>}
+        {next && <a rel="next" href={link(next)}>Next: {next.data.title}</a>}
+      </nav>
+    </div>
   </div>
 </Base>

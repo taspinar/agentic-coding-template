@@ -56,6 +56,16 @@ for base in /agentic-coding-template/ /; do
   rm -rf "$work/good"
 done
 
+expect_fault wrong-repository-ref / \
+  'sed -i "s|blob/main/|blob/feature/|" index.html' "repository ref other than main"
+
+# Qualified libraries and tests are checked at their actual repository paths.
+output "$work/qualified" /
+sed -i 's|doctor.sh|scripts/lib/risk.sh tests/lib-fakes.sh documentation/check.sh|' "$work/qualified/index.html"
+"$site/check.sh" "$work/qualified" / >/dev/null 2>&1 || fail "qualified scripts were rejected"
+expect_fault missing-qualified-script / \
+  'sed -i "s|doctor.sh|scripts/lib/not-real.sh|" index.html' "not in the repository"
+
 expect_fault missing-page /agentic-coding-template/ \
   'rm -r docs' "links to /agentic-coding-template/docs/#intro, which is not in the output"
 expect_fault outside-base /agentic-coding-template/ \

@@ -1,37 +1,20 @@
 ---
 title: Documentation
-description: How to set up, run and configure the Agentic Coding Template (ACT).
+description: Set up your project, run the workflow and understand its controls.
+order: 0
 ---
-import CodeBlock from "../../components/CodeBlock.astro";
-import Note from "../../components/Note.astro";
-import Table from "../../components/Table.astro";
+import { href } from "../../lib/links";
 
-The documentation moves onto this site in step 6 of the website ([#240](https://github.com/taspinar/agentic-coding-template/issues/240)): getting started, the workflow, configuration, and the technical reference.
+Start with <a href={href("docs/getting-started/")}>Getting started</a>, then follow the <a href={href("docs/detailed-workflow/")}>step reference</a> through planning, implementation, verification and review. The sidebar covers configuration, risk policy, GitHub settings and recovery.
 
-Until then it lives in the repository:
+The workflow runs on your machine. As shipped, Claude implements and Codex reviews, so install both providers. You approve planning and merge pull requests; no script merges for you. Under the shipped policy every feature is reviewed. A project can explicitly allow Low features to skip review; their merge then needs the owner.
 
-<Table label="Where the documentation is now">
-  <thead><tr><th scope="col">for</th><th scope="col">read</th></tr></thead>
-  <tbody>
-    <tr><th scope="row">The steps of the workflow</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/workflow.md"><code>docs/workflow.md</code></a></td></tr>
-    <tr><th scope="row">Commands and settings</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md"><code>docs/development.md</code></a></td></tr>
-    <tr><th scope="row">The repository settings</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md"><code>docs/repository-setup.md</code></a></td></tr>
-    <tr><th scope="row">Where each file belongs</th><td data-col="read"><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/project-map.md"><code>docs/project-map.md</code></a></td></tr>
-  </tbody>
-</Table>
+## Find a command or setting
 
-## Start a project
+Search matches words in the built pages, including code and tables. It runs entirely in your browser, with a static index and no external service. Without JavaScript, every page remains available through the sidebar and its table of contents.
 
-<CodeBlock label="Terminal commands" code={`# a new repository from the template
-gh repo create my-project --template taspinar/agentic-coding-template --private --clone
-cd my-project
-./scripts/doctor.sh
-# plan once: requirements, architecture, roadmap; you approve
-./scripts/start-planning.sh --description idea.md
-# then each feature, from Issue to pull request
-./scripts/create-feature-issue.sh F01
-./scripts/run-feature.sh 1`} />
+## Sources and scope
 
-<Note title="You need">
-  Git, the GitHub CLI, `jq`, Claude Code and Codex. `doctor.sh` checks all of it.
-</Note>
+The site describes the current template. Your repository's [development guide](https://github.com/taspinar/agentic-coding-template/blob/main/docs/development.md), [workflow reference](https://github.com/taspinar/agentic-coding-template/blob/main/docs/workflow.md) and [repository setup guide](https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md) describe the version installed in your project.
+
+The <a href={href("docs/technical-reference/")}>technical reference</a> links scripts and configuration to their source. History, research and possible improvements belong to <a href={href("about/")}>About</a>.
