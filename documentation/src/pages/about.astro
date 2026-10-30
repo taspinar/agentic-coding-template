@@ -1,15 +1,177 @@
 ---
+// Why ACT exists, its principles and design decisions, its history, the
+// research behind it and the open work. From the earlier site's history,
+// research and possible-improvements pages (commit 6a62f84), corrected and
+// extended as the audit of #235 lists (items 2, 8–16, 18); each history phase
+// and decision links to the pull requests that built it.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Section from "../components/Section.astro";
+import Table from "../components/Table.astro";
 import { site } from "../../site.config";
-import { issue, repoFile } from "../lib/links";
+import { issue, pull, repoFile } from "../lib/links";
+
+const prs = (numbers: number[]) => numbers.map((number) => ({ number, url: pull(number) }));
+
+// The history: periods by the merge dates of their pull requests.
+const history = [
+  { title: "A manual workflow", when: "September 2026", prs: prs([5, 8, 12, 14]),
+    text: "Instructions for agents, a few policies, a setup guide, and a rhythm of plan, act and evaluate. A feature was planned in an Issue, built in its own worktree, and read by a second agent. The first scripts took over what was the same every time; soon each review finding got an explicit decision, and the implementer fixed only what was decided." },
+  { title: "Structured planning", when: "September 2026", prs: prs([22]),
+    text: "A planning process before the first feature: from an idea to agreed requirements, an architecture and a roadmap." },
+  { title: "Records instead of reports", when: "2 October", prs: prs([31, 35, 39, 42, 43, 49, 50, 51]),
+    text: "Checks that relied on the agent's own word (the tests passed, the review covers the current code) became records a script can check: one command for the checks, structured review and triage data tied to the reviewed version, read-only reviewers, and a planning review with an approval tied to the approved documents." },
+  { title: "Reliability from real use", when: "6–7 October", prs: prs([61, 71, 74, 76, 77, 79, 81]),
+    text: "A feature resumes from a handoff note, a passed verification is reused for unchanged content, an approved plan has a change process, a later review can read only what changed, and a project takes over template changes with a script." },
+  { title: "Unattended runs", when: "8–10 October", prs: prs([89, 90, 91, 95, 100, 101]),
+    text: "One command takes a feature from its Issue to an open pull request; it does not merge. A script, not an agent, decides whether a step succeeded and retries a temporary failure; “blocked” means only that a person has to decide; whether a change needs the owner's approval is no longer left to the agent that made it." },
+  { title: "Learning from runs", when: "13–21 October", prs: prs([126, 136, 138, 139, 140, 164, 168]),
+    text: "The scripts commit and close an Issue only when the implementer's completion record says the work is complete. Every run records its durations and tokens; a report, the experience of each run and an analysis by a read-only agent follow. The owner can give triage decisions directly, with an audit trail, and a feature can wait for evidence that cannot exist yet." },
+  { title: "Effort by risk", when: "26–28 October", prs: prs([185, 194, 197, 198, 199, 200, 202, 211, 213, 214]),
+    text: "Every feature gets a computed risk level that selects the models and what the review rounds require; workflow profiles make low-risk work lighter in one line. The owner's comments reach every agent of a feature, and the implementer asks before it invents an answer. Budgets measure without failing, and approval requests are tied to the content tree." },
+  { title: "Corrections from the first analysis", when: "27–29 October", prs: prs([183, 208, 215, 222, 223, 224, 225, 228, 229]),
+    text: "Agent attribution became configurable and is disabled by default; Codex may write the runtime files it needs. The five proposals of the run analysis of 28 October were built: earlier review decisions in every round, a recorded reason for every stop, timed checks, warnings about undeclared models. Test escalation was narrowed to removed or changed lines, and the owner can raise the level before the first session." },
+  { title: "This website", when: "30 October", prs: prs([244, 245, 246, 247, 248]),
+    text: "An MIT licence, then the redesign of this site, tracked in #234." },
+];
+
+// The frameworks compared, from the earlier research page, statuses corrected (#235, item 9).
+const frameworks = [
+  { name: "GitHub Spec Kit", url: "https://github.com/github/spec-kit", took: "Clear links between requirements, plans, tasks and implementation; consistency checks", left: "A second specification system with its own commands and directories", status: "Partly: requirements, roadmap, feature Issues, planning review" },
+  { name: "OpenSpec", url: "https://github.com/Fission-AI/OpenSpec", took: "Explicit change requests for an approved plan", left: "A separate change-management tool with its own documents", status: "Built: the planning change process, with a new approval" },
+  { name: "Superpowers", url: "https://github.com/obra/superpowers", took: "Verification before calling work done, independent reviews, short task contexts, systematic debugging", left: "Every skill installed; test-first development for every change", status: "Partly: reviews, verification, resuming; a debugging method is not built" },
+  { name: "BMAD Method", url: "https://github.com/bmad-code-org/BMAD-METHOD", took: "Separate responsibilities for planning, implementation and review", left: "A large set of mandatory personas and documents", status: "A principle: focused roles" },
+  { name: "GSD Core", url: "https://github.com/open-gsd/gsd-core", took: "Small tasks, progress notes that survive a session, resuming with a fresh context", left: "A second orchestrator; parallel execution by default", status: "Partly: handoff notes and resuming; no task scheduling" },
+];
+
+// Possible improvements, statuses as the audit of #235 corrected them (items 8, 10–13, 15).
+const improvements = [
+  { name: "Separate agent identity", what: "A GitHub identity with limited rights for the agents, so an approval is one the agent cannot give itself", status: "Not built", ref: 99 },
+  { name: "GitHub approval rules", what: "A ruleset, required checks and code-owner review that GitHub enforces on the merge", status: "Available once you configure them: ACT cannot set them for you, and doctor.sh warns when the ruleset is missing" },
+  { name: "Second reviewer", what: "One review of the behaviour and one of the engineering quality", status: "Not built. High risk already gets the stronger model and always the full triage", ref: 66 },
+  { name: "Periodic run analysis", what: "The analysis of feature runs on a schedule", status: "Not built. analyze-runs.sh runs when you start it", ref: 131 },
+  { name: "Selective CI", what: "Running the tests a change affects", status: "Partly: check groups and partial checks in repair rounds; affected-test selection is not built" },
+  { name: "Model selection by cost", what: "Choosing a model by what a task needs and what it costs", status: "Partly: a model per role and risk level; selection by cost is not built" },
+  { name: "Cost of runs", what: "Duration, retries, models and cost per run", status: "Partly: durations, retries and tokens per role and model; a cost in money is not calculated" },
+  { name: "Task queue and parallel features", what: "Dependencies in a form automation can use, and agents working on several features at once", status: "Not built. Separate worktrees allow concurrent work that you start; a supervising agent was tried and is not part of the template" },
+  { name: "Environment isolation", what: "Per task its own database, services, ports and credentials, in a container or virtual machine", status: "Not built: a worktree separates only the working files" },
+  { name: "Browser validation", what: "Browser tests with screenshots or traces for interface changes", status: "Not built: a project can configure its own" },
+  { name: "Remote runs, a dashboard, several repositories", what: "Runs that continue on a server, a browser view of them, work across repositories", status: "Not built" },
+];
 ---
-<Base title="About" description="Why ACT exists, where it comes from, and how to contribute.">
-  <PageHead title="About" lede={`${site.name} (${site.shortName}): where it comes from and how to take part.`} />
-  <Section id="coming" title="What comes here">
-    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
-    <p>The origin of the project, its engineering principles, and the work that is open.</p>
-    <p>Contributions follow <a href={repoFile("CONTRIBUTING.md")}><code>CONTRIBUTING.md</code></a>; the open work is in the <a href={`${site.repository}/issues`}>Issues</a>.</p>
+<Base title="About" description="Why the Agentic Coding Template exists, its engineering principles and design decisions, how it evolved, the research behind it, and how to take part.">
+  <PageHead title="About" lede={`${site.name} (${site.shortName}): why it exists, what it is built on, and how it got here.`}>
+    <ol class="contents">
+      <li><a href="#why">Why ACT exists</a></li>
+      <li><a href="#principles">Engineering principles</a></li>
+      <li><a href="#decisions">Design decisions</a></li>
+      <li><a href="#history">History</a></li>
+      <li><a href="#research">Research</a></li>
+      <li><a href="#improvements">Possible improvements</a></li>
+      <li><a href="#contribute">Source, licence and contributing</a></li>
+    </ol>
+  </PageHead>
+
+  <Section id="why" title="Why ACT exists">
+    <p class="lede">Coding agents can plan a project, implement features, write tests and review changes. Using them across a whole development process raises questions they do not answer themselves.</p>
+    <p>How do you keep the requirements consistent? How do you know a change was reviewed and tested, and that the review and the tests saw the code that is merged? How do you let agents work on their own without giving up the decisions that matter? The answers are established engineering practices, applied to work with agents. Three shaped ACT most:</p>
+    <ul class="rules">
+      <li><b>Clear requirements reduce rework.</b> Every plan starts with a round of questions and your approval, and every feature with the implementer's check that the Issue settles what it needs.</li>
+      <li><b>Independent reviews catch what the author misses.</b> Under the shipped risk policy, every feature is reviewed by a read-only agent of another provider before it can be committed, and every finding gets an explicit decision. A project can let low-risk features skip the review; their merge then needs the owner.</li>
+      <li><b>Approval does not rest on an agent's judgement alone.</b> Rules about what a change touches come first; the reviewer's assessment comes on top and can only make the outcome stricter.</li>
+      <li><b>Not an assistant.</b> ACT writes no code: Claude Code and Codex do. ACT is the workflow around them, in shell scripts and plain files in your repository, with no platform to host.</li>
+    </ul>
+  </Section>
+
+  <Section id="principles" title="Engineering principles">
+    <Fragment slot="note">From the history below and <a href={repoFile("docs/workflow.md")}><code>docs/workflow.md</code></a>.</Fragment>
+    <ul class="rules">
+      <li><b>Manual first.</b> Deciding on findings, the planning loop and the unattended run were each a manual routine before they were a script.</li>
+      <li><b>Evidence before automation.</b> Recorded reviews and verification came before the command that runs a feature alone; without them an unattended run would have nothing to stop on.</li>
+      <li><b>A script decides, not an agent.</b> Whether a step succeeded, whether a review is current, what the risk level is: computed from the repository, never taken from an agent's report.</li>
+      <li><b>Effort follows risk.</b> A documentation fix and a change to the gate do not get the same treatment; high-risk work keeps every control under every profile.</li>
+      <li><b>Controls only get stricter.</b> Any source can raise a level or require approval; nothing an agent controls can lower it, and the rules are read from the base branch.</li>
+      <li><b>Driven by real use.</b> Once real work depended on the template, most changes answered something that had gone wrong, and since October the run records show what.</li>
+    </ul>
+  </Section>
+
+  <Section id="decisions" title="Design decisions">
+    <Fragment slot="note">Each with the pull request that made it.</Fragment>
+    <Table>
+      <thead><tr><th scope="col">decision</th><th scope="col">why</th><th scope="col">source</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Read-only reviewers</th><td data-col="why">A reviewer that can edit can fix what it should report.</td><td data-col="source"><a href={pull(35)}>PR #35</a></td></tr>
+        <tr><th scope="row">A reviewer of another provider</th><td data-col="why">An agent of the same family shares the implementer's blind spots; the shipped pair is Claude and Codex.</td><td data-col="source"><a href={pull(211)}>PR #211</a></td></tr>
+        <tr><th scope="row">Evidence tied to content</th><td data-col="why">A review or a verification counts only for the content it saw; any change makes it stale.</td><td data-col="source"><a href={pull(42)}>#42</a>, <a href={pull(74)}>#74</a>, <a href={pull(200)}>#200</a></td></tr>
+        <tr><th scope="row">Scripts decide outcomes</th><td data-col="why">An unattended run needs a judge that does not depend on how a session ended.</td><td data-col="source"><a href={pull(101)}>PR #101</a></td></tr>
+        <tr><th scope="row">The completion gate</th><td data-col="why">A session that ends is not a finished feature.</td><td data-col="source"><a href={pull(126)}>PR #126</a></td></tr>
+        <tr><th scope="row">Your merge</th><td data-col="why">No script merges; protected changes and major architecture impact wait for the owner.</td><td data-col="source"><a href={pull(100)}>PR #100</a></td></tr>
+        <tr><th scope="row">A computed risk level</th><td data-col="why">Read from the diff and the base branch's rules, so a feature cannot classify itself lower.</td><td data-col="source"><a href={pull(194)}>PR #194</a></td></tr>
+        <tr><th scope="row">Local run records</th><td data-col="why">Measurement without sending anything anywhere.</td><td data-col="source"><a href={pull(136)}>PR #136</a></td></tr>
+        <tr><th scope="row">Issues when ready</th><td data-col="why">A feature becomes an Issue when you are ready to build it; the roadmap is not turned into a backlog in advance.</td><td data-col="source"><a href={pull(44)}>PR #44</a></td></tr>
+      </tbody>
+    </Table>
+  </Section>
+
+  <Section id="history" title="History">
+    <Fragment slot="note">From the first pull request on 10 September 2026. Each period links to the pull requests that built it.</Fragment>
+    <p>The ideas behind the workflow are not new: it combines established engineering practice with coding agents, inside a development process on GitHub. It started manual and automated the steps that proved useful and repeatable. Several lessons came from <a href={`${issue(189)}#issuecomment-6443105170`}>Physics by Construction</a>, a project that uses this workflow and where parts of its design were tried first; a fix found there came back in <a href={pull(179)}>PR #179</a>.</p>
+    <ol class="words timeline">
+      {history.map((period) => (
+        <li>
+          <b>{period.title}</b><small class="k">{period.when}</small>
+          <p>{period.text}</p>
+          <p>{period.prs.map((pr, index) => <>{index > 0 && ", "}<a href={pr.url}>#{pr.number}</a></>)}</p>
+        </li>
+      ))}
+    </ol>
+  </Section>
+
+  <Section id="research" title="Research">
+    <Fragment slot="note">No code was copied from the projects named here.</Fragment>
+    <p>For every framework we asked one question: would this improve the workflow we have, or add complexity it does not need?</p>
+    <Table label="Frameworks compared">
+      <thead><tr><th scope="col">framework</th><th scope="col">what we took</th><th scope="col">what we left out</th><th scope="col">in ACT today</th></tr></thead>
+      <tbody>
+        {frameworks.map((row) => (
+          <tr>
+            <th scope="row"><a href={row.url}>{row.name}</a></th>
+            <td data-col="what we took">{row.took}</td>
+            <td data-col="what we left out">{row.left}</td>
+            <td data-col="in ACT today">{row.status}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <p>Two talks shaped the approach: <a href="https://youtu.be/-QFHIoCo-Ko">Matt Pocock, “Full Walkthrough: Workflow for AI Coding”</a>, on clarifying requirements, vertical slices and dependencies between tasks; and <a href="https://youtu.be/rnDm57Py54A">Eric Zakariasson, “Building your own software factory”</a>, on isolated environments, parallel agents and better verification evidence.</p>
+    <p>Among skill collections we looked at <a href="https://github.com/cloudflare/security-audit-skill">Cloudflare's security audit skill</a>, <a href="https://github.com/trailofbits/skills">Trail of Bits' skills</a>, <a href="https://github.com/addyosmani/agent-skills">Addy Osmani's agent skills</a>, <a href="https://github.com/anthropics/skills">Anthropic's skills</a> and <a href="https://github.com/pbakaus/impeccable">Impeccable</a>. None is bundled: a project selects the skills its work needs.</p>
+  </Section>
+
+  <Section id="improvements" title="Possible improvements">
+    <Fragment slot="note">Not a committed roadmap. The open work is in the <a href={`${site.repository}/issues`}>Issues</a>.</Fragment>
+    <p>A new feature has to add clear value without making the workflow harder to use for a single developer. What exists in part is said so.</p>
+    <Table>
+      <thead><tr><th scope="col">improvement</th><th scope="col">what it would add</th><th scope="col">status</th></tr></thead>
+      <tbody>
+        {improvements.map((row) => (
+          <tr>
+            <th scope="row">{row.name}</th>
+            <td data-col="what it would add">{row.what}</td>
+            <td data-col="status">{row.status}{row.ref && <> (<a href={issue(row.ref)}>#{row.ref}</a>)</>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <p class="needs">Built since the earlier list of this site: feature clarification (<a href={pull(213)}>PR #213</a>), a model per risk level, check groups, partial checks and budgets. What the template deliberately does not do: require a central platform, turn the roadmap into a backlog in advance, or require test-first development for every change.</p>
+  </Section>
+
+  <Section id="contribute" title="Source, licence and contributing">
+    <dl class="facts">
+      <dt>source</dt><dd><a href={site.repository}>{site.repository.replace(/^https:\/\//, "")}</a></dd>
+      <dt>licence</dt><dd>MIT, in <a href={repoFile("LICENSE")}><code>LICENSE</code></a>. A project created from the template chooses its own licence.</dd>
+      <dt>contributing</dt><dd><a href={repoFile("CONTRIBUTING.md")}><code>CONTRIBUTING.md</code></a>: changes start from an Issue, on a feature branch, following <a href={repoFile("AGENTS.md")}><code>AGENTS.md</code></a></dd>
+      <dt>security</dt><dd><a href={repoFile("SECURITY.md")}><code>SECURITY.md</code></a>: report security-sensitive findings privately</dd>
+      <dt>open work</dt><dd>The <a href={`${site.repository}/issues`}>Issues</a> of the repository</dd>
+    </dl>
   </Section>
 </Base>

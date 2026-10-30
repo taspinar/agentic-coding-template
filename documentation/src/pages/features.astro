@@ -1,17 +1,252 @@
 ---
+// The principal capabilities of ACT, each with what it does, why it matters,
+// and the file and key that configure it. The facts follow the scripts and
+// policy files on main and the audit of #235; the docs pages carry the detail.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Section from "../components/Section.astro";
-import Note from "../components/Note.astro";
-import { issue, repoFile } from "../lib/links";
+import Table from "../components/Table.astro";
+import { href, issue, pull, repoFile } from "../lib/links";
+
+const contents = [
+  { id: "roles", title: "Roles and an independent review" },
+  { id: "routing", title: "Risk-based model routing" },
+  { id: "profiles", title: "Light and Standard profiles" },
+  { id: "planning", title: "Planning and feature clarification" },
+  { id: "evidence", title: "Verification, evidence and completion" },
+  { id: "triage", title: "Triage and findings across rounds" },
+  { id: "worktrees", title: "Branches and worktrees" },
+  { id: "records", title: "Run reporting and measurement" },
+  { id: "merge", title: "Protected changes and your merge" },
+];
+
+// The shipped .agents/agents.conf, with the permission profile each role runs under.
+const roles = [
+  { role: "project-grill", agent: "claude fable", access: "writes the requirements, with you" },
+  { role: "project-planner", agent: "claude fable", access: "writes the plan" },
+  { role: "planning-reviewer", agent: "codex gpt-6-astra", access: "read-only" },
+  { role: "implementer", agent: "claude opus", access: "writes; unattended in a run" },
+  { role: "implementer@high", agent: "claude fable", access: "writes; unattended in a run" },
+  { role: "reviewer", agent: "codex gpt-6-luna", access: "read-only" },
+  { role: "triage", agent: "claude sonnet", access: "read-only" },
+  { role: "triage-implementer", agent: "claude opus", access: "writes; unattended in a run" },
+  { role: "triage-implementer@high", agent: "claude fable", access: "writes; unattended in a run" },
+  { role: "analyst", agent: "claude fable", access: "read-only" },
+];
 ---
-<Base title="Features" description="What ACT does around AI coding agents: risk levels, independent review, verification, completion records and the merge that stays with you.">
-  <PageHead title="Features" lede="What ACT enforces around the agents, and what your repository settings enforce." />
-  <Section id="coming" title="What comes here">
-    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
-    <p>The controls of the workflow, each with the script or policy file that implements it: risk levels and workflow profiles, the reviewer of another provider, verification evidence, the completion gate, triage, and the run records.</p>
-    <Note title="Until then">
-      <p>The commands and settings are in <a href={repoFile("docs/development.md")}><code>docs/development.md</code></a>.</p>
-    </Note>
+<Base title="Features" description="What ACT does around Claude Code and Codex: roles and an independent review, risk-based models, profiles, clarification, verification evidence, triage, worktrees, run records and the merge that stays with you.">
+  <PageHead title="Features" lede="What the workflow does around the agents, why, and the file you change to configure it.">
+    <ol class="contents">
+      {contents.map((item) => <li><a href={`#${item.id}`}>{item.title}</a></li>)}
+    </ol>
+  </PageHead>
+
+  <Section id="roles" title="Roles and an independent review">
+    <Fragment slot="note">Configured in <a href={repoFile(".agents/agents.conf")}><code>agents.conf</code></a>. <a href={href("docs/agent-roles/")}>Agent roles</a> in the docs.</Fragment>
+    <p class="lede">Every step of the workflow is a role with one job: question you about the idea, write the plan, review it, implement a feature, review the feature, propose what to do with each finding, fix what was decided, analyse past runs. Each role names its provider and model in one line.</p>
+    <p>The reviewer of a feature must come from another provider than the agent that implemented it: <code>review-feature.sh</code> refuses a review by the implementer's own provider. Reviewers run read-only, so a reviewer reports and never edits. As shipped, Claude implements and Codex reviews, which is why a project needs both CLIs; <code>doctor.sh</code> checks that the assigned ones are installed.</p>
+    <p>Why it matters: an agent that reviews its own work, or the work of the same model family, shares its blind spots. A review that cannot change the code also cannot quietly fix what it was meant to report.</p>
+    <Table>
+      <caption>The shipped <code>.agents/agents.conf</code>. The <code>--agent</code> and <code>--model</code> options of a script override it for one run.</caption>
+      <thead><tr><th scope="col">role</th><th scope="col">provider and model</th><th scope="col">access</th></tr></thead>
+      <tbody>
+        {roles.map((row) => (
+          <tr>
+            <th scope="row" class="k">{row.role}</th>
+            <td data-col="provider and model" class="k">{row.agent}</td>
+            <td data-col="access">{row.access}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <dl class="facts">
+      <dt>file</dt><dd><a href={repoFile(".agents/agents.conf")}><code>.agents/agents.conf</code></a></dd>
+      <dt>key</dt><dd><code>&lt;role&gt;: &lt;provider&gt; &lt;model&gt;</code>, provider <code>claude</code> or <code>codex</code></dd>
+      <dt>enforced by</dt><dd><a href={repoFile("scripts/review-feature.sh")}><code>review-feature.sh</code></a> (provider independence), <a href={repoFile("scripts/lib/agent.sh")}><code>scripts/lib/agent.sh</code></a> (permission profiles)</dd>
+    </dl>
+  </Section>
+
+  <Section id="routing" title="Risk-based model routing">
+    <Fragment slot="note">Configured in <a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a> and <a href={repoFile(".agents/agents.conf")}><code>agents.conf</code></a>. <a href={href("docs/risk-policy/")}>Risk policy</a> in the docs.</Fragment>
+    <p class="lede">Every feature has a risk level, low, medium or high, computed from what it changes. The level picks the model of each writing role and sets what the review rounds require.</p>
+    <p>The workflow computes the level again at each step, from the diff and the rules of the base branch, so a feature cannot relax the rules it is classified by. Any source can raise it; nothing lowers it. A line <code>&lt;role&gt;@&lt;level&gt;</code> in <code>agents.conf</code> gives a role another model at that level, and a later session never runs below a level an earlier session of the feature ran at.</p>
+    <p>Why it matters: the features that built ACT showed that a change to the workflow and its gate converged in one or two rounds with the strongest model and in many with a weaker one, while other features did not need it. Spending the stronger model everywhere costs time and tokens; spending it nowhere costs rounds.</p>
+    <Table>
+      <caption>The sources of the level. The highest one counts. From <code>scripts/lib/risk.sh</code> and the header of <code>risk.conf</code>.</caption>
+      <thead><tr><th scope="col">source</th><th scope="col">what raises the level</th><th scope="col">key</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Paths</th><td data-col="what raises the level">The highest class of any changed path; a path no class names gets the default. As shipped: default medium, the workflow's own gate files high, no low class.</td><td data-col="key" class="k">default, low, medium, high</td></tr>
+        <tr><th scope="row">Escalations</th><td data-col="what raises the level">Always high: a changed or removed line of an existing test or of the check lists, a removed test, any change to a shared test fixture, a changed existing manifest, and a changed existing file under <code>.agents/policies/</code>, <code>.agents/prompts/</code> or <code>.agents/schemas/</code>. A file the feature adds never escalates by itself.</td><td data-col="key" class="k">tests, test-fixtures, manifests</td></tr>
+        <tr><th scope="row">The reviewer</th><td data-col="what raises the level">An impact on the architecture classified as major or breaking makes the feature high.</td><td data-col="key" class="k">architecture_impact</td></tr>
+        <tr><th scope="row">The implementer</th><td data-col="what raises the level">A completion record may claim a higher level; a lower claim is refused by <code>finish-feature.sh</code>.</td><td data-col="key" class="k">risk</td></tr>
+        <tr><th scope="row">You</th><td data-col="what raises the level">The Issue label <code>risk: high</code> or <code>risk: medium</code>, or <code>--risk</code> on <code>start-feature.sh</code> and <code>run-feature.sh</code>, before the first session.</td><td data-col="key" class="k">label, --risk</td></tr>
+      </tbody>
+    </Table>
+    <dl class="facts">
+      <dt>file</dt><dd><a href={repoFile(".agents/policies/risk.conf")}><code>.agents/policies/risk.conf</code></a>, read from the base branch</dd>
+      <dt>model per level</dt><dd><code>implementer@high: claude fable</code> in <a href={repoFile(".agents/agents.conf")}><code>agents.conf</code></a></dd>
+      <dt>try it</dt><dd><code>./scripts/check-risk.sh</code> in a feature worktree prints the level and its reasons</dd>
+      <dt>built in</dt><dd><a href={pull(194)}>PR #194</a> (the level), <a href={pull(202)}>#202</a> and <a href={pull(211)}>#211</a> (models per level), <a href={pull(229)}>#229</a> (your hint)</dd>
+    </dl>
+  </Section>
+
+  <Section id="profiles" title="Light and Standard profiles">
+    <Fragment slot="note">One line in <a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a>. <a href={href("docs/risk-policy/")}>Workflow profiles</a> in the docs.</Fragment>
+    <p class="lede">A profile says how much ceremony a project wants for low and medium risk. It is a named preset of the risk policy, not a second workflow.</p>
+    <p><code>profile: standard</code> is the policy the template ships. <code>profile: light</code> adds a low class for documentation and process files and relaxes what low and medium require. A line written in <code>risk.conf</code> always wins over the preset, and without a <code>profile</code> line nothing is added. The level of a change and the profile of the project are separate settings; the agents' permission profiles (write, read-only, unattended) are a third, unrelated one.</p>
+    <p>Why it matters: a small project, or one where most changes are documentation, should not pay a full review for a typo. A light project still keeps every control on high-risk work.</p>
+    <Table>
+      <caption>What <code>profile: light</code> adds, from <code>scripts/lib/risk.sh</code>. Under both profiles every commit needs the full verification and only you merge.</caption>
+      <thead><tr><th scope="col">line</th><th scope="col">effect</th></tr></thead>
+      <tbody>
+        <tr><th scope="row" class="k">low: (docs and process files)</th><td data-col="effect">Documentation outside the ADRs and the planning documents, plans, handoffs, summaries and top-level Markdown files other than <code>AGENTS.md</code> become low.</td></tr>
+        <tr><th scope="row" class="k">low: review: none</th><td data-col="effect">A low feature is committed without a review. The commit and the pull request say so, and the merge needs your approval.</td></tr>
+        <tr><th scope="row" class="k">low, medium: triage: light</th><td data-col="effect">Minor findings and suggestions may be accepted or deferred without a fix session. Critical and major findings stay to be fixed.</td></tr>
+        <tr><th scope="row">Never changed</th><td data-col="effect">The high class, the escalations, and what high requires. <code>review: none</code> is refused for medium and high, <code>triage: light</code> for high.</td></tr>
+      </tbody>
+    </Table>
+    <dl class="facts">
+      <dt>file</dt><dd><a href={repoFile(".agents/policies/risk.conf")}><code>.agents/policies/risk.conf</code></a></dd>
+      <dt>key</dt><dd><code>profile: light | standard</code>; per level, <code>&lt;level&gt;: verification | review | triage: &lt;value&gt;</code></dd>
+      <dt>built in</dt><dd><a href={pull(214)}>PR #214</a>, on <a href={pull(197)}>#197</a> and <a href={pull(198)}>#198</a></dd>
+    </dl>
+  </Section>
+
+  <Section id="planning" title="Planning and feature clarification">
+    <Fragment slot="note">The prompts are in <a href={repoFile(".agents/prompts/project-grill.md")}><code>.agents/prompts/</code></a>. <a href={href("docs/detailed-workflow/")}>Every step</a> in the docs.</Fragment>
+    <p class="lede">Before the first feature, an agent questions you until the requirements are agreed, then writes the architecture and a roadmap. Before each feature, the implementer decides whether the Issue settles what it needs.</p>
+    <div class="split">
+      <div><h3>Once per project</h3><ul>
+        <li><code>start-planning.sh</code>: the Project Grill asks about goals, users and scope, and writes <code>docs/PROJECT_REQUIREMENTS.md</code>; the planner writes the architecture and the roadmap.</li>
+        <li><code>review-planning.sh</code>: an agent of another provider reviews the plan, read-only.</li>
+        <li><code>revise-planning.sh</code>: every finding gets a recorded decision.</li>
+        <li><code>finish-planning.sh</code>: your approval, tied to the version of the documents you approved. A later change to the plan goes through review and approval again.</li>
+      </ul></div>
+      <div><h3>Once per feature</h3><ul>
+        <li>The implementer reads the Issue, your comments on it, the requirements, the architecture, the ADRs and the code.</li>
+        <li><b>Clear:</b> it implements, and the handoff note says why the feature was clear.</li>
+        <li><b>Needs clarification:</b> it changes nothing, writes its questions with options and a recommendation, and the run stops with status 3.</li>
+        <li>You answer in the handoff note or in a comment on the Issue; the next session reads it. Names and private helpers are not questions for you.</li>
+      </ul></div>
+    </div>
+    <p>Why it matters: an agent that meets an open decision invents an answer, and the invention is reviewed as if it were the requirement. A question costs you a minute; a wrong guess costs a feature.</p>
+    <dl class="facts">
+      <dt>files</dt><dd><a href={repoFile(".agents/prompts/project-grill.md")}><code>project-grill.md</code></a>, <a href={repoFile(".agents/prompts/implementer.md")}><code>implementer.md</code></a> (section “Clarification”)</dd>
+      <dt>comments</dt><dd>Only comments of the owner, members and collaborators reach the agents</dd>
+      <dt>built in</dt><dd><a href={pull(22)}>PR #22</a> (planning), <a href={pull(213)}>#213</a> (clarification), <a href={pull(185)}>#185</a> (your comments)</dd>
+    </dl>
+  </Section>
+
+  <Section id="evidence" title="Verification, evidence and completion">
+    <Fragment slot="note">Configured in <a href={repoFile("scripts/verify.conf")}><code>verify.conf</code></a>. <a href={href("docs/verification-and-completion/")}>Verification and completion</a> in the docs.</Fragment>
+    <p class="lede">One command runs the project's checks, and a pass is recorded for exactly the content it checked. The implementer's claim that the work is done is a record too, criterion by criterion.</p>
+    <p><code>verify.sh</code> runs every check of <code>scripts/verify.conf</code>. Its pass is bound to a content fingerprint and reused while nothing changes; a review requires it, and so does the commit. A partial run of some groups, which a repair round may use, is never a verification and cannot be cited. A budget check measures, for example the duration of a suite, and never fails the run.</p>
+    <p>The implementer writes <code>.agents/completion/&lt;issue&gt;.json</code>: one entry per acceptance criterion with its status and evidence. The scripts go on to the review and the commit only on what it says.</p>
+    <Table>
+      <caption>The statuses of a completion record and what the scripts do with them, from <code>.agents/prompts/implementer.md</code>.</caption>
+      <thead><tr><th scope="col">status</th><th scope="col">meaning</th><th scope="col">next</th></tr></thead>
+      <tbody>
+        <tr><th scope="row" class="k">complete</th><td data-col="meaning">Every criterion met or not applicable, nothing remains</td><td data-col="next">review, commit, pull request</td></tr>
+        <tr><th scope="row" class="k">awaiting_evidence</th><td data-col="meaning">Everything that can be shown now is shown; a criterion waits for CI, your approval or the merge</td><td data-col="next">pull request; the Issue closes when the evidence exists (<code>record-post-merge.sh</code>)</td></tr>
+        <tr><th scope="row" class="k">partial</th><td data-col="meaning">Work remains, whatever the reason</td><td data-col="next">the implementer is started again</td></tr>
+        <tr><th scope="row" class="k">blocked</th><td data-col="meaning">A decision only you can make</td><td data-col="next">the run stops with the question</td></tr>
+      </tbody>
+    </Table>
+    <p>Why it matters: an agent session that ends normally says nothing about whether the work is finished. A record with evidence per criterion is something a script can check and a reviewer can hold against the diff.</p>
+    <dl class="facts">
+      <dt>checks</dt><dd><code>&lt;name&gt; [&lt;group&gt;]: &lt;command&gt;</code> in <a href={repoFile("scripts/verify.conf")}><code>scripts/verify.conf</code></a>; a budget is <code>&lt;name&gt; [&lt;group&gt;] budget: &lt;command&gt;</code></dd>
+      <dt>repair rounds</dt><dd><code>&lt;level&gt;: verification: full | groups &lt;group&gt;...</code> in <code>risk.conf</code></dd>
+      <dt>fingerprint</dt><dd><a href={repoFile("scripts/lib/fingerprint.sh")}><code>scripts/lib/fingerprint.sh</code></a></dd>
+      <dt>built in</dt><dd><a href={pull(74)}>PR #74</a> (recorded verification), <a href={pull(126)}>#126</a> (completion gate), <a href={pull(168)}>#168</a> (evidence that cannot exist yet), <a href={pull(224)}>#224</a> (check durations)</dd>
+    </dl>
+  </Section>
+
+  <Section id="triage" title="Triage and findings across rounds">
+    <Fragment slot="note">Decisions follow <a href={repoFile(".agents/schemas/triage.schema.json")}><code>triage.schema.json</code></a>. <a href={href("docs/detailed-workflow/")}>Owner-directed triage</a> in the docs.</Fragment>
+    <p class="lede">Every finding of a review gets one recorded decision, and the decisions are published on the Issue. Every later round of review knows what was decided before.</p>
+    <Table>
+      <caption>The decisions. Critical and major findings are always to be fixed, also when you give the decisions yourself.</caption>
+      <thead><tr><th scope="col">decision</th><th scope="col">what follows</th><th scope="col">required</th></tr></thead>
+      <tbody>
+        <tr><th scope="row" class="k">FIX_NOW</th><td data-col="what follows"><code>apply-triage.sh</code> fixes it; the checks run and the fix is reviewed again</td><td data-col="required">a rationale</td></tr>
+        <tr><th scope="row" class="k">DEFER</th><td data-col="what follows">A follow-up Issue carries it</td><td data-col="required">the follow-up</td></tr>
+        <tr><th scope="row" class="k">ACCEPT</th><td data-col="what follows">It stays as it is</td><td data-col="required">a rationale</td></tr>
+      </tbody>
+    </Table>
+    <p>A triage agent proposes the decisions and <code>triage-review.sh</code> publishes them on the Issue, saying whether you approved them or an unattended run did. When a proposal is disproportionate, you can give the decisions yourself with <code>--decisions</code> and a reason, which is recorded beside the agent's proposal.</p>
+    <p>Each round after the first receives the decisions of every approved triage of the feature. A finding that continues an earlier one names it, as <code>unresolved</code> (a fix that did not hold) or <code>worsened</code> (an accepted or deferred finding the change made worse), and the stored review is refused when that relation contradicts the recorded decision or would lower a blocking finding.</p>
+    <p>Why it matters: without the earlier decisions a reviewer raises an accepted finding again, and each repeat costs a fix round. The run analysis of 28 October 2026 found it in five runs; <a href={href("examples/#e2e")}>the feature that fixed it</a> is the worked example.</p>
+    <dl class="facts">
+      <dt>files</dt><dd><a href={repoFile(".agents/schemas/feature-review.schema.json")}><code>feature-review.schema.json</code></a> (<code>previous</code>), <a href={repoFile("scripts/lib/review-data.sh")}><code>scripts/lib/review-data.sh</code></a> (the checks)</dd>
+      <dt>per level</dt><dd><code>&lt;level&gt;: triage: full | light</code>, <code>&lt;level&gt;: review: full | delta</code> in <code>risk.conf</code></dd>
+      <dt>built in</dt><dd><a href={pull(12)}>PR #12</a> and <a href={pull(14)}>#14</a> (triage), <a href={pull(164)}>#164</a> (your decisions), <a href={pull(222)}>#222</a> (earlier rounds)</dd>
+    </dl>
+  </Section>
+
+  <Section id="worktrees" title="Branches and worktrees">
+    <Fragment slot="note">Rules in <a href={repoFile("AGENTS.md")}><code>AGENTS.md</code></a>. <a href={href("docs/technical-reference/")}>Working directories</a> in the docs.</Fragment>
+    <p class="lede">Each feature is built on its own branch, <code>feature/&lt;issue&gt;-&lt;slug&gt;</code>, in its own Git worktree beside the main checkout. Nothing is written on <code>main</code>.</p>
+    <ul class="rules">
+      <li><b>One writer per worktree.</b> Parallel agents need separate worktrees and branches.</li>
+      <li><b>Resumable.</b> <code>start-feature.sh &lt;issue&gt; --resume</code> finds the worktree and continues from the handoff note, without the earlier conversation.</li>
+      <li><b>Prepared.</b> A project can add an optional setup script that copies ignored files, such as installed dependencies, into a new worktree.</li>
+      <li><b>Cleaned up.</b> <code>cleanup-worktree.sh</code> removes merged worktrees and branches, after it copied their run records.</li>
+    </ul>
+    <p>Why it matters: an agent's work stays apart from yours and from other features, and an interrupted session leaves a state the next one can read. A worktree separates working files; it is not a sandbox for databases, services or credentials.</p>
+    <dl class="facts">
+      <dt>scripts</dt><dd><a href={repoFile("scripts/start-feature.sh")}><code>start-feature.sh</code></a>, <a href={repoFile("scripts/cleanup-worktree.sh")}><code>cleanup-worktree.sh</code></a></dd>
+      <dt>handoff note</dt><dd><code>.agents/handoffs/&lt;issue&gt;.md</code>, ignored by Git</dd>
+      <dt>built in</dt><dd><a href={pull(57)}>PR #57</a> (cleanup), <a href={pull(71)}>#71</a> (setup script), <a href={pull(77)}>#77</a> (resume)</dd>
+    </dl>
+  </Section>
+
+  <Section id="records" title="Run reporting and measurement">
+    <Fragment slot="note">With <code>report-runs.sh</code>, <code>show-experience.sh</code> and <code>analyze-runs.sh</code>. <a href={href("docs/technical-reference/")}>The records</a> in the docs.</Fragment>
+    <p class="lede">Every run of a feature leaves a local record: what each step took, which agent and model ran at which level, the tokens they used, the review findings, the checks and their durations, and why a run stopped.</p>
+    <Table>
+      <caption>The commands that read the records. The records stay on your machine; nothing is sent anywhere.</caption>
+      <thead><tr><th scope="col">command</th><th scope="col">what it shows</th></tr></thead>
+      <tbody>
+        <tr><th scope="row" class="k">report-runs.sh</th><td data-col="what it shows">Duration, rounds, re-raised findings, blocked runs and tokens per feature; an unknown figure is shown as unknown, not as zero, and calls of models that <code>agents.conf</code> does not declare are left out of the totals with a warning.</td></tr>
+        <tr><th scope="row" class="k">show-experience.sh</th><td data-col="what it shows">What happened in a run, with a reference to the evidence: the findings, the stops, the repairs.</td></tr>
+        <tr><th scope="row" class="k">analyze-runs.sh --last 10</th><td data-col="what it shows">A read-only analyst compares several features and proposes changes, each with the place it belongs. You decide.</td></tr>
+      </tbody>
+    </Table>
+    <p>Why it matters: a run that ends at a pull request hides what it cost. The records turn “the workflow feels slow” into a figure with a source, and they are how ACT found what to change in itself: <a href={href("#learn")}>the analysis of 28 October 2026</a> on the home page.</p>
+    <dl class="facts">
+      <dt>where</dt><dd><code>.agents/run/records/</code> per run and <code>.agents/records/feature-&lt;issue&gt;.jsonl</code> per feature, in the primary checkout, ignored by Git</dd>
+      <dt>format</dt><dd><code>run-record/v1</code>, described in <a href={`${repoFile("docs/development.md")}#run-records`}><code>docs/development.md</code></a></dd>
+      <dt>built in</dt><dd><a href={pull(136)}>PR #136</a> to <a href={pull(140)}>#140</a>, then <a href={pull(223)}>#223</a> (stops) and <a href={pull(225)}>#225</a> (undeclared models)</dd>
+    </dl>
+  </Section>
+
+  <Section id="merge" title="Protected changes and your merge">
+    <Fragment slot="note">Configured in <a href={repoFile(".agents/policies/guardrails.conf")}><code>guardrails.conf</code></a>. <a href={href("docs/configuration-and-security/")}>Changes that need the owner</a> in the docs.</Fragment>
+    <p class="lede">No script merges. <code>run-feature.sh</code> ends at an open pull request, and some pull requests only you may approve.</p>
+    <p>The merge approval gate rests on the diff first and on the reviewer second. Your approval is needed when a feature changes a protected path, when the reviewer classifies its impact on the architecture as major or breaking, or when there is no review. Always protected: every added, changed or removed ADR, the CI workflows, the files that carry out the gate, and a changed or removed line of the check lists. The rules are read from the base branch, so a feature cannot loosen its own gate. The commit and the pull request then say “Merge approval: required”, bound to the commit, with the reasons.</p>
+    <div class="split">
+      <div><h3>ACT enforces</h3><ul>
+        <li>The risk level, and that no agent lowers it</li>
+        <li>A reviewer of another provider, read-only</li>
+        <li>Verification before review and before commit</li>
+        <li>A current review of the complete feature before commit</li>
+        <li>The completion gate and the triage rules</li>
+        <li>No agent attribution when <code>agent-attribution: disabled</code></li>
+        <li>Rules read from the base branch</li>
+      </ul></div>
+      <div><h3>Your GitHub settings enforce</h3><ul>
+        <li>A ruleset on <code>main</code> that requires a pull request and the CI check; <code>doctor.sh</code> warns when it is missing</li>
+        <li>Code-owner review, once you replace the placeholder in <a href={repoFile(".github/CODEOWNERS")}><code>CODEOWNERS</code></a></li>
+        <li>Who may bypass the rules</li>
+        <li>An approval the agent cannot give itself: needs a separate agent identity, <a href={issue(99)}>not built yet</a></li>
+      </ul></div>
+    </div>
+    <p>Why it matters: in an unattended run nobody reads the pull request before it could be merged. The decision about a change to the architecture or to the rules themselves stays with a person, and the reason is written where the person sees it.</p>
+    <dl class="facts">
+      <dt>file</dt><dd><a href={repoFile(".agents/policies/guardrails.conf")}><code>.agents/policies/guardrails.conf</code></a>: <code>protected:</code> and <code>sensitive:</code> pathspecs</dd>
+      <dt>checks</dt><dd><a href={repoFile("scripts/check-guardrails.sh")}><code>check-guardrails.sh</code></a> locally, and the Guardrails job of <a href={repoFile(".github/workflows/guardrails.yml")}><code>guardrails.yml</code></a> on every pull request</dd>
+      <dt>settings</dt><dd><a href={href("docs/github-setup/")}>GitHub setup</a> in the docs</dd>
+      <dt>built in</dt><dd><a href={pull(100)}>PR #100</a> (the gate), <a href={pull(200)}>#200</a> (approval requests and the content tree)</dd>
+    </dl>
   </Section>
 </Base>

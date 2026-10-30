@@ -1,17 +1,188 @@
 ---
+// Real features of this repository, built with its own workflow. The example
+// candidates are those of the audit on #235. Every figure comes from a source
+// named beside it: the Issue and its published review and triage comments,
+// the pull request description that finish-feature.sh and publish-feature.sh
+// wrote, or the run record of the feature (.agents/records/feature-<n>.jsonl
+// on the maintainer's machine, not in the repository).
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Section from "../components/Section.astro";
-import Note from "../components/Note.astro";
-import { issue, repoFile } from "../lib/links";
+import Table from "../components/Table.astro";
+import { href, issue, pull, repoFile } from "../lib/links";
+
+const comment = (number: number, id: string) => `${issue(number)}#issuecomment-${id}`;
+
+// The five features of the audit's candidate list, from their run records and pull requests.
+const features = [
+  { issue: 217, pull: 222, anchor: "e2e", change: "Give every later review round the earlier decisions", rounds: "5", findings: "2 major fixed, 1 minor accepted", verify: "1046, 1049, 1118", run: "1 h 30 min" },
+  { issue: 189, pull: 194, anchor: "owner", change: "Compute the risk level of a feature from one policy", rounds: "3", findings: "none", verify: "556, 575, 572", run: "four runs; the implementer resumed by hand" },
+  { issue: 193, pull: 199, anchor: "repair", change: "Treat performance budgets as measurements", rounds: "4", findings: "1 major, re-raised once; 1 minor; all fixed", verify: "761, 762, 761", run: "1 h 18 min" },
+  { issue: 204, pull: 205, anchor: "short", change: "Show the reviewer no change in paths the fingerprint leaves out", rounds: "1", findings: "none", verify: "909", run: "38 min" },
+  { issue: 16, pull: 213, anchor: "short", change: "Add the feature clarification gate", rounds: "1", findings: "none", verify: "849", run: "26 min" },
+];
+
+// The principal source files each pull request changed (git show --stat of its merge commit).
+const changed: Record<number, string[]> = {
+  194: ["scripts/lib/risk.sh", "scripts/check-risk.sh", "scripts/finish-feature.sh", "scripts/publish-feature.sh", "tests/risk-test.sh"],
+  199: ["scripts/verify.sh", "scripts/lib/verification.sh", "scripts/run-feature.sh", "tests/verify-test.sh"],
+  205: ["scripts/review-feature.sh", ".agents/prompts/reviewer.md", "tests/review-feature-test.sh"],
+  213: ["scripts/run-feature.sh", ".agents/prompts/implementer.md", "scripts/lib/completion.sh", "tests/run-feature-test.sh"],
+};
+
+// The review rounds of #217: the run record and the comments on the Issue.
+const rounds = [
+  { round: 1, kind: "complete feature", verdict: "CHANGES REQUIRED", finding: "M1, major: earlier approved decisions can disappear when a newer triage is invalid", decision: "FIX_NOW", link: comment(217, "6482184594") },
+  { round: 2, kind: "the fixes", verdict: "no findings", finding: "–", decision: "–" },
+  { round: 3, kind: "complete feature", verdict: "CHANGES REQUIRED", finding: "M1, major: predecessor validation allows re-raises to weaken a FIX_NOW gate", decision: "FIX_NOW", link: comment(217, "6482598113") },
+  { round: 4, kind: "the fixes", verdict: "no findings", finding: "–", decision: "–" },
+  { round: 5, kind: "complete feature", verdict: "PASS WITH MINOR FINDINGS", finding: "MIN1, minor: the review schema makes previous required", decision: "ACCEPT", link: comment(217, "6483051924") },
+];
 ---
-<Base title="Examples" description="Real features of this repository, followed from Issue to merged pull request, with their reviews, triage and evidence.">
-  <PageHead title="Examples" lede="Features of this repository, built with its own workflow, followed from Issue to pull request." />
-  <Section id="coming" title="What comes here">
-    <Fragment slot="note">Step 7 of the website, <a href={issue(241)}>#241</a>.</Fragment>
-    <p>Real runs with their published reviews and triage: a feature end to end, the owner in the loop, a short path, and a stop for clarification.</p>
-    <Note title="Until then">
-      <p>A worked example is in <a href={repoFile("docs/example.md")}><code>docs/example.md</code></a>.</p>
-    </Note>
+<Base title="Examples" description="Features of this repository built with ACT, followed from the Issue to the pull request: risk level, agents, review rounds, triage, verification evidence and the merge.">
+  <PageHead title="Examples" lede="ACT is built with ACT. These are features of this repository, followed from the Issue to the merged pull request, with the records each step left.">
+    <ol class="contents">
+      <li><a href="#features">Five features at a glance</a></li>
+      <li><a href="#e2e">One feature end to end: #217</a></li>
+      <li><a href="#owner">The owner in the loop: #189</a></li>
+      <li><a href="#repair">A fix that did not hold: #193</a></li>
+      <li><a href="#short">The short path: #204 and #16</a></li>
+      <li><a href="#sources">Where the figures come from</a></li>
+    </ol>
+  </PageHead>
+
+  <Section id="features" title="Five features at a glance">
+    <Fragment slot="note">From the run record of each feature and the description of its pull request. <a href="#sources">Sources</a>.</Fragment>
+    <p>All five changed the workflow and its gate, so all five were high risk: the full triage applied, and each pull request said that the merge needed the owner's approval.</p>
+    <Table>
+      <caption>Verification: each full run of <code>verify.sh</code>, in seconds, on the maintainer's server; every other verification of the feature reused a recorded pass. Run: from the start of <code>run-feature.sh</code> to the pull request.</caption>
+      <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col" class="num">rounds</th><th scope="col">findings</th><th scope="col">full verifications (s)</th><th scope="col">run</th><th scope="col">result</th></tr></thead>
+      <tbody>
+        {features.map((row) => (
+          <tr>
+            <th scope="row"><a href={`#${row.anchor}`}>#{row.issue}</a></th>
+            <td data-col="change">{row.change}</td>
+            <td data-col="rounds" class="num">{row.rounds}</td>
+            <td data-col="findings">{row.findings}</td>
+            <td data-col="full verifications (s)" class="k">{row.verify}</td>
+            <td data-col="run">{row.run}</td>
+            <td data-col="result"><a href={pull(row.pull)}>PR #{row.pull}</a></td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  </Section>
+
+  <Section id="e2e" title="One feature end to end: #217">
+    <Fragment slot="note"><a href={issue(217)}>Issue #217</a>, <a href={pull(222)}>PR #222</a>. One unattended run of <code>run-feature.sh</code>, 28 October 2026.</Fragment>
+    <p class="lede">The feature that gave every later review round the decisions of the earlier ones. It came out of ACT's analysis of its own runs, and it is followed here from its requirements to the merge.</p>
+
+    <h3>Requirements</h3>
+    <p>The run analysis of 28 October 2026 found that in five runs the reviewer raised a finding again as unresolved after it had been fixed, and that in one feature it raised findings again that the triage had accepted. The Issue asks that every review after round 1 receives the decisions of all earlier rounds, that a finding names the one it continues (<code>unresolved</code> or <code>worsened</code>), and that the stored review is checked against the recorded decisions. It has six acceptance criteria; the last one reads “No gate is weakened: a FIX_NOW finding that is really unresolved is still reported and still blocks.” Out of scope: the triage rules, the round limit, and the owner-exception mechanism.</p>
+
+    <h3>Risk level and agents</h3>
+    <dl class="facts">
+      <dt>risk</dt><dd><span class="lvl high">high</span>: the feature changes <code>.agents/prompts/reviewer.md</code> and <code>.agents/schemas/feature-review.schema.json</code>, existing contract files; <code>scripts/lib/review-data.sh</code> and <code>scripts/review-feature.sh</code>, listed as high in <code>risk.conf</code>; and four existing test files. The reviewer also classified the impact on the architecture as major.</dd>
+      <dt>implementer</dt><dd><code>claude opus</code>. The first session started before there was a diff, so the level was still the default, medium. That gap became <a href={issue(227)}>#227</a>: you can now raise the level before the first session (<a href={pull(229)}>PR #229</a>).</dd>
+      <dt>fixes</dt><dd><code>claude fable</code>, selected by the line <code>triage-implementer@high</code></dd>
+      <dt>review</dt><dd><code>codex gpt-6-luna</code>, read-only</dd>
+      <dt>triage</dt><dd><code>claude sonnet</code>, read-only</dd>
+    </dl>
+
+    <h3>Implementation and tests</h3>
+    <p>The change adds the earlier decisions to the reviewer's context in <code>scripts/review-feature.sh</code>, the optional <code>previous</code> field to the finding schema, and the validation in <code>review_artifact_errors</code> of <a href={repoFile("scripts/lib/review-data.sh")}><code>scripts/lib/review-data.sh</code></a>. A new test file, <a href={repoFile("tests/review-data-test.sh")}><code>tests/review-data-test.sh</code></a>, covers each invalid case; existing tests only gained blocks, no assertion was changed. Each re-raise becomes a <code>finding</code> event in the run record, and <code>report-runs.sh</code> counts them per feature.</p>
+
+    <h3>Independent review and triage</h3>
+    <Table>
+      <caption>Rounds 1, 3 and 5 reviewed the complete feature, 2 and 4 only the fixes. The triage of each round with findings is published on the Issue, marked as approved by an unattended run.</caption>
+      <thead><tr><th scope="col" class="num">round</th><th scope="col">reviewed</th><th scope="col">verdict</th><th scope="col">finding</th><th scope="col">decision</th></tr></thead>
+      <tbody>
+        {rounds.map((row) => (
+          <tr>
+            <th scope="row" class="num">{row.link ? <a href={row.link}>{row.round}</a> : row.round}</th>
+            <td data-col="reviewed">{row.kind}</td>
+            <td data-col="verdict" class="k">{row.verdict}</td>
+            <td data-col="finding" class:list={{ off: row.finding === "–" }}>{row.finding}</td>
+            <td data-col="decision" class:list={["k", { off: row.decision === "–" }]}>{row.decision}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <p>Round 3 is the review doing its job: the fix of round 1 was correct, but the new rule could still let a re-raised finding lower its severity, which would have weakened the very gate the Issue protects. Round 5 found one minor point, and the triage accepted it with a rationale, quoted below.</p>
+    <pre class="excerpt" aria-label="Excerpt of the triage of round 5"><span class="src">{issue(217).replace(/^https:\/\//, "")} · round 5 · triage, excerpt</span>### MIN1. The review schema makes `previous` required
+
+- Severity: minor
+- Rationale: Listing `previous` in `required` while allowing null
+  is deliberate. It follows the strict structured-output
+  convention, where every property is required and optionality
+  is expressed as nullable. [...] The runtime validators accept
+  artifacts that omit it, so old artifacts stay valid [...]
+  The mismatch is cosmetic and blocks nothing.</pre>
+
+    <h3>Verification evidence</h3>
+    <p>The full verification ran three times, once after each writing session: 1046, 1049 and 1118 seconds. Eight more times a step required a verification and reused the recorded pass, because the content had not changed since. Every review report names the reviewed tree and the verification that passed for it.</p>
+
+    <h3>The run</h3>
+    <ol class="words timeline">
+      <li><b>Issue created</b><small class="k">21:37 UTC</small><p>From the run analysis, with six acceptance criteria.</p></li>
+      <li><b>Implementation</b><small class="k">21:38 – 22:22</small><p>claude opus, unattended; verification 1046 s; completion record: complete.</p></li>
+      <li><b>Round 1 and triage</b><small class="k">22:22</small><p>M1 major, FIX_NOW.</p></li>
+      <li><b>Fixes</b><small class="k">22:22 – 22:42</small><p>claude fable; verification 1049 s.</p></li>
+      <li><b>Rounds 2 and 3, triage</b><small class="k">22:43</small><p>Round 2: no findings. Round 3: M1 major, FIX_NOW.</p></li>
+      <li><b>Fixes</b><small class="k">22:43 – 23:07</small><p>claude fable; verification 1118 s.</p></li>
+      <li><b>Rounds 4 and 5, triage</b><small class="k">23:07 – 23:08</small><p>Round 4: no findings. Round 5: PASS WITH MINOR FINDINGS, MIN1 accepted.</p></li>
+      <li><b>Commit and pull request</b><small class="k">23:08</small><p>The completion gate passed; <code>finish-feature.sh</code> committed and <code>publish-feature.sh</code> opened PR #222.</p></li>
+      <li class="you"><b>Merge by the owner</b><small class="k">29 October, 01:14 UTC</small><p>The pull request said “Merge approval: required from the project owner, for exactly this commit”.</p></li>
+    </ol>
+
+    <h3>The pull request</h3>
+    <p>The description of <a href={pull(222)}>PR #222</a> carries the completion record with evidence for all six criteria, the verification, the review line, the risk level with its reasons, and the merge approval block. The <a href={href("#trace")}>home page</a> shows it annotated.</p>
+    <pre class="excerpt" aria-label="Excerpt of the description of pull request 222"><span class="src">{pull(222).replace(/^https:\/\//, "")} · excerpt</span>Review: round 5, PASS WITH MINOR FINDINGS, by codex (gpt-6-luna); triage published on #217
+
+Merge approval:
+- required from the project owner, for exactly this commit
+[...]
+- scripts/review-feature.sh: the file defines or carries out the workflow and its gate
+- the independent review classified the impact on the architecture as major: [...]
+[...]
+- approval request: .agents/approval-requests/217.json (asks and records; grants nothing)</pre>
+  </Section>
+
+  <Section id="owner" title="The owner in the loop: #189">
+    <Fragment slot="note"><a href={issue(189)}>Issue #189</a>, <a href={pull(194)}>PR #194</a>, 27 October 2026.</Fragment>
+    <p class="lede">The feature that introduced the risk level. The owner sharpened its scope in a comment, and caught a defect before the merge.</p>
+    <ul class="rules">
+      <li><b>A comment as a decision.</b> After the first run, <a href={comment(189, "6443105170")}>the owner's comment</a> set two rules from experience with another project: an escalation reads only changed or removed lines of existing files, and a feature already in progress is not refused.</li>
+      <li><b>A resumed session.</b> The owner resumed the implementer by hand, which the run record notes as an intervention. The record also shows the comment passed on to the resumed implementer and to each later review.</li>
+      <li><b>A correction before the merge.</b> The owner found that a failed listing of the changed files fell back to the default level. The fix makes it high, with a test that fails against the earlier commit and passes with the fix, as the completion record in the pull request states.</li>
+      <li><b>Three rounds, no findings.</b> Review by <code>codex gpt-6-luna</code>, ten of ten criteria met; full verifications of 556, 575 and 572 seconds.</li>
+    </ul>
+    <p>Source files changed by <a href={pull(194)}>PR #194</a>: {changed[194].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
+  </Section>
+
+  <Section id="repair" title="A fix that did not hold: #193">
+    <Fragment slot="note"><a href={issue(193)}>Issue #193</a>, <a href={pull(199)}>PR #199</a>, 27 October 2026.</Fragment>
+    <p>The feature that made budget checks measurements. In round 1 the reviewer found that a failing timeout utility was reported as an exceeded budget (major) and that a budget's output was cut short (minor); the triage decided to fix both. In round 2 the reviewer raised the major finding again, as “Unresolved M1”: the fix now treated exit status 128 as a failure of the call, though a measurement can return it. A second fix round resolved it, and rounds 3 and 4 passed. Each round's report and triage is <a href={issue(193)}>on the Issue</a>.</p>
+    <p>Source files changed by <a href={pull(199)}>PR #199</a>: {changed[199].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
+  </Section>
+
+  <Section id="short" title="The short path: #204 and #16">
+    <Fragment slot="note"><a href={pull(205)}>PR #205</a> and <a href={pull(213)}>PR #213</a>, 28 October 2026.</Fragment>
+    <p>Most features do not need several rounds. <a href={issue(204)}>#204</a> ran from <code>run-feature.sh</code> to the pull request in 38 minutes: one implementation session, one verification of 909 seconds reused twice, one review that passed. <a href={issue(16)}>#16</a>, the clarification gate itself, took 26 minutes: the implementer received the owner's two comments with the Issue, which settled the design, and the single review passed.</p>
+    <p>Source files changed by #204 in <a href={pull(205)}>PR #205</a>: {changed[205].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
+    <p>Source files changed by #16 in <a href={pull(213)}>PR #213</a>: {changed[213].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
+  </Section>
+
+  <Section id="sources" title="Where the figures come from">
+    <p>Each figure on this page has one of three sources:</p>
+    <Table>
+      <thead><tr><th scope="col">source</th><th scope="col">what it holds</th><th scope="col">where</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Issue comments</th><td data-col="what it holds">The review report and the triage of every round with findings, published by <code>triage-review.sh</code></td><td data-col="where">GitHub, linked above</td></tr>
+        <tr><th scope="row">Pull request</th><td data-col="what it holds">Completion record, verification, review line, risk level and merge approval, written by <code>finish-feature.sh</code> and <code>publish-feature.sh</code></td><td data-col="where">GitHub, linked above</td></tr>
+        <tr><th scope="row">Run record</th><td data-col="what it holds">Times, agents, models and levels, verification seconds and reuses, interventions, comments passed on</td><td data-col="where" class="k">.agents/records/feature-&lt;n&gt;.jsonl, on the maintainer's machine</td></tr>
+      </tbody>
+    </Table>
+    <p class="needs">The run records are local by design and not published; the figures from them are copied here as recorded. Durations depend on the machine and the size of the test suite and are not benchmarks.</p>
   </Section>
 </Base>
