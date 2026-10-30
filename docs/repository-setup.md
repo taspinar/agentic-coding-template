@@ -21,7 +21,9 @@ How the workflow itself runs is not described here: the steps are in
 
 A new repository also holds the website of the template itself. Delete
 `documentation/` and `.github/workflows/pages.yml`: they are not part of
-your project.
+your project. It also copies `LICENSE`, the MIT licence of the template:
+keep it, replace it with the licence of your project, or remove it.
+`sync-template.sh` never overwrites it.
 
 ------------------------------------------------------------------------
 
@@ -332,6 +334,7 @@ template.
 
 -   [ ] Repository created from template
 -   [ ] `documentation/` and `.github/workflows/pages.yml` deleted
+-   [ ] `LICENSE` kept, replaced, or removed for your project
 -   [ ] Correct visibility configured
 -   [ ] Issues enabled
 
