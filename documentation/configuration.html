@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Configuration and security · Agentic Coding Template</title>
-<meta name="description" content="Agent roles and models, permission profiles, the merge approval gate, what GitHub has to enforce, verification, and template updates.">
+<meta name="description" content="Agent roles and models, permission profiles, the merge approval gate, the risk policy, what GitHub has to enforce, verification, and template updates.">
 <link rel="stylesheet" href="assets/site.css">
 <script>document.documentElement.classList.add("js");</script>
 </head>
@@ -39,8 +39,8 @@
 
   <h2 id="roles">Agent roles and models</h2>
   <p>A role is a job in the workflow, not a person or an account. Each role has an agent and a model, set in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/agents.conf"><code>.agents/agents.conf</code></a>, one role per line:</p>
-<pre><code>implementer: codex &lt;model&gt;
-reviewer: claude &lt;model&gt;</code></pre>
+<pre><code>implementer: claude opus
+reviewer: codex gpt-6-luna</code></pre>
   <div class="table-scroll">
   <table>
     <thead><tr><th>Role</th><th>What it does</th></tr></thead>
@@ -57,8 +57,23 @@ reviewer: claude &lt;model&gt;</code></pre>
   </table>
   </div>
   <p>The supported agents are Claude Code (<code>claude</code>) and Codex (<code>codex</code>). You can override the agent and the model for one run with <code>--agent</code> and <code>--model</code> on a workflow script. The model you name is passed to the agent as it is: the workflow never replaces it with another one, and an unknown agent is an error.</p>
-  <p>A different agent for writing and for reviewing gives you a more independent review.</p>
-  <p>A role of a feature (<code>implementer</code>, <code>reviewer</code>, <code>triage</code>, <code>triage-implementer</code>) can also have a line per risk level of the feature, such as <code>implementer@high: claude &lt;model&gt;</code> next to <code>implementer: claude &lt;model&gt;</code>. A script that starts the role takes <code>--agent</code> and <code>--model</code> first, then the line of the level the feature has at that moment, then the plain line; a later session of a feature never runs at a weaker level than an earlier one did. Without such lines nothing changes, and the template ships none. <code>doctor.sh</code> validates the lines and warns when a reviewing role and the role it reviews resolve to the same agent for a level, <code>review-feature.sh</code> refuses to start a reviewer that resolves to the implementer's agent for the level of the feature, and <code>report-runs.sh</code> shows the calls per level and model.</p>
+  <p>The reviewer must use a different agent than the implementer, at every risk level: that is what makes the review independent. <code>review-feature.sh</code> refuses to start a reviewer that resolves to an agent the implementer of the feature ran with, and <code>doctor.sh</code> warns when a reviewing role and the role it reviews resolve to the same agent.</p>
+  <p>A role of a feature (<code>implementer</code>, <code>reviewer</code>, <code>triage</code>, <code>triage-implementer</code>) can also have a line per <a href="workflow.html#risk">risk level</a> of the feature, such as <code>implementer@high: claude fable</code> next to <code>implementer: claude opus</code>. A script that starts the role takes <code>--agent</code> and <code>--model</code> first, then the line of the level the feature has at that moment, then the plain line; a later session of a feature never runs at a weaker level than an earlier one did. Without a level line the plain line applies. <code>doctor.sh</code> validates the lines, and <code>report-runs.sh</code> shows the calls per level and model.</p>
+  <p><strong>What the template ships.</strong> These are the template's own choices; set the agents, models, and levels your project wants:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Role</th><th>Low and medium risk</th><th>High risk</th></tr></thead>
+    <tbody>
+      <tr><td><code>implementer</code>, <code>triage-implementer</code></td><td>Claude, <code>opus</code></td><td>Claude, <code>fable</code></td></tr>
+      <tr><td><code>reviewer</code></td><td>Codex, <code>gpt-6-luna</code></td><td>The same</td></tr>
+      <tr><td><code>triage</code></td><td>Claude, <code>sonnet</code></td><td>The same</td></tr>
+      <tr><td><code>project-grill</code>, <code>project-planner</code></td><td colspan="2">Claude, <code>fable</code></td></tr>
+      <tr><td><code>planning-reviewer</code></td><td colspan="2">Codex, <code>gpt-6-astra</code></td></tr>
+      <tr><td><code>analyst</code></td><td colspan="2">Claude, <code>fable</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The levels come from the features that built the template: a feature that changes the workflow and its gate, which is high risk, needed one or two rounds with the strongest model and many with a weaker one, while the other features did not need it. Codex stays supported as implementer for a project that configures it.</p>
 
   <h2 id="attribution">Agent attribution</h2>
   <p>Coding agents name themselves in what they commit: Claude Code adds a <code>Co-Authored-By</code> trailer to a commit and a "Generated with Claude Code" line to a pull request. Whether your project wants that is one setting in <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/attribution.conf"><code>.agents/attribution.conf</code></a>: <code>agent-attribution: disabled</code>, which the template ships so that the work is published under the owner's own name, or <code>allowed</code>, which a project selects by changing the line if it wants its agents named. With <code>disabled</code>, <code>AGENTS.md</code> tells the agents, the Claude sessions the scripts start get the matching setting, and <code>finish-feature.sh</code> and <code>publish-feature.sh</code> refuse a commit of the feature with an agent's trailer and a description with generated attribution text, each reported on its own. Co-authors who are people are never rejected, and the history of the base is never touched. Codex has no attribution setting and Cursor's is set per user, not per project: <code>doctor.sh</code> says so instead of claiming that they are configured.</p>
@@ -76,6 +91,7 @@ reviewer: claude &lt;model&gt;</code></pre>
   </table>
   </div>
   <p>If an agent cannot enforce a profile, the script stops. It never starts the agent with broader permissions instead.</p>
+  <p><strong>Codex and <code>.agents/</code>:</strong> Codex keeps <code>.agents/</code> read-only inside its sandbox. A writing Codex session therefore gets exactly the five working directories it has to write opened for it: <code>.agents/completion/</code>, <code>.agents/handoffs/</code>, <code>.agents/summaries/</code>, <code>.agents/manual-steps/</code>, and <code>.agents/experience/</code>. The policies, prompts, schemas, reviews, and the agent configuration stay read-only for the agent. When a role with write access uses Codex, <code>doctor.sh</code> runs one short Codex session to check that it can write them.</p>
   <p><strong>What this is not:</strong> a profile uses the permission and sandbox settings of the agent's own command-line tool. It is not a container or a virtual machine. All agents share your machine, your network, and whatever databases and services run there, and a worktree separates working files only. Full isolation per agent is one of the <a href="future.html">possible improvements</a>.</p>
 
   <h2 id="gate">Changes that need the owner</h2>
@@ -91,7 +107,42 @@ reviewer: claude &lt;model&gt;</code></pre>
   </table>
   </div>
   <p>You add the paths that matter in your project, such as the deployment or the dependency manifest, to <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/policies/guardrails.conf"><code>.agents/policies/guardrails.conf</code></a>. Changing or removing an existing check in <code>scripts/verify.conf</code> counts as protected; adding one counts as sensitive.</p>
-  <p>The reviewer also says how much a change affects the architecture. A "major" or "breaking" assessment marks the change as needing the owner, whatever the files are. The reviewer can make the outcome stricter, never looser.</p>
+  <p>The reviewer also says how much a change affects the architecture. A "major" or "breaking" assessment marks the change as needing the owner, whatever the files are. The reviewer can make the outcome stricter, never looser. A feature committed without a review, as the risk policy can allow for a low-risk one, has no such assessment and therefore needs the owner too.</p>
+  <p><strong>The approval request.</strong> When a feature needs you, <code>finish-feature.sh</code> writes <code>.agents/approval-requests/&lt;issue&gt;.json</code> and commits it with the feature: what you are asked to approve and why. It names the content tree, a checksum of exactly the content that was verified and reviewed, which <code>finish-feature.sh</code> and <code>publish-feature.sh</code> print next to the commit. The request is for display only: no script acts on it, and no agent takes it as an instruction. <code>check-guardrails.sh</code> computes the content tree again from the commit and refuses a request that names another one, and CI runs that check on every pull request.</p>
+  <p>Your approval is your own review of the pull request on GitHub, bound to the commit you see. Nothing an agent can write counts as it. That the approval really comes from you is enforced by GitHub only once agents have an identity of their own (<a href="https://github.com/taspinar/agentic-coding-template/issues/99">Issue 99</a>); until then the scripts ask for your approval in the same cases as before.</p>
+
+  <h2 id="risk">The risk policy</h2>
+  <p>The <a href="workflow.html#risk">risk level of a feature</a> is computed from one file, <a href="https://github.com/taspinar/agentic-coding-template/blob/main/.agents/policies/risk.conf"><code>.agents/policies/risk.conf</code></a>, one <code>&lt;key&gt;: &lt;value&gt;</code> per line with paths. Like the rules of the gate, it is always read from the base branch, so a feature that changes it is classified by the old one, and is high risk because it changed a policy.</p>
+<pre><code>default: medium
+low: docs :(glob)**/*.md
+high: src/auth db/migrations deploy</code></pre>
+  <p>The classes <code>low</code>, <code>medium</code>, and <code>high</code> name paths; a path in two classes gets the higher one, and a path in none gets the <code>default</code>. The template ships <code>default: medium</code>, the paths of the workflow and its gate as <code>high</code>, and no <code>low</code> class: every feature is medium or high until you add classes for your project.</p>
+  <p>Some changes make a feature high whatever the classes say:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Kind of change</th><th>Examples</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A weakened test</strong></td><td>A removed or changed line of an existing test file, or a removed test file</td><td>High. A diff that only adds lines to a test file does not escalate: a new test weakens nothing</td></tr>
+      <tr><td><strong>Shared test fixtures</strong></td><td>Any change to the libraries many tests load (<code>test-fixtures</code>), also an added line or a new file</td><td>High, since such a file can change every test</td></tr>
+      <tr><td><strong>The verification configuration</strong></td><td>A changed or removed line in <code>scripts/verify.conf</code> or <code>scripts/verify-workflow.conf</code></td><td>High</td></tr>
+      <tr><td><strong>Policies, prompts, schemas</strong></td><td>A change to an existing file under <code>.agents/policies/</code>, <code>.agents/prompts/</code>, or <code>.agents/schemas/</code></td><td>High</td></tr>
+      <tr><td><strong>Manifests</strong></td><td>A change to an existing dependency or toolchain file that the policy names under <code>manifests</code></td><td>High</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>What each level requires.</strong> The policy can also say, per level, what the review rounds of <code>run-feature.sh</code> need, one <code>&lt;level&gt;: &lt;kind&gt;: &lt;value&gt;</code> per line:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Line</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td><code>verification: full</code> or <code>groups &lt;group&gt;...</code></td><td>Every check before every review round, or only the named groups in the repair rounds between the first review and the last. A partial check is never a verification: the commit still needs every check</td></tr>
+      <tr><td><code>review: delta</code>, <code>full</code>, or <code>none</code></td><td>Whether a later round may review only the changes, or always the complete feature. <code>low: review: none</code> commits a low-risk feature without a review; only <code>low</code> may have it</td></tr>
+      <tr><td><code>triage: full</code> or <code>light</code></td><td>The light triage prefers to defer or accept a suggestion or a minor finding over a fix session. Only <code>low</code> and <code>medium</code> may have it</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The template writes no such line, so every level gets the full verification, reviews of the changes when a round can build on the one before, and the full triage: what the workflow always did. A value that is not allowed counts as the strictest one, and <code>check-risk.sh</code> reports it as refused.</p>
+  <p><strong>Profiles.</strong> One line, <code>profile: light</code> or <code>profile: standard</code>, fills in the rules the file does not write (<a href="workflow.html#workflow-profiles">workflow profiles</a>). <code>light</code> makes documentation and process files low risk, commits a low-risk feature without a review, and gives low- and medium-risk features the light triage. No profile changes what a high-risk feature gets. The template ships no <code>profile:</code> line; to switch, change that one line and merge it.</p>
 
   <h2 id="github">What GitHub has to enforce</h2>
   <p>The gate above is a check and a label. It tells you which pull requests need your attention, and the workflow's own scripts will not merge them. It does <strong>not</strong> stop someone, or an agent with your credentials, from merging on GitHub. To enforce the rules, configure the repository:</p>
@@ -134,6 +185,10 @@ reviewer: claude &lt;model&gt;</code></pre>
     <li>No prompt, no answer of an agent, and no transcript is recorded. Text that looks like a key or a token is replaced by <code>[redacted]</code> before it is written.</li>
     <li>Nothing goes to GitHub, with one exception that you turn on yourself: <code>publish-feature.sh --summary</code> posts the totals of a feature on its Issue, as numbers only (time, runs, review rounds, tokens per role and model). It is off by default, because a repository is often public.</li>
     <li>A record that cannot be written is reported, and the work goes on with its own outcome: a record never stops a feature.</li>
+    <li>Every stop of a workflow script is recorded with its step and the reason it told you, so a failed run always says where and why it ended. <code>report-runs.sh</code> shows it in its table of runs.</li>
+    <li>Every check of a verification is timed. The durations are kept with the recorded pass and in the run record, and <code>report-runs.sh</code> shows the five slowest checks of each verification.</li>
+    <li>An agent call of a model that no version of <code>.agents/agents.conf</code> declares, such as a fake call of a test in an old record, is left out of the totals, and <code>report-runs.sh</code> warns about it once per run.</li>
+    <li>What the workflow writes about the content does not change the content it verified and reviewed: the reviews, the triage, the recorded verification, the run records, and the approval requests are left out of the checksum of the content. The list of what is left out is fixed, protected, and read from the base branch, so a feature cannot add to it.</li>
   </ul>
 
   <h2 id="sync">Keeping a project up to date</h2>

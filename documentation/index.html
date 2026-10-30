@@ -71,6 +71,7 @@
     <div>
       <p>The template gives you a ready-to-use repository structure for working with AI coding agents.</p>
       <p>It includes instructions for agents, configurable roles and models, scripts for planning and development, independent code reviews, and automated verification.</p>
+      <p>The checks and reviews a feature gets follow its risk level: a project can keep low-risk changes light, while a high-risk change always gets the full workflow.</p>
       <p>Everything runs from your own repository, without a separate orchestration platform.</p>
       <p><a href="https://github.com/taspinar/agentic-coding-template/blob/main/docs/project-map.md">Explore the project structure</a> · <a href="getting-started.html">Get started</a></p>
     </div>
@@ -84,8 +85,10 @@
             <li><span class="tree-row"><code>attribution.conf</code><span>Whether commits and pull requests may name an agent</span></span></li>
             <li><span class="tree-row"><code>prompts/</code><span>The roles: planning, implementation, review</span></span></li>
             <li><span class="tree-row"><code>policies/</code><span>Permissions and safeguards</span></span></li>
+            <li><span class="tree-row"><code>policies/risk.conf</code><span>What makes a feature low, medium, or high risk</span></span></li>
             <li><span class="tree-row"><code>schemas/</code><span>The format of review records</span></span></li>
             <li><span class="tree-row"><code>template.conf</code><span>Which files a project receives from the template</span></span></li>
+            <li><span class="tree-row"><code>approval-requests/</code><span>What the owner is asked to approve, and why</span></span></li>
           </ul></details></li>
         <li><details open><summary><span class="tree-row"><code>scripts/</code><span>Workflow automation</span></span></summary>
           <ul>
@@ -94,6 +97,7 @@
             <li><span class="tree-row"><code>review-feature.sh</code><span>Independent review</span></span></li>
             <li><span class="tree-row"><code>run-feature.sh</code><span>Unattended feature execution</span></span></li>
             <li><span class="tree-row"><code>verify.sh</code><span>The project's checks, with one command</span></span></li>
+            <li><span class="tree-row"><code>check-risk.sh</code><span>The risk level of a feature, and why</span></span></li>
             <li><span class="tree-row"><code>report-runs.sh</code><span>What your runs took: time, tokens, rounds</span></span></li>
             <li><span class="tree-row"><code>analyze-runs.sh</code><span>Proposals drawn from several runs</span></span></li>
             <li><span class="tree-row"><code>doctor.sh</code><span>Checks your local setup</span></span></li>

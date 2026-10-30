@@ -358,6 +358,30 @@
   </table>
   </div>
 
+  <h3 id="risk">The risk level of a feature</h3>
+  <p>Every feature has a risk level: low, medium, or high. The workflow computes it; you do not choose it. It is the highest of three things:</p>
+  <ul>
+    <li><strong>The paths the feature changes</strong>, by the classes of the risk policy. A path that no class names gets the default.</li>
+    <li><strong>Fixed escalations to high</strong> that no policy turns off, such as a removed or changed line of an existing test, a changed or removed line of the verification configuration, or a change to a policy, a prompt, or a schema.</li>
+    <li><strong>What the agents say</strong>: the implementer can record a higher level, and a reviewer who rates the impact on the architecture as major or breaking makes the feature high.</li>
+  </ul>
+  <p>The level can be raised, never lowered: a lower claim is ignored and reported. The rules are read from the base branch, so a feature cannot relax the rules it is classified by. The level decides which model an agent uses (<a href="configuration.html#roles">agent roles and models</a>) and what the review rounds require (<a href="configuration.html#risk">the risk policy</a>). It does not replace the merge approval: a protected path still needs you. The scripts print the level with its reasons, the commit and the pull request record it, and <code>./scripts/check-risk.sh</code> shows it for the current worktree.</p>
+  <p>A new feature has no changes yet, so its first session runs at the default level. When you know that a feature is risky, say so before that session: label the issue <code>risk: high</code> (or <code>risk: medium</code>), or pass <code>--risk high</code> to <code>start-feature.sh</code> or <code>run-feature.sh</code>. A label counts for the whole feature; the option for one run. Either one only raises the level.</p>
+
+  <h3 id="workflow-profiles">Workflow profiles</h3>
+  <p>A workflow profile is one line in the risk policy, <code>profile: light</code> or <code>profile: standard</code>, that fills in the rules the policy does not write itself. A line you write always wins.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Profile</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td>No <code>profile:</code> line</td><td>Nothing is added: the policy is the lines of the file, as before profiles existed. This is what the template ships</td></tr>
+      <tr><td><code>standard</code></td><td>The policy the template ships, written as a preset</td></tr>
+      <tr><td><code>light</code></td><td>The same, and documentation and process files are low risk. A low-risk feature is committed without a review, and its merge then needs your approval, since nobody assessed its impact; a low- or medium-risk feature gets the light triage</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A profile never changes what a high-risk feature gets: under every profile it has the full workflow. It does not select the level, and it is unrelated to the permission profiles of the agents. Under every profile the implementer, the full verification before the commit, the pull request, CI, and the merge approval stay. A feature that changes the profile line is classified by the profile of the base branch, and is high risk, because it changes the policy.</p>
+
   <h3>Experimental: several features together</h3>
   <p>We have also tried a supervising agent that coordinates several feature runs. This is <strong>not part of the template</strong>. It needs extra coordination: what to do about conflicts between features, failed runs, and merges. A built-in task queue and parallel execution are among the <a href="future.html">possible improvements</a>.</p>
 
@@ -367,6 +391,8 @@
     <dd>You do not edit an approved plan by hand. A change request goes through review and approval again: <a class="popup-link" href="#step-change">update an approved plan</a>.</dd>
     <dt>A run is interrupted</dt>
     <dd>The implementer keeps a handoff note with what is done and what remains, so the work continues without the earlier conversation: <code>start-feature.sh &lt;issue&gt; --resume</code>, or <code>run-feature.sh &lt;issue&gt;</code> again. An unattended run retries a temporary failure itself. When an agent needs a decision from you, it stops and leaves its question in the note.</dd>
+    <dt>The issue leaves a decision open</dt>
+    <dd>The implementer asks before it invents an answer: it writes its questions in the handoff note and the run stops. Answer there or in a comment on the issue, and run the feature again. See <a class="popup-link" href="#step-implement">implement the feature</a>.</dd>
     <dt>Results are no longer current</dt>
     <dd>A verification result belongs to the exact content that was checked: change the code and the checks run again. A review belongs to the content that was reviewed: when that changes, the scripts ask for a new review. If the base branch was merged into the feature in the meantime, a later review has to cover the complete feature, not only the recent changes. The approval of the plan lapses in the same way when the requirements or the roadmap change. See <a href="configuration.html#verification">project checks and workflow checks</a> for the details.</dd>
     <dt>An agent hits a usage limit</dt>
@@ -505,13 +531,15 @@
     <section class="detail" id="step-implement">
       <h3>Implement the feature</h3>
       <p>The implementer works in a separate branch and worktree. It reads the feature issue and the approved project documents, writes the code and the tests, and leaves notes so that the work can be resumed. Before it ends, it records how far the issue is done: complete, awaiting evidence, partial, or blocked, with evidence for each acceptance criterion. Evidence that cannot exist yet, such as the CI result of a pull request that is not published or a check of the default branch after the merge, is recorded as pending at its gate, and the status is then awaiting evidence.</p>
+      <p>Before it changes anything, the first session decides whether the feature is clear. It reads the issue, the requirements, the architecture, the accepted decision records, and the code. When they settle every decision that matters for the scope, the user experience, a public interface, the data, the architecture, security, or compatibility, it implements, and its notes say <code>Clarification: clear</code>. When they do not, it changes nothing, writes its questions in the handoff note, each with the options and its recommendation, and the run stops for you. A choice the agent can make itself, such as a name or the layout of the tests, is not a question for you.</p>
+      <p>Your comments on the issue reach the agents. The implementer, the reviewer, and the triage agent get them after the body of the issue, so all three judge the same issue. Only comments of the owner, members, and collaborators of the repository are passed on, never those of anyone else, and the reports that the workflow posts itself are left out. A comment you add later counts from the next session.</p>
       <dl class="agent">
         <dt>Who</dt><dd>Implementer agent</dd>
         <dt>Script</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt;</code></dd>
         <dt>Resume</dt><dd><code>./scripts/start-feature.sh &lt;issue&gt; --resume</code></dd>
         <dt>Result</dt><dd>Changes in the feature worktree, and a completion record</dd>
         <dt>Not done if</dt><dd>The record does not say complete or awaiting evidence, or the notes list remaining work. A session that ends is not a finished feature: the workflow continues to the review only when the record says complete, or awaiting evidence for a later gate</dd>
-        <dt>Blocked if</dt><dd>The agent needs a decision from you</dd>
+        <dt>Blocked if</dt><dd>The feature needs clarification, or the agent needs another decision from you. Answer in the handoff note or in a comment on the issue, and resume: the next session reads your answers and implements</dd>
       </dl>
     </section>
     <section class="detail" id="step-verify">
@@ -522,6 +550,8 @@
         <dt>Script</dt><dd><code>./scripts/verify.sh</code></dd>
         <dt>Configuration</dt><dd><code>scripts/verify.conf</code></dd>
         <dt>Rule</dt><dd>Verification has to pass before a feature is reviewed and before it is committed</dd>
+        <dt>Partial check</dt><dd>When the risk policy names groups of checks for the level of the feature, a repair round between the first review and the last runs only the named groups of checks. A partial check is never a verification: it records no pass, the reviewer is told, and the commit still needs every check</dd>
+        <dt>Budget</dt><dd>A check declared as a budget is a measurement, not a failure: over its target it is reported as <code>BUDGET</code>, the verification still passes, and nothing repairs it</dd>
         <dt>Exception</dt><dd><code>review-feature.sh &lt;issue&gt; --unverified "&lt;reason&gt;"</code> reviews work whose verification fails. The review records the reason; the checks still count as failed, and the commit still requires them to pass</dd>
       </dl>
     </section>
@@ -532,7 +562,9 @@
         <dt>Who</dt><dd>Reviewer agent</dd>
         <dt>Script</dt><dd><code>./scripts/review-feature.sh &lt;issue&gt;</code></dd>
         <dt>Option</dt><dd><code>--changes</code> for a follow-up review of the recent fixes only. The review before the commit always covers the complete feature</dd>
+        <dt>Changes only</dt><dd>In a run of <code>run-feature.sh</code>, a later round reviews only the changes when the risk policy allows it, the previous round is valid, the base of the branch is the same, and the risk level did not rise. Otherwise the complete feature is reviewed again, and the run says why</dd>
         <dt>Checks</dt><dd>Every acceptance criterion of the issue against the code and the tests. The implementer's completion record is a claim; the reviewer reports a claim the code does not support</dd>
+        <dt>Earlier rounds</dt><dd>Every round after the first gets the decisions of the earlier rounds. The reviewer does not raise an accepted or deferred finding again unless the change made it worse, and a finding that continues an earlier one names it, as unresolved or worsened. The scripts check that claim: a re-raised finding cannot lower the severity of the one it continues</dd>
         <dt>Result</dt><dd>A review tied to the current version of the code. If the code changes afterward, another review is required</dd>
         <dt>Next</dt><dd>Decide on the findings, or commit when there are none</dd>
       </dl>
@@ -545,6 +577,7 @@
         <dt>Script</dt><dd><code>./scripts/triage-review.sh &lt;review&gt;</code></dd>
         <dt>Result</dt><dd>Recorded decisions, published on the feature issue</dd>
         <dt>Your approval</dt><dd>Step by step, you approve the decisions. In an unattended run an agent decides without you: read its decisions afterward</dd>
+        <dt>Light triage</dt><dd>For a low- or medium-risk feature, the risk policy can ask for a light triage: the agent is told to defer or accept a suggestion or a minor finding rather than start a fix session, unless it blocks the feature. Critical and major findings are always fixed, and a high-risk feature always gets the full triage</dd>
       </dl>
     </section>
     <section class="detail" id="step-fix">
@@ -559,11 +592,12 @@
     </section>
     <section class="detail" id="step-commit">
       <h3>Commit the feature</h3>
-      <p>Before committing, the script checks that the feature is complete, that verification passed, and that the latest review is still valid and covers the complete feature. The commit message records all three, and whether the change needs additional approval.</p>
+      <p>Before committing, the script checks that the feature is complete, that verification passed, and that the latest review is still valid and covers the complete feature. The commit message records all three, the risk level of the feature with its reasons, and whether the change needs additional approval.</p>
+      <p>When the change needs your approval, the script also writes an approval request, <code>.agents/approval-requests/&lt;issue&gt;.json</code>, and commits it with the feature. It says what you are asked to approve and why, and names the content tree: a checksum of exactly the content that was verified and reviewed, which the script prints next to the commit. The request only asks and records; it grants nothing.</p>
       <dl class="script">
         <dt>Who</dt><dd>Script</dd>
         <dt>Script</dt><dd><code>./scripts/finish-feature.sh &lt;issue&gt; "&lt;summary&gt;"</code></dd>
-        <dt>Result</dt><dd>A commit with the completion, verification, and review information</dd>
+        <dt>Result</dt><dd>A commit with the completion, verification, review, and risk information, and the approval request when you have to approve the merge</dd>
         <dt>Refuses if</dt><dd>The implementer's completion record is missing or does not say complete or awaiting evidence. <code>--partial</code> commits unfinished work as your explicit choice</dd>
         <dt>Important</dt><dd>This step does not push or merge</dd>
       </dl>
@@ -574,7 +608,7 @@
       <dl class="script">
         <dt>Who</dt><dd>Script</dd>
         <dt>Script</dt><dd><code>./scripts/publish-feature.sh &lt;issue&gt;</code></dd>
-        <dt>Result</dt><dd>An open pull request with the verification and review details</dd>
+        <dt>Result</dt><dd>An open pull request with the verification and review details, the risk level and its reasons, and whether the merge needs your approval, with the content tree you are asked to approve next to the commit</dd>
       </dl>
     </section>
     <section class="detail" id="step-merge">

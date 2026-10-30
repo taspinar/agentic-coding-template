@@ -62,13 +62,14 @@
 
   <h2>2. Check your setup</h2>
 <pre><code>./scripts/doctor.sh</code></pre>
-  <p>The script checks that the tools above are installed and that the agents you configured can run. It tells you what is missing.</p>
+  <p>The script checks that the tools above are installed and that the agents you configured can run. It also checks that Git has a commit identity (<code>user.name</code> and <code>user.email</code>) and that you can push with it, and, when Codex has a role that writes, that a Codex session can write the working files of the workflow under <code>.agents/</code>. It tells you what is missing.</p>
 
   <h2>3. Choose your agents</h2>
   <p>Each role in the workflow has an agent and a model. Set them in <code>.agents/agents.conf</code>, one role per line:</p>
-<pre><code>implementer: codex &lt;model&gt;
-reviewer: claude &lt;model&gt;</code></pre>
-  <p>The file lists every role, including the planner and the planning reviewer; <a href="configuration.html#roles">Configuration and security</a> explains each one. A different agent for writing and for reviewing is a good default.</p>
+<pre><code>implementer: claude opus
+implementer@high: claude fable
+reviewer: codex gpt-6-luna</code></pre>
+  <p>This is what the template ships: Claude implements, with a stronger model for a high-risk feature, and Codex reviews. A line with <code>@high</code> (or <code>@low</code>, <code>@medium</code>) applies to features of that <a href="workflow.html#risk">risk level</a>, and the plain line to the others. The file lists every role, including the planner and the planning reviewer; <a href="configuration.html#roles">Configuration and security</a> explains each one. The reviewer must use a different agent than the implementer, at every level.</p>
 
   <h2>4. Plan your project</h2>
   <p>Write a short description of what you want to build, and start the planning with it:</p>

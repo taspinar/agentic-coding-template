@@ -35,13 +35,14 @@
   <p class="lede">We started with a manual workflow and gradually automated the steps that proved useful and repeatable.</p>
   <p>The ideas behind the workflow are not new. The template combines established software engineering practices with AI coding tools and fits them into a development process on GitHub.</p>
 
-  <ol class="pipeline" aria-label="Six milestones">
+  <ol class="pipeline" aria-label="Seven milestones">
     <li><span>Initial workflow</span></li>
     <li><span>Structured planning</span></li>
     <li><span>Independent verification</span></li>
     <li><span>Improved reliability</span></li>
     <li><span>Unattended execution</span></li>
     <li><span>Learning from runs</span></li>
+    <li><span>Effort by risk</span></li>
   </ol>
 
   <ol class="timeline">
@@ -79,6 +80,12 @@
       <h2>Learning from runs</h2>
       <p>An unattended run that ends at a pull request also hides what it took. A session that ended was not always a finished feature, so the scripts now commit and close an issue only when the implementer's own record says the work is complete, with evidence for every criterion.</p>
       <p>Then the runs themselves became something to learn from. Every run records how long its steps took and how many tokens its agents used, kept on the developer's machine. A report shows what a feature cost and how many rounds it needed, and says when a figure is unknown rather than counting it as zero. Each run also keeps what happened in it, with a reference to the evidence: the review findings, the stops, the repairs. An analysis by a read-only agent compares several features and proposes improvements, each with the place it belongs; the developer decides what to do with them.</p>
+    </li>
+    <li>
+      <h2>Effort by risk</h2>
+      <p>The records showed that features differ: a change to the workflow and its gate needed many rounds with a weaker model and one or two with the strongest, while a change to the documentation needed no extra care at all. Every feature got the same treatment anyway.</p>
+      <p>So every feature now has a risk level, computed from the paths it changes and from changes that always count as risky, such as a weakened test. Agents and the owner can raise it, never lower it. The level selects the model of an agent, and a project policy says what each level requires of the checks, the reviews, and the decisions on findings. A workflow profile lets a project make low-risk work lighter in one line; high-risk work keeps the full workflow under every profile.</p>
+      <p>Two changes made the agents ask and listen more. The implementer now decides first whether a feature is clear, and stops with its questions instead of inventing an answer. The owner's comments on the issue reach the implementer, the reviewer, and the triage, so a clarification written there is read by all of them.</p>
     </li>
   </ol>
 
