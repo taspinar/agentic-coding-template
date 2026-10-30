@@ -1,16 +1,40 @@
 ---
-// The home page. Its content, with the route map of one feature, is step 4
-// of the website (#238); until then it states the product and what comes.
+// The home page, built from the approved design (design/prototype/index.html,
+// design/DESIGN.md). The facts follow the audit of #235; every example links
+// to its Issue and pull request. The risk and profile switches of the route
+// map are the one island; without script the map shows medium risk under the
+// standard profile, and the words list carries the same route as text.
 import Base from "../layouts/Base.astro";
 import Section from "../components/Section.astro";
-import Note from "../components/Note.astro";
+import DiagramFrame from "../components/DiagramFrame.astro";
+import Table from "../components/Table.astro";
 import { site } from "../../site.config";
-import { href, issue, repoFile } from "../lib/links";
+import { href, issue, pull, repoFile } from "../lib/links";
 
 const [first, second] = site.tagline.split(/(?<=\.) /);
+const repositoryName = site.repository.replace(/^https?:\/\//, "");
+const templateName = site.repository.replace(/^https:\/\/github\.com\//, "");
+
+// Recent features of this repository: run records and the published reviews.
+const runs = [
+  { issue: 217, change: "Give every later review round the earlier decisions", implementer: "claude opus", rounds: "5: two majors fixed, one minor accepted", verify: 1046, pull: 222 },
+  { issue: 193, change: "Treat performance budgets as measurements", implementer: "claude fable", rounds: "4: a major re-raised as unresolved, then fixed", verify: 761, pull: 199 },
+  { issue: 189, change: "Compute the risk level from one policy", implementer: "claude fable", rounds: "3, after a defect the owner found", verify: 572, pull: 194 },
+  { issue: 16, change: "Stop for questions before implementing", implementer: "claude opus", rounds: "1, no findings", verify: 849, pull: 213 },
+  { issue: 157, change: "Detect workflow complexity creep", implementer: "claude fable", rounds: "13 over two attempts, a finding open at the end of each" },
+];
+
+// The proposals of the run analysis of 28 October 2026 that became Issues.
+const proposals = [
+  { issue: 216, change: "Record the step and the reason of every stop", pull: 223 },
+  { issue: 217, change: "Give every later review round the earlier decisions", pull: 222 },
+  { issue: 218, change: "Stop a false partial completion in the handoff note", pull: 221 },
+  { issue: 219, change: "Time every check and budget the self-test suite", pull: 224 },
+  { issue: 220, change: "Warn about calls of models that agents.conf does not declare", pull: 225 },
+];
 ---
 <Base description={site.description}>
-  <div class="hero wrap">
+  <div class="hero wrap" data-risk="medium" data-profile="standard" id="lifecycle">
     <div class="hero-grid">
       <h1>{first} <em>{second}</em></h1>
       <div class="hero-side">
@@ -18,22 +42,320 @@ const [first, second] = site.tagline.split(/(?<=\.) /);
         <div class="actions">
           <a class="btn" href={href("docs/")}>Get started</a>
           <a href={site.repository}>Source on GitHub</a>
+          <a href={href("workflow/")}>How the workflow runs</a>
         </div>
       </div>
     </div>
+
+    <DiagramFrame id="route" title="The route of one feature">
+      <form slot="controls" class="switches" aria-label="Show the route for">
+        <fieldset class="switch">
+          <legend>risk</legend>
+          <label><input type="radio" name="risk" value="low"><span>low</span></label>
+          <label><input type="radio" name="risk" value="medium" checked><span>medium</span></label>
+          <label><input type="radio" name="risk" value="high"><span>high</span></label>
+        </fieldset>
+        <fieldset class="switch">
+          <legend>profile</legend>
+          <label><input type="radio" name="profile" value="standard" checked><span>standard</span></label>
+          <label><input type="radio" name="profile" value="light"><span>light</span></label>
+        </fieldset>
+      </form>
+
+      <svg class="map" viewBox="-30 0 1260 262" role="img" aria-labelledby="map-title" aria-describedby="route-words">
+        <title id="map-title">The route of one feature from Issue to merge, with its loops, a clarification stop and a review bypass that applies only to low risk under the light profile.</title>
+        <!-- loops above the line -->
+        <path class="branch" d="M362 124 L326 88 H254 L218 124"/>
+        <text class="note" x="290" y="78" text-anchor="middle">checks fail: repair</text>
+        <path class="branch" d="M672 124 L630 82 H420 L378 124"/>
+        <text class="note" x="525" y="72" text-anchor="middle">findings fixed: checks, review again</text>
+        <path class="branch" d="M204 124 L172 92"/>
+        <rect class="gate-o" x="157" y="77" width="15" height="15" transform="rotate(45 164.5 84.5)"/>
+        <text class="note" x="148" y="60" text-anchor="middle">unclear: you answer</text>
+        <!-- the route -->
+        <path class="trunk" d="M50 130 H450"/>
+        <path class="trunk reviewed" d="M450 130 H755"/>
+        <path class="trunk" d="M755 130 H1130"/>
+        <!-- review bypass: low risk under the light profile -->
+        <path class="branch bypass" d="M450 136 V200 L472 222 H733 L755 200 V136"/>
+        <text class="note bypass-note" x="602" y="250" text-anchor="middle">low risk, light profile: no review, and the merge needs your approval</text>
+        <!-- stations -->
+        <g><circle class="dot" cx="50" cy="130" r="10"/><text class="st" x="50" y="167" text-anchor="middle">Issue</text><text class="sub" x="50" y="186" text-anchor="middle">from the roadmap</text></g>
+        <g><circle class="dot" cx="210" cy="130" r="10"/><text class="st" x="210" y="167" text-anchor="middle">Implement</text><text class="sub k" x="210" y="186" text-anchor="middle" data-k="impl">claude opus</text></g>
+        <g><circle class="dot" cx="370" cy="130" r="10"/><text class="st" x="370" y="167" text-anchor="middle">Checks</text><text class="sub k" x="370" y="186" text-anchor="middle">verify.sh</text></g>
+        <g class="r-dim"><circle class="dot" cx="530" cy="130" r="10"/><text class="st" x="530" y="167" text-anchor="middle">Review</text><text class="sub k" x="530" y="186" text-anchor="middle" data-k="review">codex, read-only</text></g>
+        <g class="r-dim"><circle class="dot" cx="680" cy="130" r="10"/><text class="st" x="680" y="167" text-anchor="middle">Findings</text><text class="sub" x="680" y="186" text-anchor="middle" data-k="triage">full triage</text></g>
+        <g><circle class="dot" cx="830" cy="130" r="10"/><text class="st" x="830" y="167" text-anchor="middle">Commit</text><text class="sub" x="830" y="186" text-anchor="middle">completion gate</text></g>
+        <g><circle class="dot" cx="970" cy="130" r="10"/><text class="st" x="970" y="167" text-anchor="middle">Pull request</text><text class="sub" x="970" y="186" text-anchor="middle">CI checks</text></g>
+        <g><rect class="gate" x="1120" y="120" width="20" height="20" transform="rotate(45 1130 130)"/><text class="st" x="1130" y="167" text-anchor="middle">Merge</text><text class="sub" x="1130" y="186" text-anchor="middle">by you</text><text class="sub bypass-note" x="1130" y="204" text-anchor="middle">approval required</text></g>
+      </svg>
+      <ul slot="legend" class="legend" aria-hidden="true">
+        <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/></svg>the route</li>
+        <li><svg width="28" height="8"><path d="M2 4 H26" stroke="var(--rule-strong)" stroke-width="3" stroke-dasharray="6 5"/></svg>only when needed</li>
+        <li><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--ink)" stroke-width="2.5"/></svg>a step that a script or an agent runs</li>
+        <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="var(--ink)"/></svg>you decide</li>
+        <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>you answer, only when asked</li>
+      </ul>
+
+      <ol slot="words" class="words" id="route-words">
+        <li><b>Issue</b><small>from the roadmap</small></li>
+        <li><b>Implement</b><small class="k" data-k="impl">claude opus</small><p class="cond">If a decision that matters is unclear, the implementer stops with its questions and you answer.</p></li>
+        <li><b>Checks</b><small class="k">verify.sh</small><p class="cond">If a check fails, the implementer repairs it.</p></li>
+        <li class="r-word"><b>Review</b><small class="k" data-k="review">codex, read-only</small></li>
+        <li class="r-word"><b>Findings</b><small data-k="triage">full triage</small><p class="cond">Fixes are checked and reviewed again.</p></li>
+        <li><b>Commit</b><small>completion gate</small></li>
+        <li><b>Pull request</b><small>CI checks</small></li>
+        <li class="you"><b>Merge</b><small data-k="merge">by you</small></li>
+      </ol>
+      <span slot="caption" data-k="caption"><strong>Medium risk.</strong> Claude implements and Codex reviews, so the reviewer always comes from another provider, and the merge stays with you.</span>
+    </DiagramFrame>
   </div>
 
-  <Section id="site" title="This site is being rebuilt">
-    <Fragment slot="note">Tracked in <a href={issue(234)}>#234</a>.</Fragment>
-    <p>The pages are in place; their content follows step by step.</p>
-    <ul>
-      <li>This page: the route of one feature from Issue to merge, by risk level and profile (<a href={issue(238)}>#238</a>).</li>
-      <li><a href={href("workflow/")}>Workflow</a>: every step of the workflow, drawn and explained (<a href={issue(239)}>#239</a>).</li>
-      <li><a href={href("docs/")}>Docs</a>: the documentation, moved onto this site (<a href={issue(240)}>#240</a>).</li>
-      <li><a href={href("features/")}>Features</a>, <a href={href("examples/")}>Examples</a> and <a href={href("about/")}>About</a> (<a href={issue(241)}>#241</a>).</li>
+  <Section id="why" title="Writing the code is the fast part">
+    <p>Claude Code and Codex produce working changes in minutes. What they do not settle on their own is whether the change does what was asked, whether someone other than its author checked it, whether the checks ran on exactly that code, and who decided it may ship.</p>
+    <p>ACT is the workflow around the agents. It does not write code. It turns an approved plan into Issues, has one agent implement and an agent of another provider review, records the evidence for every acceptance criterion, and leaves the merge to you. Everything runs from your repository with shell scripts and plain files; there is no platform to host.</p>
+    <div class="ledger" role="group" aria-label="Who does what">
+      <div><h3>The agents</h3><ul><li>Write the code and the tests</li><li>Review a change, read-only</li><li>Propose what to do with each finding</li></ul></div>
+      <div><h3>ACT</h3><ul><li>Computes the risk level of each change</li><li>Picks the agent and model for the level</li><li>Refuses a review by the implementer's own provider</li><li>Commits only verified, reviewed, complete work</li></ul></div>
+      <div><h3>You</h3><ul><li>Approve the plan</li><li>Answer what the agents cannot decide</li><li>Approve protected changes</li><li>Merge</li></ul></div>
+    </div>
+  </Section>
+
+  <Section id="how" title="Plan once, then one line per feature">
+    <Fragment slot="note">Every step on the <a href={href("workflow/")}>workflow page</a>.</Fragment>
+    <figure class="plain">
+      <svg class="lines" viewBox="-20 0 1140 200" role="img" aria-labelledby="lines-t" aria-describedby="lines-words">
+        <title id="lines-t">Planning runs once: idea, requirements, plan, plan review, your approval. From the approved plan, each feature runs its own line from Issue to merge.</title>
+        <path class="l1" d="M40 50 H700"/>
+        <path class="l2" d="M700 50 L780 130 H1080"/>
+        <circle class="dot" cx="40" cy="50" r="9"/><text class="st" x="40" y="26" text-anchor="middle">Idea</text>
+        <circle class="dot" cx="210" cy="50" r="9"/><text class="st" x="210" y="26" text-anchor="middle">Requirements</text><text class="sub" x="210" y="80" text-anchor="middle">Project Grill</text>
+        <circle class="dot" cx="380" cy="50" r="9"/><text class="st" x="380" y="26" text-anchor="middle">Plan</text><text class="sub" x="380" y="80" text-anchor="middle">architecture, roadmap</text>
+        <circle class="dot" cx="550" cy="50" r="9"/><text class="st" x="550" y="26" text-anchor="middle">Plan review</text><text class="sub" x="550" y="80" text-anchor="middle">another provider</text>
+        <rect class="gate" x="690" y="40" width="20" height="20" transform="rotate(45 700 50)"/><text class="st" x="700" y="26" text-anchor="middle">You approve</text>
+        <circle class="dot" cx="800" cy="130" r="9"/><text class="st" x="800" y="166" text-anchor="middle">Feature Issue</text>
+        <circle class="dot" cx="940" cy="130" r="9"/><text class="st" x="940" y="166" text-anchor="middle">Run</text><text class="sub" x="940" y="186" text-anchor="middle">build, check, review</text>
+        <rect class="gate" x="1070" y="120" width="20" height="20" transform="rotate(45 1080 130)"/><text class="st" x="1080" y="166" text-anchor="middle">Merge</text>
+      </svg>
+      <ol class="words lines-words" id="lines-words">
+        <li><b>Idea</b></li>
+        <li><b>Requirements</b><small>Project Grill</small></li>
+        <li><b>Plan</b><small>architecture, roadmap</small></li>
+        <li><b>Plan review</b><small>another provider</small></li>
+        <li class="you"><b>You approve</b><p class="cond">Then, per feature:</p></li>
+        <li><b>Feature Issue</b></li>
+        <li><b>Run</b><small>build, check, review</small></li>
+        <li class="you"><b>Merge</b><small>by you</small></li>
+      </ol>
+    </figure>
+    <p>A planning change, a new requirement or a changed roadmap, goes back through the plan review and your approval before features are built on it. Each feature runs step by step, with you approving the triage, or in one unattended command, <code>run-feature.sh</code>, which stops whenever it needs you.</p>
+  </Section>
+
+  <Section id="risk" title="Effort follows risk">
+    <Fragment slot="note">Configured in <a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a> and <a href={repoFile(".agents/agents.conf")}><code>agents.conf</code></a>.</Fragment>
+    <p>Each change gets a risk level, computed from what it touches, and each project picks a workflow profile. They are separate settings: the level describes the change, the profile describes how much ceremony the project wants for low and medium risk.</p>
+    <Table>
+      <thead><tr><th scope="col">setting</th><th scope="col">decided by</th><th scope="col">values</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Risk level</th><td data-col="decided by">The changed paths, fixed escalations (a policy, prompt or schema; removed or changed lines in an existing test; shared test fixtures; the verification configuration), and what the agents assess. You can raise it with the Issue label <code>risk: high</code> or <code>--risk</code>, but nobody can lower it.</td><td data-col="values" class="k">low · medium · high</td></tr>
+        <tr><th scope="row">Workflow profile</th><td data-col="decided by">One line in <code>risk.conf</code>. Without it, the project keeps the policy it has.</td><td data-col="values" class="k">standard · light</td></tr>
+        <tr><th scope="row">Agent permissions</th><td data-col="decided by">The role: implementers write, reviewers only read, unattended sessions ask nothing.</td><td data-col="values" class="k">write · read-only · unattended</td></tr>
+      </tbody>
+    </Table>
+    <Table matrix>
+      <caption>Under both profiles every commit needs the full verification and only you merge. The light column shows what changes from standard.</caption>
+      <thead><tr><th scope="col">level</th><th scope="col">standard</th><th scope="col">light</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><span class="lvl low">low</span></th>
+          <td data-col="standard"><p>Reviewed by another provider; full triage.</p><p>As shipped there is no low class: changes start at medium.</p></td>
+          <td data-col="light" class="changed"><p><span class="chg">changed</span> Documentation and process files are low. No review: the commit says so, and the merge needs your approval.</p></td></tr>
+        <tr><th scope="row"><span class="lvl medium">medium</span></th>
+          <td data-col="standard"><p>Reviewed; full triage.</p><p>Implementer: Claude opus.</p></td>
+          <td data-col="light" class="changed"><p><span class="chg">changed</span> Reviewed; light triage: minor findings and suggestions can be accepted or deferred without a fix round.</p></td></tr>
+        <tr><th scope="row"><span class="lvl high">high</span></th>
+          <td data-col="standard"><p>Reviewed; full triage.</p><p>Implementer: Claude fable.</p></td>
+          <td data-col="light"><p>Unchanged: reviewed, full triage, the stronger model. No profile can remove these.</p></td></tr>
+      </tbody>
+    </Table>
+  </Section>
+
+  <Section id="trace" title="Every claim has a record">
+    <Fragment slot="note">From the pull request of <a href={pull(222)}>#222</a>, written by <code>finish-feature.sh</code>.</Fragment>
+    <div class="artifact">
+      <pre class="record" aria-label="Excerpt of the description of pull request 222"><span class="src">{repositoryName}/pull/222 · excerpt</span><span class="pin" aria-hidden="true">1</span><mark>Completion: complete</mark>
+- met: A complete review in round 3 or later, started
+  by run-feature.sh or by hand without --changes,
+  receives the decisions of every approved triage …
+
+<span class="pin" aria-hidden="true">2</span><mark>Verification:</mark>
+- ./scripts/verify.sh passed
+
+<span class="pin" aria-hidden="true">3</span><mark>Review: round 5, PASS WITH MINOR FINDINGS,</mark>
+<mark>by codex (gpt-6-luna)</mark>; triage published on #217
+
+<span class="pin" aria-hidden="true">4</span><mark>Risk: high</mark>
+- .agents/prompts/reviewer.md: a policy, an agent
+  contract, or a schema is changed
+
+<span class="pin" aria-hidden="true">5</span><mark>Merge approval:</mark>
+- required from the project owner, for exactly
+  this commit</pre>
+      <ol class="notes">
+        <li><span class="pin" aria-hidden="true">1</span><div><b>Completion record</b><span>The implementer's claim, criterion by criterion, with evidence. A session that ends is not a finished Issue.</span></div></li>
+        <li><span class="pin" aria-hidden="true">2</span><div><b>Verification</b><span>A recorded run on exactly this content; reused while nothing changes, never a partial check.</span></div></li>
+        <li><span class="pin" aria-hidden="true">3</span><div><b>Independent review</b><span>Another provider, read-only. Every later round gets the earlier decisions; a re-raised finding names the one it continues.</span></div></li>
+        <li><span class="pin" aria-hidden="true">4</span><div><b>Risk level</b><span>Computed again at every step from the diff and the rules of the base branch, with its reasons.</span></div></li>
+        <li><span class="pin" aria-hidden="true">5</span><div><b>Your approval</b><span>Protected changes wait for you; the approval is bound to the commit.</span></div></li>
+      </ol>
+    </div>
+    <div class="split">
+      <div><h3>ACT enforces</h3><ul>
+        <li>The risk level, and that no agent lowers it</li>
+        <li>A reviewer of another provider than the implementer</li>
+        <li>Verification before review and before commit</li>
+        <li>A current review of the complete feature before commit</li>
+        <li>The completion gate and the triage rules</li>
+        <li>Read-only reviewers and sandboxed implementers</li>
+        <li>Rules read from the base branch, so a change cannot loosen its own checks</li>
+      </ul></div>
+      <div><h3>Your GitHub settings enforce</h3><ul>
+        <li>A ruleset on <code>main</code> that requires a pull request and the CI check</li>
+        <li>Code-owner review for protected paths</li>
+        <li>Who may bypass the rules</li>
+        <li>An approval the agent cannot give itself: needs a separate agent identity, <a href={issue(99)}>not built yet</a></li>
+      </ul></div>
+    </div>
+  </Section>
+
+  <Section id="runs" title="ACT builds ACT">
+    <Fragment slot="note">Recent changes to this repository, made with its own workflow. <a href={href("examples/")}>Followed in detail</a>.</Fragment>
+    <Table>
+      <caption>From the run records and the reviews published on each Issue. Verification is one full run of <code>verify.sh</code> on the maintainer's server.</caption>
+      <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col">risk</th><th scope="col">implementer</th><th scope="col">review rounds</th><th scope="col" class="num">verify</th><th scope="col">result</th></tr></thead>
+      <tbody>
+        {runs.map((run) => (
+          <tr>
+            <th scope="row"><a href={issue(run.issue)}>#{run.issue}</a></th>
+            <td data-col="change">{run.change}</td>
+            <td data-col="risk"><span class="lvl high">high</span></td>
+            <td data-col="implementer" class="k">{run.implementer}</td>
+            <td data-col="review rounds">{run.rounds}</td>
+            {run.verify ? <td data-col="verify" class="num">{run.verify} s</td> : <td data-col="verify" class="num off">–</td>}
+            {run.pull ? <td data-col="result"><a href={pull(run.pull)}>PR #{run.pull}</a></td> : <td data-col="result" class="off">parked</td>}
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  </Section>
+
+  <Section id="learn" title="Learn from your runs">
+    <Fragment slot="note">With <code>report-runs.sh</code>, <code>show-experience.sh</code> and <code>analyze-runs.sh</code>. <a href={`${repoFile("docs/development.md")}#run-records`}>The records in detail</a>.</Fragment>
+    <p>Every run leaves a record: the review rounds and their findings, what the triage decided, the checks that failed, why a run stopped, and the time and tokens of each step. After a number of features you ask a read-only analyst what keeps costing rounds, and it proposes what to change.</p>
+    <figure class="plain">
+      <svg class="lines learn" viewBox="0 0 1240 236" role="img" aria-labelledby="learn-t" aria-describedby="learn-words">
+        <title id="learn-t">The run records of several features run into one analysis. Its proposals pass your decision, and each goes to its own place with the review that applies there.</title>
+        <text class="note" x="110" y="14" text-anchor="middle">the last n features</text>
+        <path class="l2" d="M40 30 H200 L280 110"/>
+        <path class="l2" d="M40 70 H200 L240 110"/>
+        <path class="l2" d="M40 110 H500"/>
+        <path class="l2" d="M40 150 H200 L240 110"/>
+        <path class="l2" d="M40 190 H200 L280 110"/>
+        <circle class="dot" cx="200" cy="30" r="8"/><circle class="dot" cx="200" cy="70" r="8"/><circle class="dot" cx="200" cy="110" r="8"/><circle class="dot" cx="200" cy="150" r="8"/><circle class="dot" cx="200" cy="190" r="8"/>
+        <text class="sub" x="200" y="226" text-anchor="middle">run records</text>
+        <path class="l1" d="M500 110 H620 L680 50 H900 M620 110 H900 M620 110 L680 170 H900"/>
+        <circle class="dot" cx="400" cy="110" r="10"/><text class="st" x="400" y="86" text-anchor="middle">Analysis</text><text class="sub k" x="400" y="142" text-anchor="middle">analyze-runs.sh</text><text class="sub" x="400" y="162" text-anchor="middle">read-only</text>
+        <rect class="gate" x="510" y="100" width="20" height="20" transform="rotate(45 520 110)"/><text class="st" x="520" y="86" text-anchor="middle">You decide</text>
+        <circle class="dot" cx="900" cy="50" r="8"/><text class="sub" x="918" y="55">ADR, instruction, skill, docs</text>
+        <circle class="dot" cx="900" cy="110" r="8"/><text class="sub" x="918" y="115">a check in a script</text>
+        <circle class="dot" cx="900" cy="170" r="8"/><text class="sub" x="918" y="175">an Issue, here or in the template</text>
+        <text class="note" x="760" y="226" text-anchor="middle">each with the review that applies there</text>
+      </svg>
+      <ol class="words lines-words" id="learn-words">
+        <li><b>Run records</b><small>of the last n features: rounds, findings, triage, stops, time and tokens</small></li>
+        <li><b>Analysis</b><small class="k">analyze-runs.sh --last 10</small><p class="cond">A read-only agent; it changes nothing.</p></li>
+        <li class="you"><b>You decide</b></li>
+        <li><b>Each proposal in its place</b><small>an ADR, an agent instruction, a skill, the documentation, a check in a script, or an Issue, here or in the template</small><p class="cond">with the review that applies there</p></li>
+      </ol>
+    </figure>
+    <ul class="rules">
+      <li><b>A finding needs two runs.</b> One observation stays a hypothesis, and “not enough evidence” is a valid outcome.</li>
+      <li><b>Every conclusion cites its records,</b> and says which differences in task size, model and workflow version it considered.</li>
+      <li><b>Nothing changes by itself.</b> Each proposal names its place, and you take it through the review and approval there.</li>
+      <li><b>Repeatable, and nothing counted twice.</b> Each analysis keeps its input and sources; evidence an earlier analysis used is marked as such.</li>
     </ul>
-    <Note title="Until then">
-      <p>The repository is the reference: start with the <a href={repoFile("README.md")}>README</a> and <a href={repoFile("docs/workflow.md")}><code>docs/workflow.md</code></a>.</p>
-    </Note>
+    <p class="needs">ACT ran it on itself on 28 October 2026: 41 runs of 19 features. Among the findings: in five runs the reviewer raised a fixed finding again as unresolved; six of seven failed runs recorded no reason for the stop; the self-test suite had grown from 463 s to 915 s in two days. Five proposals became Issues, all merged:</p>
+    <Table>
+      <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col">result</th></tr></thead>
+      <tbody>
+        {proposals.map((proposal) => (
+          <tr>
+            <th scope="row"><a href={issue(proposal.issue)}>#{proposal.issue}</a></th>
+            <td data-col="change">{proposal.change}</td>
+            <td data-col="result"><a href={pull(proposal.pull)}>PR #{proposal.pull}</a></td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <p class="needs">You start an analysis by hand; running it periodically is an open Issue (<a href={issue(131)}>#131</a>).</p>
+  </Section>
+
+  <Section id="start" title="Start a project">
+    <Fragment slot="note">The full <a href={href("docs/")}>getting-started guide</a>.</Fragment>
+    <pre class="term" aria-label="Terminal commands"><span class="c"># a new repository from the template</span>
+<span class="p">$ </span>gh repo create my-project --template {templateName} --private --clone
+<span class="p">$ </span>cd my-project
+<span class="p">$ </span>./scripts/doctor.sh
+<span class="c"># plan once: requirements, architecture, roadmap; you approve</span>
+<span class="p">$ </span>./scripts/start-planning.sh --description idea.md
+<span class="c"># then each feature, from Issue to pull request</span>
+<span class="p">$ </span>./scripts/create-feature-issue.sh F01
+<span class="p">$ </span>./scripts/run-feature.sh 1</pre>
+    <p class="needs">You need Git, the GitHub CLI, <code>jq</code>, Claude Code and Codex: as shipped, Claude implements and Codex reviews, and a review by the implementer's own provider is refused. <code>doctor.sh</code> checks all of it, including the Codex sandbox and your Git identity.</p>
   </Section>
 </Base>
+
+<script>
+  // The route of one feature: redraws the hero map for a risk level and a
+  // workflow profile. CSS redraws the route from data-risk and data-profile;
+  // this swaps the labels, the words list and the caption.
+  const root = document.getElementById("lifecycle");
+  const form = root?.querySelector<HTMLFormElement>(".switches");
+
+  function labels(level: string, profile: string): Record<string, string> {
+    const bypass = level === "low" && profile === "light";
+    return {
+      impl: level === "high" ? "claude fable" : "claude opus",
+      review: bypass ? "skipped" : "codex, read-only",
+      triage: bypass ? "none" : profile === "light" && level !== "high" ? "light triage" : "full triage",
+      merge: "by you",
+      caption: bypass
+        ? "<strong>Low risk, light profile.</strong> Documentation and process files skip the review. The commit records that it was not reviewed, and the merge waits for your approval."
+        : level === "high"
+          ? "<strong>High risk.</strong> The stronger model implements, the full triage applies, and no profile can remove the review or lower the level."
+          : level === "low"
+            ? "<strong>Low risk, standard profile.</strong> Still reviewed by another provider. As shipped there is no low class; a project adds one in risk.conf."
+            : profile === "light"
+              ? "<strong>Medium risk, light profile.</strong> Reviewed; minor findings and suggestions can be accepted or deferred without another fix round."
+              : "<strong>Medium risk.</strong> Claude implements and Codex reviews, so the reviewer always comes from another provider, and the merge stays with you.",
+    };
+  }
+
+  if (root && form) {
+    form.addEventListener("change", () => {
+      const level = (form.elements.namedItem("risk") as RadioNodeList).value;
+      const profile = (form.elements.namedItem("profile") as RadioNodeList).value;
+      root.dataset.risk = level;
+      root.dataset.profile = profile;
+      const text = labels(level, profile);
+      // The labels are HTML and SVG elements alike.
+      root.querySelectorAll("[data-k]").forEach((element) => {
+        const key = element.getAttribute("data-k") ?? "";
+        if (key === "caption") element.innerHTML = text.caption;
+        else element.textContent = text[key];
+      });
+      root.querySelectorAll<HTMLElement>(".r-word").forEach((item) => {
+        item.hidden = level === "low" && profile === "light";
+      });
+    });
+  }
+</script>
