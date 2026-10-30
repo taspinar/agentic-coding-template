@@ -1,0 +1,44 @@
+---
+import { href } from "../lib/links";
+---
+<div class="docs-search" data-index={href("search-index.json")}>
+  <label for="docs-query">Search the site</label>
+  <input id="docs-query" type="search" autocomplete="off" aria-describedby="search-status" />
+  <p id="search-status" role="status">Enter words to search.</p>
+  <ul id="search-results"></ul>
+</div>
+<script>
+  import { searchPages } from "../lib/search.mjs";
+  const container = document.querySelector<HTMLElement>('.docs-search')!;
+  const input = container.querySelector<HTMLInputElement>('input')!;
+  const status = container.querySelector<HTMLElement>('[role="status"]')!;
+  const results = container.querySelector<HTMLUListElement>('ul')!;
+  let pages: Promise<{ title: string; url: string; text: string }[]> | undefined;
+  let revision = 0;
+  input.addEventListener('input', async () => {
+    const current = ++revision;
+    results.replaceChildren();
+    if (!input.value.trim()) { status.textContent = 'Enter words to search.'; return; }
+    status.textContent = 'Loading search…';
+    try {
+      pages ??= fetch(container.dataset.index!).then(response => {
+        if (!response.ok) throw new Error('Search unavailable');
+        return response.json();
+      });
+      const matches = searchPages(await pages, input.value);
+      if (current !== revision) return;
+      status.textContent = `${matches.length} result${matches.length === 1 ? '' : 's'}.`;
+      for (const match of matches) {
+        const item = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = match.url;
+        link.textContent = match.title;
+        item.append(link);
+        results.append(item);
+      }
+    } catch {
+      pages = undefined;
+      if (current === revision) status.textContent = 'Search is unavailable. Use the documentation navigation below.';
+    }
+  });
+</script>

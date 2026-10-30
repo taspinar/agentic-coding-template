@@ -94,6 +94,7 @@ check_output() {
     while IFS= read -r target; do
       case "$target" in
         "$repository/blob/"* | "$repository/tree/"*)
+          [[ "$target" == "$repository/blob/main/"* || "$target" == "$repository/tree/main/"* ]] || problem "$name links to a repository ref other than main: $target"
           path="${target#"$repository/"*/*/}"
           path="${path%%#*}"
           [[ -e "$root/$path" ]] || problem "$name links to $path, which is not in the repository"
@@ -117,8 +118,12 @@ check_output() {
     done < <(grep -oE '(href|src)="[^"]*"' "$page" | sed -E 's/^(href|src)="//; s/"$//' | sed 's/&amp;/\&/g' | sort -u)
 
     while IFS= read -r script; do
-      [[ -f "$root/scripts/$script" ]] || problem "$name names $script, which is not in scripts/"
-    done < <(sed 's/<[^>]*>/ /g' "$page" | grep -oE '[a-z][a-z-]*\.sh' | sort -u)
+      if [[ "$script" == */* ]]; then
+        [[ -f "$root/$script" ]] || problem "$name names $script, which is not in the repository"
+      else
+        [[ -f "$root/scripts/$script" ]] || problem "$name names $script, which is not in scripts/"
+      fi
+    done < <(sed 's/<[^>]*>/ /g' "$page" | grep -oE '([[:alnum:]_.-]+/)*[a-z][a-z-]*\.sh' | sort -u)
 
     grep -q '<title>[^<]' "$page" || problem "$name has no title"
     grep -q '<meta name="description" content="[^"]' "$page" || problem "$name has no description"
@@ -147,7 +152,9 @@ check_output() {
 
 if [[ "${1:-}" == "--build" ]]; then
   [[ -d "$site/node_modules" ]] || { echo "documentation: run npm ci in $site first" >&2; exit 1; }
-  work="$(mktemp -d)"
+  mkdir -p "$site/.astro"
+  # Astro moves prerendered assets with rename(): keep output on the same device.
+  work="$(mktemp -d "$site/.astro/check.XXXXXX")"
   trap 'rm -rf "$work"' EXIT
   for css in "$site"/src/styles/*.css; do check_tokens "$css"; done
   for base in /agentic-coding-template/ /; do
@@ -156,6 +163,7 @@ if [[ "${1:-}" == "--build" ]]; then
       npx --no-install astro build --silent --outDir "$output") ||
       { echo "documentation: the build under $base failed" >&2; exit 1; }
     check_output "$output" "$base" "$default_site_url"
+    node "$site/search-test.mjs" "$output" "$base"
   done
 elif [[ "${1:-}" == "--tokens" && $# -ge 2 ]]; then
   shift
