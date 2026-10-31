@@ -51,6 +51,8 @@ try {
       const focused = await page.evaluate(() => {
         const e = document.activeElement;
         if (!e || e === document.body) return true;
+        // A station of the workflow map shows focus on its symbol: the stroke turns to the line, 6px wide.
+        if (e.matches('g.station')) return [...e.querySelectorAll('.dot, .gate, .gate-o')].some(s => parseFloat(getComputedStyle(s).strokeWidth) >= 6);
         const visible = e.matches('input[type=radio]') ? e.nextElementSibling : e;
         const style = getComputedStyle(visible);
         return style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
@@ -60,6 +62,10 @@ try {
     }
     assert.fail(`Cannot reach ${selector} with Tab`);
   }
+  const panelAccessible = async () => {
+    const results = await new AxeBuilder({ page }).include('#step-panel').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    assert.deepEqual(results.violations.filter(v => ['serious', 'critical'].includes(v.impact) || v.id === 'color-contrast'), [], 'Accessibility of the step detail panel');
+  };
   for (const theme of ['light', 'dark']) {
     for (const width of [375, 1440]) {
       await page.setViewportSize({ width, height: 900 });
@@ -68,6 +74,26 @@ try {
       await tabTo('.skip');
       await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(() => document.activeElement.id), 'main');
+      // The home page map: the review bypass is hidden wherever policy
+      // excludes it and shows, solid, only under low risk with the light profile.
+      if (width === 1440) {
+        for (const risk of ['low', 'medium', 'high']) {
+          for (const profile of ['standard', 'light']) {
+            await page.locator(`#lifecycle label:has(input[name="risk"][value="${risk}"])`).click();
+            await page.locator(`#lifecycle label:has(input[name="profile"][value="${profile}"])`).click();
+            const shown = await page.evaluate(() => [...document.querySelectorAll('#lifecycle .map :is(.bypass, .bypass-note)')]
+              .map(e => ({ display: getComputedStyle(e).display, dash: getComputedStyle(e).strokeDasharray })));
+            assert(shown.length > 0);
+            const at = `home page bypass at ${risk} risk, ${profile} profile`;
+            if (risk === 'low' && profile === 'light') {
+              for (const r of shown) assert.notEqual(r.display, 'none', at);
+              assert.equal(shown[0].dash, 'none', at);
+            } else {
+              for (const r of shown) assert.equal(r.display, 'none', at);
+            }
+          }
+        }
+      }
       await page.goto(origin + base + '?theme=' + theme);
       await tabTo('.nav a');
       await page.keyboard.press('Enter');
@@ -76,13 +102,74 @@ try {
       await page.keyboard.press('Enter');
       assert.equal(await page.locator('html').getAttribute('data-theme'), theme === 'light' ? 'dark' : 'light');
       await page.keyboard.press('Enter');
-      for (const name of ['part', 'run', 'risk', 'profile', 'situation']) {
+      for (const name of ['risk', 'profile', 'run', 'part', 'situation']) {
         const radios = page.locator(`input[name="${name}"]`);
         assert(await radios.count() > 1);
         await tabTo(`input[name="${name}"]`);
         const before = await page.locator(`input[name="${name}"]:checked`).inputValue();
         await page.keyboard.press('ArrowRight');
         assert.notEqual(await page.locator(`input[name="${name}"]:checked`).inputValue(), before);
+      }
+      assert.match(await page.locator('[data-summary]').innerText(), /High risk.*light profile.*unattended.*planning only.*unclear Issue/s);
+      // The step detail panel from a station of the map: Enter opens it with
+      // the focus on its heading, the arrow keys move between its tabs, Close
+      // returns the focus to the station.
+      if (width === 1440) {
+        await tabTo('svg g.station[data-key="f-review"]');
+        await page.keyboard.press('Enter');
+        assert(await page.locator('#step-panel').isVisible());
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'step-panel-h');
+        assert.equal(await page.locator('#step-panel-h').innerText(), 'Review the code');
+        assert(await page.locator('svg g[data-key="f-review"]').evaluate(e => e.classList.contains('is-selected')));
+        await tabTo('#step-panel [role="tab"][aria-selected="true"]');
+        await page.keyboard.press('ArrowRight');
+        assert.equal(await page.evaluate(() => document.activeElement.dataset.tab), 'technical');
+        assert.match(await page.locator('#step-tab-body').innerText(), /Command\s+\.\/scripts\/review-feature\.sh/);
+        await page.keyboard.press('ArrowRight');
+        assert.match(await page.locator('#step-tab-body').innerText(), /Stops, retries and exceptions/);
+        await panelAccessible();
+        await page.keyboard.press('Shift+Tab');
+        await page.keyboard.press('Enter');
+        assert(!await page.locator('#step-panel').isVisible());
+        assert.equal(await page.evaluate(() => document.activeElement.dataset.key), 'f-review');
+      }
+      await page.locator('[data-action="reset"]').press('Enter');
+      assert.equal(await page.locator('input[name="part"]:checked').inputValue(), 'all');
+      assert.match(await page.locator('[data-summary]').innerText(), /^Medium risk.*standard profile.*step by step$/s);
+      // The review bypass as rendered. Policy excludes it at medium and high
+      // risk and under the standard profile, so there it is off the route: the
+      // off colour, solid, never the dashed style of a route that can happen.
+      // Only low risk with the light profile draws it at full strength (at
+      // 1440 px: at 375 px the list is the map).
+      if (width === 1440) {
+        const bypass = () => page.evaluate(() => ['b-bypass', 'n-bypass'].map(key => {
+          const e = document.querySelector(`svg.map [data-key="${key}"]`);
+          const s = getComputedStyle(e);
+          return { key, display: s.display, width: e.getBBox().width, off: e.classList.contains('is-off'), taken: e.classList.contains('is-taken'), dash: s.strokeDasharray, stroke: s.stroke, fill: s.fill };
+        }));
+        const color = name => page.evaluate(name => { const p = document.createElement('p'); p.style.color = `var(${name})`; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; }, name);
+        const ink = await color('--ink'), off = await color('--off');
+        const choose = async (name, value) => page.locator(`label:has(input[name="${name}"][value="${value}"])`).click();
+        for (const risk of ['low', 'medium', 'high']) {
+          for (const profile of ['standard', 'light']) {
+            await choose('risk', risk);
+            await choose('profile', profile);
+            const [branch, note] = await bypass();
+            const at = `at ${risk} risk, ${profile} profile`;
+            if (risk === 'low' && profile === 'light') {
+              for (const r of [branch, note]) assert(r.display !== 'none' && r.width > 0 && r.taken && !r.off, `${r.key} taken ${at}`);
+              assert.equal(branch.dash, 'none', `b-bypass solid ${at}`);
+              assert.notEqual(branch.stroke, off, `b-bypass at full strength ${at}`);
+              assert.equal(note.fill, ink, `n-bypass in ink ${at}`);
+            } else {
+              for (const r of [branch, note]) assert(r.off && !r.taken, `${r.key} off ${at}`);
+              assert.equal(branch.dash, 'none', `b-bypass not dashed ${at}`);
+              assert.equal(branch.stroke, off, `b-bypass in the off colour ${at}`);
+              assert.notEqual(note.fill, ink, `n-bypass not in ink ${at}`);
+            }
+          }
+        }
+        await page.locator('[data-action="reset"]').click();
       }
       await tabTo('[data-action="play"]');
       await page.keyboard.press('Enter');
@@ -98,6 +185,16 @@ try {
         await page.keyboard.press('Enter');
         assert.equal(await page.locator('[data-action="list"]').getAttribute('aria-expanded'), 'true');
       }
+      // The same panel from the words list, inside the item that opened it.
+      await tabTo('.words li[data-key="f-checks"] .detail-btn');
+      await page.keyboard.press('Enter');
+      assert(await page.locator('.words li[data-key="f-checks"] #step-panel').isVisible());
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'step-panel-h');
+      await panelAccessible();
+      await tabTo('.panel-close');
+      await page.keyboard.press('Enter');
+      assert(!await page.locator('#step-panel').isVisible());
+      assert(await page.evaluate(() => document.activeElement.matches('.words li[data-key="f-checks"] .detail-btn')));
       await page.goto(origin + base + 'docs/?theme=' + theme);
       await tabTo('.docs-search input');
       if (width <= 760) {
@@ -156,6 +253,8 @@ try {
       await p.goto(origin + base + 'workflow/');
       assert(await p.locator('#workflow-words').isVisible());
       assert(!await p.locator('.map-actions').isVisible());
+      assert(!await p.locator('.hint').isVisible() && !await p.locator('.reset').isVisible());
+      assert.equal(await p.locator('.station, .detail-btn').count(), 0, 'Without JavaScript nothing pretends to open the step detail');
     }
     await docs.close();
   }

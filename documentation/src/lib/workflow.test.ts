@@ -10,19 +10,19 @@ const models = parseAgents(readFileSync(new URL("../../../.agents/agents.conf", 
 const view = (change: Partial<State>) => describe({ ...initial, ...change }, models);
 const keys = (state: Partial<State>) => view(state).walk.map((step) => step.key);
 
-test("the initial state is the complete drawing: nothing off, no branch taken, no bypass", () => {
+test("the initial state is the complete drawing: no branch taken, only the bypass off (policy excludes it)", () => {
   const v = view({});
-  assert.deepEqual(v.off, []);
+  assert.deepEqual(v.off, ["b-bypass", "n-bypass"]);
   assert.deepEqual(v.taken, []);
-  assert.ok(v.hidden.includes("b-bypass"));
+  for (const key of ["b-bypass", "n-bypass"]) assert.ok(!v.hidden.includes(key), key);
   assert.ok(v.hidden.includes("f-merge-approval"), "the approval flag shows only when it is required");
-  assert.match(v.caption.lead, /^Medium risk, standard profile\.$/);
+  assert.deepEqual(v.summary, ["Medium risk", "standard profile", "step by step"]);
 });
 
 test("low risk skips the review only under a policy with low: review: none (light)", () => {
   const light = view({ risk: "low", profile: "light" });
   for (const key of ["f-review", "f-findings", "s-f-review", "s-f-findings"]) assert.ok(light.off.includes(key), key);
-  assert.ok(light.taken.includes("b-bypass"));
+  assert.ok(light.taken.includes("b-bypass") && light.taken.includes("n-bypass"));
   assert.ok(light.hidden.includes("w-f-review") && light.hidden.includes("w-f-findings"));
   assert.ok(!light.hidden.includes("f-merge-approval"), "without a review the merge needs the owner's approval");
   assert.ok(!keys({ risk: "low", profile: "light" }).includes("f-review"));
@@ -31,6 +31,14 @@ test("low risk skips the review only under a policy with low: review: none (ligh
   assert.ok(!standard.off.includes("f-review"));
   assert.ok(keys({ risk: "low" }).includes("f-review"));
   assert.ok(standard.hidden.includes("f-merge-approval"));
+  assert.ok(!standard.hidden.includes("b-bypass") && !standard.taken.includes("b-bypass"), "visible, not taken");
+  for (const risk of ["low", "medium", "high"] as const) {
+    for (const profile of ["standard", "light"] as const) {
+      if (risk === "low" && profile === "light") continue;
+      const v = view({ risk, profile });
+      for (const key of ["b-bypass", "n-bypass"]) assert.ok(v.off.includes(key) && !v.taken.includes(key), `${key} off at ${risk}, ${profile}`);
+    }
+  }
 });
 
 test("high risk is never lighter: reviewed and fully triaged under every profile", () => {
@@ -119,4 +127,17 @@ test("every state's walkthrough moves only along elements of the map", () => {
 
 test("an unknown switch value falls back to the initial state", () => {
   assert.deepEqual(stateOf({ risk: "extreme", part: "feature" }), { ...initial, part: "feature" });
+});
+
+test("the summary names every switch that differs from the initial state, in plain words", () => {
+  assert.deepEqual(view({ risk: "high", run: "unattended", part: "feature", situation: "repair" }).summary,
+    ["High risk", "standard profile", "unattended", "one feature", "checks fail"]);
+  assert.deepEqual(view({ part: "planning", profile: "light" }).summary, ["Medium risk", "light profile", "step by step", "planning only"]);
+});
+
+test("the walkthrough pauses at the owner's decisions, and at the triage only step by step", () => {
+  const paused = (state: Partial<State>) => view(state).walk.filter((step) => step.you).map((step) => step.key);
+  assert.deepEqual(paused({}), ["p-approve-req", "p-approve", "p-merge", "f-findings", "f-merge"]);
+  assert.deepEqual(paused({ run: "unattended", part: "feature" }), ["f-merge"]);
+  assert.deepEqual(paused({ situation: "unclear", part: "feature" }), ["f-answer", "f-findings", "f-merge"]);
 });

@@ -1,5 +1,5 @@
 // The states of the workflow map on /workflow: what the drawing, its words
-// list, its caption and its walkthrough show for a part of the workflow, a
+// list, its scenario summary, its caption and its walkthrough show for a part of the workflow, a
 // way of running it, a risk level, a profile and a situation. The page
 // renders the initial state at build time and the map's script renders every
 // other state from the same function, so the drawing without JavaScript is
@@ -27,15 +27,16 @@ export interface State {
 /** The finished drawing: the whole workflow, medium risk, standard profile. */
 export const initial: State = { part: "all", run: "steps", risk: "medium", profile: "standard", situation: "none" };
 
-/** The switches of the map, in the order they are shown. */
+/** The switches of the map, in the order they are shown; the minor ones in a second, smaller row. */
 export const switches = [
-  { name: "part", legend: "part", options: [["all", "both"], ["planning", "planning"], ["feature", "feature"]] },
-  { name: "run", legend: "run", options: [["steps", "step by step"], ["unattended", "unattended"]] },
   { name: "risk", legend: "risk", options: [["low", "low"], ["medium", "medium"], ["high", "high"]] },
   { name: "profile", legend: "profile", options: [["standard", "standard"], ["light", "light"]] },
+  { name: "run", legend: "run", options: [["steps", "step by step"], ["unattended", "unattended"]] },
+  { name: "part", legend: "part", minor: true, options: [["all", "both"], ["planning", "planning"], ["feature", "feature"]] },
   {
     name: "situation",
     legend: "situation",
+    minor: true,
     options: [["none", "all paths"], ["unclear", "unclear Issue"], ["repair", "checks fail"], ["findings", "findings"], ["protected", "protected path"]],
   },
 ] as const;
@@ -78,6 +79,8 @@ export interface Step {
   lights: string[];
   /** What happens, for the caption. */
   text: string;
+  /** A decision of yours: a walkthrough that plays pauses here. */
+  you?: boolean;
 }
 
 export interface View {
@@ -91,7 +94,10 @@ export interface View {
   gates: string[];
   /** The text of every label that changes with the state. */
   labels: Record<string, string>;
-  caption: { lead: string; text: string };
+  /** The state in plain words: "Medium risk", "standard profile", "step by step", ... */
+  summary: string[];
+  /** What this state shows, in two or three sentences. */
+  caption: string;
   /** The walkthrough of this state, in order. */
   walk: Step[];
 }
@@ -145,7 +151,7 @@ export function describe(state: State, models: Models): View {
   const planningKeys = ["t-planning", ...planning, "s-p-req", "s-p-approve-req", "s-p-plan", "s-p-review", "s-p-approve", "s-p-merge", "s-f-issue", "b-revise"];
   const featureKeys = [
     "t-feature", ...feature, "s-f-implement", "s-f-checks", "s-f-out", "s-f-review", "s-f-findings", "s-f-in", "s-f-commit", "s-f-pr", "s-f-merge",
-    "b-clarify", "f-answer", "b-repair", "b-fix", "b-bypass",
+    "b-clarify", "f-answer", "b-repair", "b-fix", "b-bypass", "n-bypass",
   ];
   if (part === "feature") {
     planningKeys.forEach((key) => off.add(key));
@@ -157,13 +163,15 @@ export function describe(state: State, models: Models): View {
   }
 
   // The review and its triage, and the bypass that only low risk under a
-  // policy with low: review: none takes.
+  // policy with low: review: none takes. Policy excludes the bypass
+  // everywhere else, so there it is drawn off the route, never as a
+  // conditional route that could be taken.
   if (noReview) {
     ["s-f-review", "f-review", "s-f-findings", "f-findings", "s-f-in", "b-fix"].forEach((key) => off.add(key));
     hidden.add("w-f-review").add("w-f-findings");
-    taken.add("b-bypass");
+    taken.add("b-bypass").add("n-bypass");
   } else {
-    hidden.add("b-bypass").add("n-bypass");
+    off.add("b-bypass").add("n-bypass");
   }
   // Step by step you approve the triage (a diamond); unattended an agent does (a ring).
   hidden.add(unattended ? "f-findings-gate" : "f-findings-ring");
@@ -174,8 +182,9 @@ export function describe(state: State, models: Models): View {
     if (situation === "unclear") {
       taken.add("b-clarify");
       ["s-f-checks", "f-checks", "s-f-out", "s-f-review", "f-review", "s-f-findings", "f-findings", "s-f-in", "s-f-commit", "f-commit",
-        "s-f-pr", "f-pr", "s-f-merge", "f-merge", "b-repair", "b-fix", "b-bypass"].forEach((key) => off.add(key));
+        "s-f-pr", "f-pr", "s-f-merge", "f-merge", "b-repair", "b-fix", "b-bypass", "n-bypass"].forEach((key) => off.add(key));
       taken.delete("b-bypass");
+      taken.delete("n-bypass");
     }
     if (situation === "repair") taken.add("b-repair");
     if (situation === "findings" && !noReview) taken.add("b-fix");
@@ -217,18 +226,18 @@ export function describe(state: State, models: Models): View {
         : "Your approval is needed when a protected path changed or the reviewer rated the impact on the architecture major or breaking. No script merges.",
   };
 
+  const summary = [`${levelName[risk]} risk`, `${profile} profile`, unattended ? "unattended" : "step by step"];
+  if (part !== "all") summary.push(part === "planning" ? "planning only" : "one feature");
+  if (situation !== "none") summary.push(switches.find((s) => s.name === "situation")!.options.find(([value]) => value === situation)![1]);
+
   // The caption: what this state shows, in two or three sentences.
-  let lead: string;
   const text: string[] = [];
   if (part === "planning") {
-    lead = "Project planning.";
     text.push(
       "Once at the start, and again for each change of the plan: requirements that you approve, a plan, an independent review, your approval and your merge.",
       "The risk level, the profile and the way of running apply to features.",
     );
   } else {
-    const level = part === "feature" ? `Feature execution, ${risk}` : levelName[risk];
-    lead = `${level} risk, ${profile} profile${unattended ? ", unattended" : ""}.`;
     if (noReview) text.push("No review by policy (low: review: none, which the light profile sets): the commit says not reviewed, and the merge needs your approval.");
     else if (risk === "low") text.push("Reviewed like any other feature: the standard profile has no low: review: none. As shipped no path is low; a project adds a low class in risk.conf.");
     else if (risk === "high") text.push(`The implementer is ${implementer}; the review and the full triage always apply, whatever the profile.`);
@@ -253,7 +262,8 @@ export function describe(state: State, models: Models): View {
     hidden: [...hidden],
     gates: unattended ? [] : ["f-findings"],
     labels,
-    caption: { lead, text: text.join(" ") },
+    summary,
+    caption: text.join(" "),
     walk: walk(state, models),
   };
 }
@@ -261,9 +271,12 @@ export function describe(state: State, models: Models): View {
 function walk(state: State, models: Models): Step[] {
   const { part, run, risk, profile, situation } = state;
   const unattended = run === "unattended";
+  // Your decisions: the approvals, the answer to a question, the triage step by step, the merge.
+  const decisions = ["p-approve-req", "p-approve", "p-merge", "f-answer", "f-merge", ...(unattended ? [] : ["f-findings"])];
   const noReview = risk === "low" && profile === "light";
   const steps: Step[] = [];
-  const reach = (key: string, text: string, lights = into[key] ?? []) => steps.push({ key, lights: [...lights, key], text });
+  const reach = (key: string, text: string, lights = into[key] ?? []) =>
+    steps.push({ key, lights: [...lights, key], text, ...(decisions.includes(key) && { you: true }) });
 
   if (part !== "feature") {
     reach("p-idea", "You describe the project in your own words, in docs/PROJECT_DESCRIPTION.md.");

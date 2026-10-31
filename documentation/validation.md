@@ -24,8 +24,11 @@ list (retain `/`), its usage comment and this guide. Keep
 configuration; CI uses them through `check.sh --build`.
 
 `browser-check.mjs` walks the skip link, site navigation, theme toggle,
-workflow radio groups, walkthrough and desktop text-list toggle by keyboard,
-checking focus outlines. It checks the documentation disclosures at 760 px,
+workflow radio groups, the workflow's step detail panel (from a station of the
+map and from the words list: its tabs, its close button and where the focus
+returns, with axe on the open panel), walkthrough and desktop text-list toggle
+by keyboard, checking focus outlines; a station of the map shows its focus as
+the 6px line-coloured stroke of its symbol. It checks the documentation disclosures at 760 px,
 the desktop navigation at 768 px, and the no-JavaScript fallback. Native
 summaries keep both navigation lists usable with JavaScript disabled.
 

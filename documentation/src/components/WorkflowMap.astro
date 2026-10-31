@@ -1,9 +1,13 @@
 ---
-// The workflow as one line map (DESIGN.md, "Route map with switches"):
+// The workflow as one line map (DESIGN.md, "Route map with switches" and
+// "Workflow explorer"):
 // project planning on the ink line, feature execution on the green line,
 // with the switches that redraw it for a part of the workflow, the way of
 // running a feature, a risk level, a profile and a situation, and a
-// walkthrough that follows the route of the current state.
+// walkthrough that follows the route of the current state. Every station
+// opens the step detail panel, whose content is that of "Every step in
+// detail" (src/lib/steps.ts); its templates are rendered here, and the script
+// makes the stations buttons, so without JavaScript nothing pretends to be one.
 //
 // The build renders the initial state of src/lib/workflow.ts, which is the
 // complete drawing without JavaScript; the script below renders every other
@@ -12,12 +16,15 @@
 // text alternative and its form on narrow screens.
 import agentsConf from "../../../.agents/agents.conf?raw";
 import { switches, initial, describe, classesOf, parseAgents } from "../lib/workflow";
+import { details, parts, stations as detailed, tabs } from "../lib/steps";
 
 // The agents of the roles, as .agents/agents.conf of the repository sets them.
 const models = parseAgents(agentsConf);
 const view = describe(initial, models);
 const c = (key: string) => classesOf(view, key);
 const label = (key: string) => view.labels[key];
+const panels = Object.keys(detailed).map((key) => ({ key, ...details(key)! }));
+const rows = [switches.filter((s) => !("minor" in s)), switches.filter((s) => "minor" in s)];
 
 // Stations: x on their row, the shape, the name and the sub-label (mono when
 // it is a value), and an optional second sub-label.
@@ -88,15 +95,26 @@ const featureWords: Word[] = [
 ---
 <figure class="route workflow" id="workflow" aria-labelledby="workflow-title" data-workflow data-models={JSON.stringify(models)}>
   <div class="route-head">
-    <h2 id="workflow-title">The workflow, from the idea to the merge</h2>
-    <form class="switches" aria-label="Show the workflow for">
-      {switches.map((s) => (
-        <fieldset class="switch">
-          <legend>{s.legend}</legend>
-          {s.options.map(([value, name]) => (
-            <label><input type="radio" name={s.name} value={value} checked={initial[s.name] === value} /><span>{name}</span></label>
+    <h2 id="workflow-title">The route of your change</h2>
+    <div class="scenario">
+      <p aria-live="polite">
+        <strong data-summary>{view.summary.map((bit, i) => <>{i > 0 && <span class="sep" aria-hidden="true">·</span>}{bit}</>)}</strong>
+        <span data-caption="lead"></span> <span data-caption="text">{view.caption}</span>
+      </p>
+      <button type="button" class="reset" data-action="reset">Reset</button>
+    </div>
+    <form class="switches grouped" aria-label="Show the workflow for">
+      {rows.map((row, i) => (
+        <div class:list={["switch-row", { minor: i > 0 }]}>
+          {row.map((s) => (
+            <fieldset class="switch">
+              <legend>{s.legend}</legend>
+              {s.options.map(([value, name]) => (
+                <label><input type="radio" name={s.name} value={value} checked={initial[s.name] === value} /><span>{name}</span></label>
+              ))}
+            </fieldset>
           ))}
-        </fieldset>
+        </div>
       ))}
     </form>
   </div>
@@ -157,7 +175,43 @@ const featureWords: Word[] = [
     <li><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" transform="rotate(45 7 7)" fill="none" stroke="var(--ink)" stroke-width="2" /></svg>you answer, only when asked</li>
   </ul>
 
-  <figcaption class="caption" aria-live="polite"><strong data-caption="lead">{view.caption.lead}</strong> <span data-caption="text">{view.caption.text}</span></figcaption>
+  <p class="hint">Select a step on the map for what happens, who acts, the command and what can go wrong.</p>
+  <section class="step-panel" id="step-panel" aria-labelledby="step-panel-h" hidden>
+    <div class="step-panel-head">
+      <h3 id="step-panel-h" tabindex="-1"></h3>
+      <button type="button" class="panel-close" aria-label="Close the step details">Close</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Step details">
+      {tabs.map((tab, i) => (
+        <button role="tab" type="button" id={`step-tab-${tab.id}`} data-tab={tab.id} aria-controls="step-tab-body" aria-selected={String(i === 0)} tabindex={i === 0 ? undefined : "-1"}>{tab.name}</button>
+      ))}
+    </div>
+    <div class="tab-body" id="step-tab-body" role="tabpanel" aria-labelledby="step-tab-overview"></div>
+  </section>
+  {panels.map((panel) => (
+    <template data-step={panel.key} data-title={panel.title}>
+      {panel.tabs.map((tab) => (
+        <div data-tab={tab.id} hidden={tab.id !== "overview"}>
+          {tab.id === "overview" && panel.summaries.map((text) => <p>{parts(text).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</p>)}
+          {tab.rows.length
+            ? (
+              <dl class="ref-fields">
+                {tab.rows.map((row) => (
+                  <>
+                    <dt>{row.label}</dt>
+                    <dd>{row.facts.map((fact, i) => (
+                      <>{i > 0 && <br />}{fact.shown && <><span class="sub">{fact.label}</span> </>}{parts(fact.value).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</>
+                    ))}</dd>
+                  </>
+                ))}
+              </dl>
+            )
+            : tab.id !== "overview" && <p class="ref-empty">Nothing in the reference for this step.</p>}
+        </div>
+      ))}
+      <p class="ref-link">In the reference: {panel.steps.map((step, i) => <>{i > 0 && " · "}<a href={`#${step.id}`}>{step.title}</a></>)}</p>
+    </template>
+  ))}
 
   <div class="map-actions" role="group" aria-label="Walkthrough and list">
     <button type="button" data-action="play">Play walkthrough</button>
@@ -195,10 +249,12 @@ const featureWords: Word[] = [
 
 <script>
   // Redraws the map for the state of the switches and plays the walkthrough
-  // of that state: one step at a time, as a change of stroke colour only.
-  // With prefers-reduced-motion: reduce, nothing advances by itself; the
-  // reader moves with Previous and Next.
-  import { describe, stateOf, classesOf, type Models, type View } from "../lib/workflow";
+  // of that state: one step at a time, as a change of stroke colour only,
+  // pausing at each of your decisions. With prefers-reduced-motion: reduce,
+  // nothing advances by itself; the reader moves with Previous and Next.
+  // Every station, and every item of the words list, opens the step detail
+  // panel with the content of its template.
+  import { describe, initial, stateOf, classesOf, type Models, type View } from "../lib/workflow";
 
   const figure = document.querySelector<HTMLElement>("[data-workflow]");
   const form = figure?.querySelector<HTMLFormElement>("form");
@@ -206,6 +262,7 @@ const featureWords: Word[] = [
     const models = JSON.parse(figure.dataset.models ?? "{}") as Models;
     const keyed = Array.from(figure.querySelectorAll<HTMLElement | SVGElement>("[data-key]"));
     const labelled = Array.from(figure.querySelectorAll<HTMLElement | SVGElement>("[data-label]"));
+    const summary = figure.querySelector<HTMLElement>("[data-summary]")!;
     const lead = figure.querySelector<HTMLElement>('[data-caption="lead"]')!;
     const caption = figure.querySelector<HTMLElement>('[data-caption="text"]')!;
     const button = (action: string) => figure.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!;
@@ -237,13 +294,16 @@ const featureWords: Word[] = [
         }
       }
       for (const element of labelled) element.textContent = view.labels[element.dataset.label!] ?? element.textContent;
-      if (current) {
-        lead.textContent = `Step ${at + 1} of ${view.walk.length}.`;
-        caption.textContent = current.text;
-      } else {
-        lead.textContent = view.caption.lead;
-        caption.textContent = view.caption.text;
-      }
+      summary.replaceChildren(...view.summary.flatMap((bit, i) => {
+        if (i === 0) return [bit];
+        const dot = document.createElement("span");
+        dot.className = "sep";
+        dot.setAttribute("aria-hidden", "true");
+        dot.textContent = "·";
+        return [dot, bit];
+      }));
+      lead.textContent = current ? `Step ${at + 1} of ${view.walk.length}.` : "";
+      caption.textContent = current ? current.text : view.caption;
       const walking = at >= 0;
       figure.classList.toggle("walking", walking);
       const last = at === view.walk.length - 1;
@@ -264,7 +324,8 @@ const featureWords: Word[] = [
       timer = window.setTimeout(() => {
         if (at < view.walk.length - 1) {
           at += 1;
-          if (at === view.walk.length - 1) playing = false;
+          // The walkthrough waits at the end and at each of your decisions.
+          if (at === view.walk.length - 1 || view.walk[at].you) playing = false;
           render();
           advance();
         }
@@ -276,6 +337,13 @@ const featureWords: Word[] = [
       at = -1;
       view = describe(stateOf(values()), models);
       render();
+    });
+    button("reset").addEventListener("click", () => {
+      for (const [name, value] of Object.entries(initial)) {
+        const radio = form.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`);
+        if (radio) radio.checked = true;
+      }
+      form.dispatchEvent(new Event("change"));
     });
     play.addEventListener("click", () => {
       if (playing) {
@@ -306,15 +374,99 @@ const featureWords: Word[] = [
       render();
       play.focus();
     });
+    reduced.addEventListener("change", () => {
+      if (reduced.matches) stop();
+      render();
+    });
+
+    // The step detail panel: under the map, or inside the item of the words
+    // list that opened it. Tabs move with the arrow keys (roving tabindex).
+    const panel = figure.querySelector<HTMLElement>("#step-panel")!;
+    const home = document.createComment("step panel");
+    panel.before(home);
+    const heading = panel.querySelector<HTMLElement>("h3")!;
+    const body = panel.querySelector<HTMLElement>("[role=tabpanel]")!;
+    const tabs = Array.from(panel.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    const template = (key: string) => figure.querySelector<HTMLTemplateElement>(`template[data-step="${key}"]`);
+    let opener: HTMLElement | SVGElement | undefined;
+
+    function select(name: string) {
+      for (const tab of tabs) {
+        const on = tab.dataset.tab === name;
+        tab.setAttribute("aria-selected", String(on));
+        tab.tabIndex = on ? 0 : -1;
+        if (on) body.setAttribute("aria-labelledby", tab.id);
+      }
+      for (const part of body.querySelectorAll<HTMLElement>("[data-tab]")) part.hidden = part.dataset.tab !== name;
+    }
+    function open(key: string, from: HTMLElement | SVGElement, item?: HTMLElement) {
+      const content = template(key)!;
+      body.replaceChildren(content.content.cloneNode(true));
+      heading.textContent = content.dataset.title!;
+      for (const element of figure!.querySelectorAll(".is-selected")) element.classList.remove("is-selected");
+      for (const element of figure!.querySelectorAll(`svg g[data-key="${key}"]`)) element.classList.add("is-selected");
+      if (item) item.append(panel);
+      else home.after(panel);
+      panel.hidden = false;
+      opener = from;
+      select("overview");
+      heading.focus();
+    }
+    function close() {
+      panel.hidden = true;
+      home.after(panel);
+      for (const element of figure!.querySelectorAll(".is-selected")) element.classList.remove("is-selected");
+      opener?.focus();
+    }
+
+    // With focusable stations inside, the drawing is a group, no longer an image.
+    figure.querySelector("svg.map")!.setAttribute("role", "group");
+    for (const station of figure.querySelectorAll<SVGGElement>("svg g[data-key]")) {
+      const key = station.dataset.key!;
+      const content = template(key);
+      if (!content) continue;
+      station.classList.add("station");
+      station.setAttribute("tabindex", "0");
+      station.setAttribute("role", "button");
+      station.setAttribute("aria-label", `Details: ${content.dataset.title}`);
+      station.addEventListener("click", () => open(key, station));
+      station.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open(key, station);
+      });
+    }
+    for (const item of figure.querySelectorAll<HTMLElement>(".words li[data-key]")) {
+      const key = item.dataset.key!;
+      const content = template(key);
+      if (!content) continue;
+      const details = document.createElement("button");
+      details.type = "button";
+      details.className = "detail-btn";
+      details.textContent = "Details";
+      details.setAttribute("aria-label", `Details: ${content.dataset.title}`);
+      details.addEventListener("click", () => open(key, details, item));
+      item.querySelector("b")!.after(details);
+    }
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => select(tab.dataset.tab!));
+      tab.addEventListener("keydown", (event) => {
+        const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
+        event.preventDefault();
+        const to = tabs[(i + step + tabs.length) % tabs.length];
+        select(to.dataset.tab!);
+        to.focus();
+      });
+    });
+    panel.querySelector(".panel-close")!.addEventListener("click", close);
     list.addEventListener("click", () => {
       const shown = list.getAttribute("aria-expanded") !== "true";
       list.setAttribute("aria-expanded", String(shown));
       list.textContent = shown ? "Hide the list" : "Show the steps as a list";
       figure.dataset.list = shown ? "shown" : "";
-    });
-    reduced.addEventListener("change", () => {
-      if (reduced.matches) stop();
-      render();
+      // A panel inside the list that is hidden again goes back under the map.
+      if (!shown && panel.closest(".words")) home.after(panel);
     });
 
     // A reload can restore the switches the reader had chosen.
