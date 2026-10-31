@@ -6,6 +6,16 @@
 - GitHub CLI (`gh`), installed and authenticated
 - `jq` 1.6 or later
 - Codex or Claude CLI when that agent is selected
+- For the documentation site of the template (`documentation/`), which
+  `./scripts/verify.sh` builds and checks: Node.js (the version in
+  `documentation/.nvmrc`), and Playwright Chromium with its Linux system
+  libraries. Install both once with
+  `cd documentation && npm ci && npx playwright install --with-deps chromium`
+  (the system libraries need `sudo`). The check installs a missing Chromium
+  itself, which needs network access once, and never downloads it again when
+  it is installed; when Chromium cannot be installed or does not start for
+  missing system libraries, it stops with the command to run. A project
+  without `documentation/` needs none of this.
 - Project-specific tools documented in this file after the template is adopted
 
 Run `./scripts/doctor.sh` to check these prerequisites, including that you can

@@ -13,6 +13,8 @@
 # - every colour, font and spacing value of the style sheets in src/styles/ is
 #   a design token (--tokens);
 # - the unit tests of the site's scripts pass (src/**/*.test.ts, --build);
+# - Playwright Chromium starts; it is installed only when it is missing
+#   (--build, --browser);
 # - browser accessibility, keyboard and responsive checks pass in both themes;
 #   screenshots and per-page performance reports are saved in reports/.
 #
@@ -26,6 +28,10 @@
 #       in documentation/ first. After a rename, update the project path in
 #       the build loop below and this comment; keep default_site_url in sync
 #       with the site origin in site.config.ts.
+#   ./documentation/check.sh --browser
+#       Checks that Playwright Chromium starts, as --build does first. Installs
+#       it only when it is not installed; reports missing system libraries
+#       with the command that installs them.
 #   ./documentation/check.sh <output> <base-path> [<site-url>]
 #       Checks an output that is already built for that base path.
 #   ./documentation/check.sh --tokens <style sheet>...
@@ -156,9 +162,33 @@ check_output() {
   echo "documentation: $count pages checked under $base."
 }
 
-if [[ "${1:-}" == "--build" ]]; then
+# browser_ready: exits unless Playwright Chromium starts. Downloads it only when
+# it is not installed, so a run with the browser in place needs no network.
+browser_ready() {
+  local status=0
+  (cd "$site" && node browser-ready.mjs) || status=$?
+  if [[ "$status" -eq 3 ]]; then
+    echo "documentation: installing Playwright Chromium." >&2
+    if ! (cd "$site" && npx --no-install playwright install chromium); then
+      echo "documentation: Playwright Chromium could not be installed; it needs network access. Run: cd documentation && npx playwright install --with-deps chromium" >&2
+      exit 1
+    fi
+    status=0
+    (cd "$site" && node browser-ready.mjs) || status=$?
+  fi
+  if [[ "$status" -eq 4 ]]; then
+    echo "documentation: install the system libraries of Chromium with: cd documentation && sudo npx playwright install-deps chromium" >&2
+    exit 1
+  elif [[ "$status" -ne 0 ]]; then
+    echo "documentation: Playwright Chromium could not be checked (exit $status)." >&2
+    exit 1
+  fi
+}
+
+if [[ "${1:-}" == "--build" || "${1:-}" == "--browser" ]]; then
   [[ -d "$site/node_modules" ]] || { echo "documentation: run npm ci in $site first" >&2; exit 1; }
-  (cd "$site" && npx --no-install playwright install chromium)
+  browser_ready
+  [[ "$1" == "--build" ]] || exit 0
   mkdir -p "$site/.astro"
   # Astro moves prerendered assets with rename(): keep output on the same device.
   work="$(mktemp -d "$site/.astro/check.XXXXXX")"

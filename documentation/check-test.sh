@@ -105,6 +105,50 @@ for literal in 'line-height: 1.6' 'padding: 0.3rem var(--s-2)' 'font: 700 var(--
   fi
 done
 
+# The browser: check.sh --browser installs Chromium only when it is missing,
+# and reports an install that fails or a browser that does not start. npx is
+# replaced by a fake that records its arguments and fails like a run offline.
+if [[ -d "$site/node_modules" ]]; then
+  mkdir -p "$work/bin" "$work/browsers"
+  printf '#!/usr/bin/env bash\necho "$*" >>"%s"\nexit 1\n' "$work/npx.log" >"$work/bin/npx"
+  chmod +x "$work/bin/npx"
+  if (cd "$site" && node browser-ready.mjs) >/dev/null 2>&1; then
+    : >"$work/npx.log"
+    PATH="$work/bin:$PATH" "$site/check.sh" --browser >/dev/null 2>&1 || fail "an installed browser does not pass"
+    [[ ! -s "$work/npx.log" ]] || fail "an installed browser is installed again: $(cat "$work/npx.log")"
+  else
+    echo "check-test: no Playwright Chromium here; the check of an installed browser is skipped." >&2
+  fi
+
+  : >"$work/npx.log"
+  if result="$(PLAYWRIGHT_BROWSERS_PATH="$work/browsers" PATH="$work/bin:$PATH" "$site/check.sh" --browser 2>&1)"; then
+    fail "a missing browser that cannot be installed passed"
+  elif ! grep -Fq "could not be installed; it needs network access" <<<"$result"; then
+    fail "missing browser: no clear message in: $result"
+  fi
+  grep -Fxq -- "--no-install playwright install chromium" "$work/npx.log" || fail "a missing browser is not installed"
+
+  # A browser whose system libraries are missing fails to start like this one.
+  executable="$(sed -n 's/.*is not installed (no \(.*\))\.$/\1/p' <<<"$result")"
+  if [[ -n "$executable" ]]; then
+    mkdir -p "$(dirname "$executable")"
+    printf '#!/bin/sh\necho "chrome: error while loading shared libraries: libnss3.so: cannot open shared object file" >&2\nexit 127\n' >"$executable"
+    chmod +x "$executable"
+    : >"$work/npx.log"
+    if result="$(PLAYWRIGHT_BROWSERS_PATH="$work/browsers" PATH="$work/bin:$PATH" "$site/check.sh" --browser 2>&1)"; then
+      fail "a browser that does not start passed"
+    elif ! grep -Fq "does not start" <<<"$result" || ! grep -Fq "libnss3.so" <<<"$result" ||
+      ! grep -Fq "playwright install-deps chromium" <<<"$result"; then
+      fail "browser without libraries: no clear message in: $result"
+    fi
+    [[ ! -s "$work/npx.log" ]] || fail "a browser that does not start is installed again"
+  else
+    fail "missing browser: no executable path in: $result"
+  fi
+else
+  echo "check-test: no node_modules in $site; the browser checks are skipped." >&2
+fi
+
 if [[ "$failures" -gt 0 ]]; then
   echo "check-test: $failures failure(s)." >&2
   exit 1

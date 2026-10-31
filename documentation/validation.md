@@ -8,8 +8,14 @@ unit and search tests, and uses Playwright Chromium and axe-core on every
 built HTML page, including 404, in light and dark themes at 375, 768 and
 1440 pixels. Serious/critical violations and text contrast failures fail the
 check. Horizontal page overflow and third-party requests also fail it.
-Chromium is installed by the check; Linux system dependencies can be installed
-with `npx playwright install --with-deps chromium` (CI does this explicitly).
+Before the build, the check starts Playwright Chromium once
+(`browser-ready.mjs`; `./check.sh --browser` runs only this step). It
+downloads Chromium only when it is not installed, so a run with the browser in
+place needs no network. When the download fails, or Chromium does not start
+because Linux system libraries are missing, it stops with the command to run:
+`npx playwright install --with-deps chromium`, or
+`sudo npx playwright install-deps chromium` for the libraries alone. CI
+installs the browser with its dependencies before the check.
 
 After a rename, update the project path in `check.sh`'s `for base in … /`
 list (retain `/`), its usage comment and this guide. Keep
