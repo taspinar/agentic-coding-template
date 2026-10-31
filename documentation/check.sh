@@ -12,7 +12,9 @@
 #   address of sitemap.xml is a page of the output;
 # - every colour, font and spacing value of the style sheets in src/styles/ is
 #   a design token (--tokens);
-# - the unit tests of the site's scripts pass (src/**/*.test.ts, --build).
+# - the unit tests of the site's scripts pass (src/**/*.test.ts, --build);
+# - browser accessibility, keyboard and responsive checks pass in both themes;
+#   screenshots and per-page performance reports are saved in reports/.
 #
 # The design reference (design/) is not part of the build and not checked.
 #
@@ -21,7 +23,9 @@
 #       Runs the unit tests of src/, checks the tokens of src/styles/, builds
 #       the site under the project path (/agentic-coding-template/) and under
 #       the root (/), and checks both outputs. Needs the dependencies: npm ci
-#       in documentation/ first.
+#       in documentation/ first. After a rename, update the project path in
+#       the build loop below and this comment; keep default_site_url in sync
+#       with the site origin in site.config.ts.
 #   ./documentation/check.sh <output> <base-path> [<site-url>]
 #       Checks an output that is already built for that base path.
 #   ./documentation/check.sh --tokens <style sheet>...
@@ -154,6 +158,7 @@ check_output() {
 
 if [[ "${1:-}" == "--build" ]]; then
   [[ -d "$site/node_modules" ]] || { echo "documentation: run npm ci in $site first" >&2; exit 1; }
+  (cd "$site" && npx --no-install playwright install chromium)
   mkdir -p "$site/.astro"
   # Astro moves prerendered assets with rename(): keep output on the same device.
   work="$(mktemp -d "$site/.astro/check.XXXXXX")"
@@ -168,6 +173,7 @@ if [[ "${1:-}" == "--build" ]]; then
       { echo "documentation: the build under $base failed" >&2; exit 1; }
     check_output "$output" "$base" "$default_site_url"
     node "$site/search-test.mjs" "$output" "$base"
+    (cd "$site" && node browser-check.mjs "$output" "$base")
   done
 elif [[ "${1:-}" == "--tokens" && $# -ge 2 ]]; then
   shift

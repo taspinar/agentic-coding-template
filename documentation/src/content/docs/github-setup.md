@@ -27,3 +27,35 @@ Replace `@YOUR_GITHUB_USERNAME` in `.github/CODEOWNERS`. In a team require code-
 Enable dependency alerts, secret scanning and push protection where available. Keep secrets out of Git. For production, use environment approvals and short-lived identity federation where supported; production data and infrastructure changes need explicit human approval.
 
 The [repository setup guide](https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md) is the full checklist, including optional Google Cloud, database and deployment controls. Only the template repository itself needs the “Template repository” setting.
+
+## Keeping the template website
+
+Projects normally delete `documentation/` and its Pages workflow. If you keep
+it, configure the name, repository URL, site origin and default base path in
+`documentation/site.config.ts`. Validation defaults in
+`documentation/check.sh` are separate. After a repository
+rename, update `site.config.ts`, use `BASE_PATH=/new-repository-name/`, and update the site
+and repository links in `README.md` and literal source links in the content.
+In `documentation/check.sh`, replace `/agentic-coding-template/` in the
+`for base in … /` list with the new project base path, retaining `/`. Keep
+`default_site_url` in sync with the site origin in `site.config.ts`, updating
+it if the owner or domain changes. Update the path in the check's usage
+comment and `documentation/validation.md` too. Run
+`documentation/check.sh --build` to build, link-check and browser-test the
+new project path and `/` in the same way as CI.
+
+For a custom domain, build with `SITE_URL=https://docs.example.org` and
+`BASE_PATH=/`. Set the domain in **Settings → Pages** (source: **GitHub
+Actions**), verify ownership, and configure DNS: a subdomain's DNS `CNAME`
+points to `<owner>.github.io`, while an apex uses GitHub's documented DNS
+records. Enable HTTPS once the certificate is ready. Keep the Actions
+variable `PUBLISH_DOCUMENTATION=true`; the publishing workflow takes its
+origin and base path from the Pages configuration.
+
+A repository `CNAME` file is ignored by this Actions-based publication; it
+does not replace the Pages setting or DNS. Branch-based publication would
+need it in the published root (Astro could copy `public/CNAME`). Follow the
+[repository setup guide](https://github.com/taspinar/agentic-coding-template/blob/main/docs/repository-setup.md#13-template-website-a-future-rename-or-custom-domain)
+and [GitHub's current domain instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site)
+when making that future change. No rename or domain change is part of the
+site redesign.

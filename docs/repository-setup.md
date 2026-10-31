@@ -396,3 +396,54 @@ Enable:
 Repositories created from this template should normally not themselves
 be marked as template repositories unless they are intentionally
 intended to become new templates.
+
+## 13. Template website: a future rename or custom domain
+
+These steps apply only when retaining the template's website. They do not
+rename this repository or deploy a domain now. Configure product names,
+repository URL, site origin and the default base path in `documentation/site.config.ts`. Internal navigation uses that base
+path. The validation defaults in `documentation/check.sh` are separate.
+
+For a repository rename, update the repository URL and default base path in
+that file, use `BASE_PATH=/new-repository-name/` for local builds, and update
+the website and repository links in `README.md`. Audit literal repository
+links in the documentation content too: they link to source files, not through
+the site's navigation helper. In `documentation/check.sh`, replace
+`/agentic-coding-template/` in the `for base in … /` list with the new
+project base path, retaining `/`, and keep `default_site_url` in sync with
+the site origin in `site.config.ts` (update it if the owner or domain changes).
+Update the path in the check's usage comment and `documentation/validation.md`
+too. Run `documentation/check.sh --build` to build, link-check and browser-test
+the new project path and `/`. The Pages workflow gets its actual origin
+and base path from `actions/configure-pages`; keep Settings → Pages set to
+**GitHub Actions** and the Actions variable `PUBLISH_DOCUMENTATION=true`.
+
+For a custom domain, set the local build environment to
+`SITE_URL=https://docs.example.org BASE_PATH=/` (and update defaults in
+`documentation/site.config.ts` if desired). In Settings → Pages, enter the
+custom domain. Verify domain ownership in GitHub before pointing DNS at it.
+At the DNS provider, a subdomain uses a DNS `CNAME` pointing to
+`<owner>.github.io`, without the repository path; an apex uses GitHub's
+published A/AAAA records or an ALIAS/ANAME as supported by the provider.
+Use the current values in [GitHub's custom-domain instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site).
+After DNS validation and certificate provisioning, enable **Enforce HTTPS**.
+
+A DNS `CNAME` record and a repository `CNAME` file are different. This site
+publishes with a custom Actions workflow: GitHub ignores a `CNAME` file and
+does not require one. If switching to branch-based publishing in the future,
+the published root needs a `CNAME` containing only the domain; for an Astro
+build that would come from `documentation/public/CNAME`. Do not add that file
+as a substitute for the Pages setting with the current workflow.
+
+Before publication, build and check the intended address locally:
+
+```sh
+cd documentation
+SITE_URL=https://docs.example.org BASE_PATH=/ npm run build
+./check.sh dist / https://docs.example.org
+```
+
+After the owner's merge, inspect the Documentation Actions run and open the
+published address, a nested Docs page and its assets. CI checks both the
+project path and `/`; it cannot prove DNS, the Pages account setting or the
+future deployment before they exist.

@@ -28,8 +28,8 @@ const planningRow: Station[] = [
   { key: "p-approve-req", x: 360, shape: "gate", name: "Approve", sub: "the requirements" },
   { key: "p-plan", x: 510, shape: "ring", name: "Plan", sub: "architecture, roadmap" },
   { key: "p-review", x: 670, shape: "ring", name: "Plan review", sub: "review-planning.sh", k: true, sub2: "p-review.sub2" },
-  { key: "p-approve", x: 830, shape: "gate", name: "Approve the plan", sub: "finish-planning.sh", k: true },
-  { key: "p-merge", x: 980, shape: "gate", name: "Merge the plan", sub: "planning pull request" },
+  { key: "p-approve", x: 860, shape: "gate", name: "Approve the plan", sub: "finish-planning.sh", k: true },
+  { key: "p-merge", x: 1050, shape: "gate", name: "Merge the plan", sub: "planning pull request" },
 ];
 const featureRow: Station[] = [
   { key: "f-issue", x: 50, shape: "ring", name: "Feature Issue", sub: "from the roadmap" },
@@ -47,10 +47,10 @@ const segments = [
   { key: "s-p-approve-req", d: `M210 ${P} H360`, plan: true },
   { key: "s-p-plan", d: `M360 ${P} H510`, plan: true },
   { key: "s-p-review", d: `M510 ${P} H670`, plan: true },
-  { key: "s-p-approve", d: `M670 ${P} H830`, plan: true },
-  { key: "s-p-merge", d: `M830 ${P} H980`, plan: true },
+  { key: "s-p-approve", d: `M670 ${P} H860`, plan: true },
+  { key: "s-p-merge", d: `M860 ${P} H1050`, plan: true },
   // From the merged plan to each feature: create-feature-issue.sh.
-  { key: "s-f-issue", d: `M980 ${P} H1130 V205 H50 V${F}`, plan: true },
+  { key: "s-f-issue", d: `M1050 ${P} H1130 V205 H50 V${F}`, plan: true },
   { key: "s-f-implement", d: `M50 ${F} H210` },
   { key: "s-f-checks", d: `M210 ${F} H370` },
   { key: "s-f-out", d: `M370 ${F} H450` },

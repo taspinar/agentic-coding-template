@@ -41,7 +41,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <Header />
-<main id="main">
+<main id="main" tabindex="-1">
   <slot />
 </main>
 <Footer />

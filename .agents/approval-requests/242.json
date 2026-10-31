@@ -1,0 +1,20 @@
+{
+  "schema": "approval-request/v1",
+  "content_tree": "8b9c43d340179c8748e38581a5cf8bf67cb24fa4",
+  "commit": {
+    "branch": "feature/242-validate-accessibility-performance-and",
+    "parent": "a2c0cd7a96f9a09863f88d50d0fd4248f1e2e0b2",
+    "base": "a2c0cd7a96f9a09863f88d50d0fd4248f1e2e0b2"
+  },
+  "review": {
+    "round": 6,
+    "verdict": "PASS",
+    "reviewer": "claude (opus)"
+  },
+  "reasons": [
+    ".github/workflows/ci.yml: the file defines or carries out the workflow and its gate",
+    ".github/workflows/pages.yml: the file defines or carries out the workflow and its gate",
+    "the independent review classified the impact on the architecture as major: The feature changes two protected workflows. .github/workflows/ci.yml now installs the documentation dependencies and Playwright Chromium before ./scripts/verify.sh --all, uploads documentation/reports/ as an artifact, and writes a step summary. .github/workflows/pages.yml installs Chromium before ./check.sh --build. The feature also adds a new kind of dependency to the shared verification path: a headless browser plus axe-core, run by documentation/check.sh --build through the existing 'documentation' check in scripts/verify.conf. That is build and verification infrastructure, which makes it major. It does not contradict an accepted decision: verify.conf, the review gates and the policies under .agents/ are unchanged. The Astro static build and the Pages deployment through configure-pages, upload-pages-artifact and deploy-pages stay as they were. The workflow-map, Docs-layout and documentation edits stay inside the site. "
+  ],
+  "explanation": "Issue #242: Validate accessibility, performance and publication, and document a rename and custom domain (website step 8). The merge of this feature needs the owner's approval for the reasons listed; the approval is the owner's review of the pull request on GitHub, bound to the commit by GitHub. This request asks and records; it grants nothing."
+}
