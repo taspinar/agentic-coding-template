@@ -201,6 +201,10 @@ p { margin: 0 0 var(--s-4); max-width: var(--measure); text-wrap: pretty; }
 .map .dot { fill: var(--ground); stroke: var(--ink); stroke-width: 3.5px; }
 .map .gate { fill: var(--ink); }
 .map .gate-o { fill: var(--ground); stroke: var(--ink); stroke-width: 3px; }
+/* The home page map (index.astro) only: its .bypass is hidden and shows, solid,
+   only under low risk with the light profile; policy excludes it everywhere
+   else. The /workflow map has no .bypass class: its b-bypass is a .branch,
+   drawn off the route (solid, below) and at full strength as .is-taken. */
 .map .bypass, .map .bypass-note { display: none; }
 .map .sub.bypass-note { fill: var(--ink); font-weight: var(--w-semibold); }
 /* Low risk under the light profile: the review is skipped by policy. */
@@ -424,6 +428,10 @@ html:not(.js) .docs-search { display: none; }
 .map .sub.flag { fill: var(--ink); }
 .map .is-hidden, .words-set .is-hidden { display: none; }
 .map .branch.is-taken { stroke: var(--line); stroke-dasharray: none; stroke-width: var(--stroke); stroke-linecap: round; }
+/* The review bypass where policy excludes it: off the route, solid, never the
+   dashed style of a route that could be taken. */
+.map .branch.is-off[data-key="b-bypass"] { stroke-dasharray: none; }
+.map .note.is-taken { fill: var(--ink); }
 .map :is(.trunk, .branch).is-off, .map :is(.trunk, .branch).is-ahead, .map .is-off .dot, .map .is-ahead .dot, .map .gate-o.is-off, .map .gate-o.is-ahead { stroke: var(--off); }
 .map .is-off .gate, .map .is-ahead .gate { fill: var(--off); }
 .map .is-off text, .map .is-ahead text, .map text.is-off { fill: var(--ink-3); }
@@ -451,6 +459,64 @@ html:not(.js) .map-actions { display: none; }
 @media (max-width: 1100px) { .list-toggle { display: none; } }
 @media (prefers-reduced-motion: no-preference) {
   .map .branch, .map .dot, .map .gate, .map .gate-o, .map text { transition: stroke 160ms ease-out, fill 160ms ease-out; }
+}
+
+/* The workflow explorer (/workflow): the scenario summary with a reset, the
+   switches in two rows, stations that open the step detail panel, and the
+   comparison of the two ways of running a feature (DESIGN.md, "Workflow
+   explorer", "Reference fields", "Comparison grid"). */
+.page-head.tight { padding-bottom: 0; }
+.page-head.tight + .wrap .route { margin-top: var(--s-5); }
+.workflow .route-head { display: block; }
+.workflow .route-head h2 { margin-bottom: var(--s-3); }
+.scenario { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s-2) var(--s-5); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); padding: var(--s-3) 0; margin-bottom: var(--s-4); }
+.scenario p { margin: 0; max-width: var(--measure-wide); font-size: var(--t-sm); color: var(--ink-2); }
+.scenario strong { color: var(--ink); display: block; font-size: var(--t-md); }
+.scenario .sep { color: var(--line-ink); margin: 0 var(--s-2); }
+.reset { font: var(--w-semibold) var(--t-sm) var(--sans); padding: var(--s-chip); border: 1px solid var(--rule); background: none; color: var(--ink); border-radius: 2px; cursor: pointer; }
+.reset:hover { border-color: var(--rule-strong); }
+html:not(.js) .reset { display: none; }
+.switches.grouped { display: grid; gap: var(--s-3); }
+.switch-row { display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-6); }
+.switch-row.minor { padding-top: var(--s-3); border-top: 1px solid var(--rule); }
+.switch-row.minor .switch span { font-size: var(--t-xs); }
+.hint { font-size: var(--t-sm); color: var(--ink-2); margin: var(--s-3) 0 0; }
+html:not(.js) .hint { display: none; }
+.map g.station { cursor: pointer; }
+.map g.station:focus { outline: none; }
+.map g.station:focus-visible :is(.dot, .gate, .gate-o) { stroke: var(--line); stroke-width: var(--stroke); }
+.map g.station:hover text:first-of-type { text-decoration: underline; text-decoration-color: var(--line); }
+.map g.is-selected .dot { fill: var(--line); }
+.map g.is-selected text { font-weight: var(--w-heavy); }
+/* A section inside the figure: not one of the page's sections, so none of their rule and padding. */
+.workflow .step-panel { margin-top: var(--s-4); border-top: 2px solid var(--ink); padding: var(--s-4) 0 0; }
+.step-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-4); }
+.step-panel h3 { font-size: var(--t-xl); font-weight: var(--w-heavy); }
+.panel-close { font: var(--w-semibold) var(--t-sm) var(--sans); background: none; border: 0; color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule-strong); }
+.tabs { display: flex; flex-wrap: wrap; gap: var(--s-5); border-bottom: 1px solid var(--rule); margin: var(--s-3) 0 var(--s-4); }
+.tabs button { font: var(--w-semibold) var(--t-sm) var(--sans); background: none; border: 0; padding: var(--s-2) 0; color: var(--ink-2); cursor: pointer; }
+.tabs button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -3px 0 var(--line); }
+.tab-body p { max-width: var(--measure-wide); }
+.step-panel .tab-body p { font-size: var(--t-md); line-height: var(--lh-body); }
+.ref-fields { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--s-2) var(--s-5); margin: var(--s-3) 0 0; font-size: var(--t-sm); max-width: var(--measure-wide); }
+.ref-fields dt { font-weight: var(--w-bold); color: var(--ink); padding-top: var(--s-1); border-top: 1px solid var(--rule); }
+.ref-fields dd { margin: 0; padding-top: var(--s-1); border-top: 1px solid var(--rule); }
+.ref-fields .sub { font-weight: var(--w-semibold); color: var(--ink-3); margin-right: var(--s-1); }
+.ref-link { font-size: var(--t-sm); color: var(--ink-2); margin-top: var(--s-4); }
+.detail-btn { font: var(--w-semibold) var(--t-xs) var(--sans); margin-left: var(--s-2); background: none; border: 1px solid var(--rule); border-radius: 2px; padding: 0 var(--s-2); color: var(--ink-2); cursor: pointer; }
+.words li .step-panel { margin-bottom: var(--s-3); }
+.words li .step-panel h3 { font-size: var(--t-lg); }
+.words li .step-panel .tab-body p { font-size: var(--t-sm); }
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s-6); border-top: 2px solid var(--ink); }
+.compare h3 { font-size: var(--t-md); padding: var(--s-3) 0; border-bottom: 1px solid var(--rule); }
+.compare dl { margin: 0; }
+.compare dt { font: var(--w-bold) var(--t-xs) var(--sans); color: var(--ink-3); margin-top: var(--s-3); }
+.compare dd { margin: var(--s-1) 0 0; font-size: var(--t-sm); }
+@media (max-width: 760px) {
+  .compare { grid-template-columns: minmax(0, 1fr); }
+  .compare .col + .col { margin-top: var(--s-5); }
+  .ref-fields { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .ref-fields dd { border-top: 0; padding-top: 0; margin-bottom: var(--s-2); }
 }
 
 /* Every step in detail (/workflow): a step with its facts as label and value. */
