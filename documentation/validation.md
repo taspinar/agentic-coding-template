@@ -71,3 +71,7 @@ Publication evidence is the successful Documentation workflow after merge
 and the live nested routes, not a local build. No deployment is needed for
 local validation. Future rename and domain instructions are in
 `docs/repository-setup.md` and the site's GitHub setup page.
+
+The social preview image `public/og.png` is rendered from `og-image.svg` with
+the site's fonts. After changing the drawing, run `node og-image.mjs` and
+commit both files; the check does not regenerate it.

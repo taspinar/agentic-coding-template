@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- The social preview image (Open Graph) of the site, in the line-map
+       language of the home page: one green line, ringed stations, a dashed
+       bypass of the review that a project may allow for low risk, a
+       filled diamond where you decide. Colours are the light-theme tokens of src/styles/site.css.
+       node og-image.mjs renders it to public/og.png. -->
+  <rect width="1200" height="630" fill="#f4f5f4"/>
+  <circle cx="104" cy="152" r="19" fill="none" stroke="#00804a" stroke-width="9"/>
+  <text x="146" y="182" font-family="Overpass" font-weight="800" font-size="88" letter-spacing="-3" fill="#141617">Agent Codeyard</text>
+  <text x="80" y="258" font-family="Overpass" font-weight="600" font-size="38" fill="#4c5357">Autonomous coding. Accountable engineering.</text>
+
+  <path d="M475 440 V496 L501 522 H619 L645 496 V440" fill="none" stroke="#7a8186" stroke-width="4" stroke-dasharray="10 9" stroke-linejoin="round"/>
+  <path d="M80 432 H1050" fill="none" stroke="#00804a" stroke-width="10" stroke-linecap="round"/>
+
+  <g fill="#f4f5f4" stroke="#141617" stroke-width="5">
+    <circle cx="80" cy="432" r="15"/>
+    <circle cx="250" cy="432" r="15"/>
+    <circle cx="420" cy="432" r="15"/>
+    <circle cx="560" cy="432" r="15"/>
+    <circle cx="730" cy="432" r="15"/>
+    <circle cx="900" cy="432" r="15"/>
+  </g>
+  <rect x="1036" y="418" width="28" height="28" transform="rotate(45 1050 432)" fill="#141617"/>
+
+  <g font-family="Overpass" font-weight="700" font-size="25" fill="#141617" text-anchor="middle">
+    <text x="80" y="388">Issue</text>
+    <text x="250" y="388">Implement</text>
+    <text x="420" y="388">Checks</text>
+    <text x="560" y="388">Review</text>
+    <text x="730" y="388">Commit</text>
+    <text x="900" y="388">Pull request</text>
+    <text x="1050" y="388">Merge</text>
+  </g>
+  <g font-family="Overpass" font-weight="600" font-size="20" fill="#4c5357">
+    <text x="560" y="562" text-anchor="middle">low risk may skip the review</text>
+    <text x="1050" y="490" text-anchor="middle">you decide</text>
+  </g>
+</svg>

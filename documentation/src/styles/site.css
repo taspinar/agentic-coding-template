@@ -1,4 +1,4 @@
-/* ACT site — design system. One line colour, ink, ground.
+/* Agent Codeyard site — design system. One line colour, ink, ground.
    Taken from the approved design of #236 (design/DESIGN.md and
    design/prototype/site.css). Every colour, font value (family, size,
    weight, line height, letter spacing) and spacing value (margin, padding,
@@ -153,9 +153,8 @@ p { margin: 0 0 var(--s-4); max-width: var(--measure); text-wrap: pretty; }
 .wrap { max-width: var(--page); margin: 0 auto; padding: 0 var(--gutter); }
 .top { border-bottom: 1px solid var(--rule); background: var(--ground); position: sticky; top: 0; z-index: 5; }
 .top .wrap { display: flex; align-items: center; gap: var(--s-5); min-height: 3.75rem; }
-.mark { flex: none; white-space: nowrap; display: flex; align-items: baseline; gap: var(--s-2); text-decoration: none; color: var(--ink); }
+.mark { flex: none; white-space: nowrap; text-decoration: none; color: var(--ink); }
 .mark b { font-weight: var(--w-heavy); font-size: var(--t-mark); letter-spacing: var(--track-snug); }
-.mark span { font-size: var(--t-sm); color: var(--ink-2); }
 .mark b::before { content: ""; display: inline-block; width: 0.62em; height: 0.62em; border-radius: 50%; border: 3px solid var(--line); margin-right: var(--s-mark-glyph); vertical-align: 0.02em; }
 .nav { display: flex; gap: var(--s-5); margin-left: auto; align-items: center; }
 .nav a { text-decoration: none; font-weight: var(--w-semibold); font-size: var(--t-sm); color: var(--ink-2); padding: var(--s-2) 0; }
@@ -323,7 +322,6 @@ html:not(.js) .switches { display: none; }
   .sec { grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
   .body { min-width: 0; }
   .record { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
-  .mark span { display: none; }
   .map, .legend, .lines { display: none; }
   .words { display: block; }
   .artifact { grid-template-columns: 1fr; }
