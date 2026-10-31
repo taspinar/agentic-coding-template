@@ -15,10 +15,9 @@ interface Props {
 }
 
 const { title, description } = Astro.props;
-const fullTitle = title
-  ? `${title} · ${site.shortName}`
-  : `${site.name} (${site.shortName}): ${site.tagline.replace(/\.$/, "").replace(". ", ", ").toLowerCase()}`;
+const fullTitle = title ? `${title} — ${site.name}` : `${site.name} — ${site.tagline}`;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL(href("og.png"), Astro.site).href;
 ---
 <!doctype html>
 <html lang="en">
@@ -29,11 +28,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
 <meta name="description" content={description}>
 <link rel="canonical" href={canonical}>
 <meta property="og:type" content="website">
-<meta property="og:site_name" content={`${site.name} (${site.shortName})`}>
-<meta property="og:title" content={title ?? site.tagline}>
+<meta property="og:site_name" content={site.name}>
+<meta property="og:title" content={fullTitle}>
 <meta property="og:description" content={description}>
 <meta property="og:url" content={canonical}>
 <meta property="og:locale" content="en">
+<meta property="og:image" content={image}>
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content={`${site.name}: ${site.tagline}`}>
+<meta name="twitter:card" content="summary_large_image">
 <link rel="sitemap" href={href("sitemap.xml")}>
 <link rel="preload" href={headingFont} as="font" type="font/woff2" crossorigin>
 <script is:inline>document.documentElement.classList.add("js");try{var t=localStorage.getItem("act-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
