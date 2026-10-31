@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <!-- The social preview image (Open Graph) of the site, in the line-map
        language of the home page: one green line, ringed stations, a dashed
-       bypass of the review that a project may allow for low risk, a
+       bypass of the review that the light profile allows for low risk, a
        filled diamond where you decide. Colours are the light-theme tokens of src/styles/site.css.
        node og-image.mjs renders it to public/og.png. -->
   <rect width="1200" height="630" fill="#f4f5f4"/>
@@ -32,7 +32,7 @@
     <text x="1050" y="388">Merge</text>
   </g>
   <g font-family="Overpass" font-weight="600" font-size="20" fill="#4c5357">
-    <text x="560" y="562" text-anchor="middle">low risk may skip the review</text>
+    <text x="560" y="562" text-anchor="middle">low risk may skip review under the light profile</text>
     <text x="1050" y="490" text-anchor="middle">you decide</text>
   </g>
 </svg>
