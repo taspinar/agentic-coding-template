@@ -222,6 +222,7 @@ p { margin: 0 0 var(--s-4); max-width: var(--measure); text-wrap: pretty; }
 .words li { position: relative; padding: 0 0 var(--s-4) var(--s-3); }
 .words li::before { content: ""; position: absolute; left: -1.43rem; top: 0.3rem; width: 0.95rem; height: 0.95rem; border-radius: 50%; background: var(--ground); border: 3.5px solid var(--ink); }
 .words li.you::before { border-radius: 0; transform: rotate(45deg) scale(0.85); background: var(--ink); }
+.words li.ask::before { border-radius: 0; transform: rotate(45deg) scale(0.85); }
 .words b { display: block; font-weight: var(--w-bold); }
 .words small { display: block; font: var(--w-semibold) var(--t-sm) var(--sans); color: var(--ink-2); }
 .words small.k { font: var(--t-sm) var(--mono); }
@@ -290,6 +291,9 @@ td .k { font-family: var(--mono); font-size: var(--t-code-cell); }
 .lines .l2 { stroke: var(--line); stroke-width: var(--stroke); fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .lines .dot { fill: var(--ground); stroke: var(--ink); stroke-width: 3px; }
 .lines .gate { fill: var(--ink); }
+.lines .gate-o { fill: var(--ground); stroke: var(--ink); stroke-width: 3px; }
+.lines .sub.k { font-family: var(--mono); font-weight: var(--w-regular); }
+.lines .branch { stroke: var(--rule-strong); stroke-width: 3px; fill: none; stroke-dasharray: 7 7; stroke-linejoin: round; }
 
 .lines .note { font-weight: var(--w-semibold); font-size: var(--t-map-note); fill: var(--ink-3); }
 .lines.learn .l1 { stroke: var(--ink); }
