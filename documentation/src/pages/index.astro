@@ -1,7 +1,8 @@
 ---
-// The home page, built from the approved design (design/prototype/index.html,
-// design/DESIGN.md). The facts follow the audit of #235; every example links
-// to its Issue and pull request. The risk and profile switches of the route
+// The home page, built from the approved design (design/DESIGN.md) in the
+// product-first order of design/prototype-v2/ (#254). The facts follow the
+// audit of #235 and the scripts and policies of #253; every example links to
+// its Issue and pull request. The risk and profile switches of the route
 // map are the one island; without script the map shows medium risk under the
 // standard profile, and the words list carries the same route as text.
 import Base from "../layouts/Base.astro";
@@ -38,7 +39,7 @@ const proposals = [
     <div class="hero-grid">
       <h1>{first} <em>{second}</em></h1>
       <div class="hero-side">
-        <p class="lede">{site.description}</p>
+        <p class="lede">The engineering workflow around your coding agents, from requirements to reviewed pull request. Claude Code and Codex do the work; the workflow adds the review, the evidence and the limits, and the merge stays yours.</p>
         <div class="actions">
           <a class="btn" href={href("docs/")}>Get started</a>
           <a href={site.repository}>Source on GitHub</a>
@@ -46,6 +47,7 @@ const proposals = [
         </div>
       </div>
     </div>
+    <p class="facts-line"><span>Reviewed by another provider</span><span>Effort follows risk</span><span>Evidence for every acceptance criterion</span><span>No script merges</span></p>
 
     <DiagramFrame id="route" title="The route of one feature">
       <form slot="controls" class="switches" aria-label="Show the route for">
@@ -111,7 +113,7 @@ const proposals = [
     </DiagramFrame>
   </div>
 
-  <Section id="why" title="Writing the code is the fast part">
+  <Section id="why" title="Generation is no longer the bottleneck">
     <p>Claude Code and Codex produce working changes in minutes. What they do not settle on their own is whether the change does what was asked, whether someone other than its author checked it, whether the checks ran on exactly that code, and who decided it may ship.</p>
     <p>ACT is the workflow around the agents. It does not write code. It turns an approved plan into Issues, has one agent implement and an agent of another provider review, records the evidence for every acceptance criterion, and leaves the merge to you. Everything runs from your repository with shell scripts and plain files; there is no platform to host.</p>
     <div class="ledger" role="group" aria-label="Who does what">
@@ -151,7 +153,7 @@ const proposals = [
     <p>A planning change, a new requirement or a changed roadmap, goes back through the plan review and your approval before features are built on it. Each feature runs step by step, with you approving the triage, or in one unattended command, <code>run-feature.sh</code>, which stops whenever it needs you.</p>
   </Section>
 
-  <Section id="risk" title="Effort follows risk">
+  <Section id="risk" title="More risk, more evidence">
     <Fragment slot="note">Configured in <a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a> and <a href={repoFile(".agents/agents.conf")}><code>agents.conf</code></a>.</Fragment>
     <p>Each change gets a risk level, computed from what it touches, and each project picks a workflow profile. They are separate settings: the level describes the change, the profile describes how much ceremony the project wants for low and medium risk.</p>
     <Table>
@@ -179,8 +181,39 @@ const proposals = [
     </Table>
   </Section>
 
+  <Section id="review" title="The agent that writes the code does not judge it">
+    <Fragment slot="note">Enforced by <a href={repoFile("scripts/review-feature.sh")}><code>review-feature.sh</code></a>.</Fragment>
+    <p>The reviewer is always an agent of another provider than the implementer: the script reads which provider implemented the feature from its run records and refuses a reviewer of the same one. The reviewer can only read.</p>
+    <div class="handoff">
+      <div><h3>Implementer</h3><ul><li>Reads the Issue, your comments, the requirements and the architecture</li><li>Asks before it builds when a decision is unclear</li><li>Writes the code and the tests</li><li>Runs the checks and records evidence for each criterion</li></ul></div>
+      <p class="handoff-mid" aria-hidden="true"><span>the content it checked</span></p>
+      <div><h3>Reviewer</h3><ul><li>Reads the same Issue, the requirements and the diff</li><li>Reviews exactly the content the checks passed for</li><li>Reports findings by severity and the impact on the architecture</li><li>Cannot change a file</li></ul></div>
+    </div>
+  </Section>
+
+  <Section id="control" title="Automation stops where ownership begins">
+    <Fragment slot="note">Every gate on the <a href={href("workflow/")}>workflow page</a>.</Fragment>
+    <p>You are not asked everywhere. You decide at fixed points, and the run stops for you when it cannot go on safely.</p>
+    <ol class="gates">
+      <li class="you"><b>Approve the requirements</b><span>Project Grill drafts them from your description; nothing is planned before you approve.</span></li>
+      <li class="you"><b>Approve the plan</b><span>Architecture and roadmap, after a review by another provider; you merge the planning pull request.</span></li>
+      <li class="ask"><b>Answer when asked</b><span>An implementer that finds a decision unclear stops with its questions instead of guessing.</span></li>
+      <li class="you"><b>Decide on the findings</b><span>Step by step you approve the triage; unattended, the triage is recorded for you to read.</span></li>
+      <li class="you"><b>Merge</b><span>Every pull request; a protected change or a review that sees major impact on the architecture asks for your approval by name.</span></li>
+    </ol>
+  </Section>
+
   <Section id="trace" title="Every claim has a record">
     <Fragment slot="note">From the pull request of <a href={pull(222)}>#222</a>, written by <code>finish-feature.sh</code>.</Fragment>
+    <p>One feature, from the finding that started it to the merged pull request. Each step left a record that anyone can open.</p>
+    <ol class="trail" aria-label="The records of feature 217">
+      <li><b>Finding</b><span>The analysis of 41 runs: a fixed finding came back as unresolved in five runs.</span></li>
+      <li><b>Issue</b><a href={issue(217)}>#217</a><span>Six acceptance criteria.</span></li>
+      <li><b>Completion record</b><span>The implementer's claim, criterion by criterion, with evidence.</span></li>
+      <li><b>Review findings</b><a href={issue(217)}>on #217</a><span>Five rounds, each review and triage published.</span></li>
+      <li><b>Verification</b><span>Recorded for exactly the content that was reviewed.</span></li>
+      <li><b>Pull request</b><a href={pull(222)}>#222</a><span>Merged by the owner.</span></li>
+    </ol>
     <div class="artifact">
       <pre role="region" tabindex="0" class="record" aria-label="Excerpt of the description of pull request 222"><span class="src">{repositoryName}/pull/222 · excerpt</span><span class="pin" aria-hidden="true">1</span><mark>Completion: complete</mark>
 - met: A complete review in round 3 or later, started
@@ -312,6 +345,17 @@ const proposals = [
 <span class="p">$ </span>./scripts/run-feature.sh 1</pre>
     <p class="needs">You need Git, the GitHub CLI, <code>jq</code>, Claude Code and Codex: as shipped, Claude implements and Codex reviews, and a review by the implementer's own provider is refused. <code>doctor.sh</code> checks all of it, including the Codex sandbox and your Git identity.</p>
   </Section>
+
+  <section id="cta" aria-labelledby="cta-h">
+    <div class="wrap cta">
+      <h2 id="cta-h">Build with agents. Ship with evidence.</h2>
+      <div class="actions">
+        <a class="btn" href={href("docs/")}>Get started</a>
+        <a href={site.repository}>Source on GitHub</a>
+      </div>
+      <p>Open source, MIT licence. Runs on your machine with Claude Code and Codex.</p>
+    </div>
+  </section>
 </Base>
 
 <script>
