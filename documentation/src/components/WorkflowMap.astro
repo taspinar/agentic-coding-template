@@ -17,6 +17,7 @@
 import agentsConf from "../../../.agents/agents.conf?raw";
 import { switches, initial, describe, classesOf, parseAgents } from "../lib/workflow";
 import { details, parts, stations as detailed, tabs } from "../lib/steps";
+import { href } from "../lib/links";
 
 // The agents of the roles, as .agents/agents.conf of the repository sets them.
 const models = parseAgents(agentsConf);
@@ -209,7 +210,7 @@ const featureWords: Word[] = [
             : tab.id !== "overview" && <p class="ref-empty">Nothing in the reference for this step.</p>}
         </div>
       ))}
-      <p class="ref-link">In the reference: {panel.steps.map((step, i) => <>{i > 0 && " · "}<a href={`#${step.id}`}>{step.title}</a></>)}</p>
+      <p class="ref-link">In the reference: {panel.steps.map((step, i) => <>{i > 0 && " · "}<a href={href(`docs/reference/workflow/#${step.id}`)}>{step.title}</a></>)}</p>
     </template>
   ))}
 

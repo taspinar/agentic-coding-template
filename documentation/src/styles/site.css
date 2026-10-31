@@ -421,7 +421,29 @@ html:not(.js) .docs-search { display: none; }
 .docs-body .prose { max-width: var(--measure-wide); }
 .docs-body .prose table { display: block; overflow-x: auto; }
 .docs-body .prose pre { overflow-x: auto; }
-@media (max-width: 1100px) { .docs-layout { grid-template-columns: minmax(0, 1fr); } }
+.nav-group { font: var(--w-bold) var(--t-xs) var(--sans); color: var(--ink-3); margin: var(--s-5) 0 0; }
+/* Above 1100px "On this page" stays beside the text, sticky like the section
+   header column; in one column it sits above the text. */
+@media (min-width: 1101px) {
+  .docs-layout:has(.docs-toc) { grid-template-columns: 16rem minmax(0, 1fr) 12rem; }
+  .docs-toc { grid-column: 3; grid-row: 1; align-self: start; position: sticky; top: var(--s-sticky); max-height: calc(100vh - var(--s-sticky)); overflow-y: auto; border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+  .docs-toc ul { list-style: none; }
+  .docs-toc nav > ul { padding-left: 0; }
+  .docs-toc li + li, .docs-toc li > ul { margin-top: var(--s-1); }
+}
+@media (max-width: 1100px) {
+  .docs-layout { grid-template-columns: minmax(0, 1fr); }
+  .docs-toc { border-top: 1px solid var(--rule); padding-top: var(--s-3); }
+}
+/* The workflow reference: stages are h2, every step a section under a hairline. */
+.ref .ref-step { border-top: 1px solid var(--rule); padding: var(--s-4) 0 0; margin-top: var(--s-6); }
+.ref .ref-step h3 { margin-top: 0; }
+.ref .what { margin-bottom: var(--s-2); }
+.moved-note { font-size: var(--t-sm); color: var(--ink-2); }
+/* The copy button of a code block, on the terminal ground. */
+.code-block { position: relative; }
+.copy { position: absolute; top: var(--s-2); right: var(--s-2); font: var(--w-semibold) var(--t-xs) var(--sans); padding: var(--s-chip); border: 1px solid var(--terminal-comment); background: var(--terminal-ground); color: var(--terminal-ink); border-radius: 2px; cursor: pointer; }
+.copy:hover { border-color: var(--terminal-ink); }
 
 /* The workflow map (/workflow): one drawing whose states the switches set
    (src/lib/workflow.ts). An element off the route of the state, or ahead of
@@ -506,6 +528,8 @@ html:not(.js) .hint { display: none; }
 .ref-fields dt { font-weight: var(--w-bold); color: var(--ink); padding-top: var(--s-1); border-top: 1px solid var(--rule); }
 .ref-fields dd { margin: 0; padding-top: var(--s-1); border-top: 1px solid var(--rule); }
 .ref-fields .sub { font-weight: var(--w-semibold); color: var(--ink-3); margin-right: var(--s-1); }
+.ref-fields dd ul { margin: 0; padding: 0; list-style: none; }
+.ref-fields dd li + li { margin-top: var(--s-2); }
 .ref-link { font-size: var(--t-sm); color: var(--ink-2); margin-top: var(--s-4); }
 .detail-btn { font: var(--w-semibold) var(--t-xs) var(--sans); margin-left: var(--s-2); background: none; border: 1px solid var(--rule); border-radius: 2px; padding: 0 var(--s-2); color: var(--ink-2); cursor: pointer; }
 .words li .step-panel { margin-bottom: var(--s-3); }
@@ -523,11 +547,7 @@ html:not(.js) .hint { display: none; }
   .ref-fields dd { border-top: 0; padding-top: 0; margin-bottom: var(--s-2); }
 }
 
-/* Every step in detail (/workflow): a step with its facts as label and value. */
-.stage-title { font-size: var(--t-xl); font-weight: var(--w-heavy); }
-.stage-note { color: var(--ink-2); }
-.step { border-top: 1px solid var(--rule); padding-top: var(--s-4); }
-.step h4 { font-size: var(--t-md); font-weight: var(--w-bold); margin: 0 0 var(--s-2); }
+/* Facts as label and value (Features, Examples, About). */
 .facts { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: var(--s-2) var(--s-4); margin: 0; font-size: var(--t-sm); max-width: var(--measure-wide); }
 .facts dt { font: var(--w-bold) var(--t-xs)/var(--lh-body) var(--sans); color: var(--ink-3); }
 .facts dd { margin: 0; }

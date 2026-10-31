@@ -29,7 +29,10 @@ map and from the words list: its tabs, its close button and where the focus
 returns, with axe on the open panel), walkthrough and desktop text-list toggle
 by keyboard, checking focus outlines; a station of the map shows its focus as
 the 6px line-coloured stroke of its symbol. It checks the documentation disclosures at 760 px,
-the desktop navigation at 768 px, and the no-JavaScript fallback. Native
+the desktop navigation at 768 px, and the no-JavaScript fallback. On the
+workflow reference it checks that an old step anchor of `/workflow` leads to
+its step and that "On this page" stays beside the text at 1440 px; on a docs
+page, that the copy button of a code block copies the code. Native
 summaries keep both navigation lists usable with JavaScript disabled.
 
 The check writes full-page screenshots and `report.json` under

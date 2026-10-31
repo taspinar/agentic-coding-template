@@ -1,6 +1,7 @@
-// Every step of the workflow, as "Every step in detail" on /workflow shows
-// it: what happens, then its facts in order. The step detail panel of the
-// map takes its content from the same steps (details), so the panel and the
+// Every step of the workflow: what happens, then its facts in order. The
+// workflow reference (/docs/reference/workflow/) shows every step with its
+// facts in the five fields (reference), and the step detail panel of the map
+// takes its content from the same steps (details), so the panel and the
 // reference cannot say different things. Text in backticks is a value (a
 // command, a path, a policy line) and set as code (parts).
 //
@@ -214,6 +215,12 @@ export const feature: Step[] = [
   },
 ];
 
+/** The two stages of the workflow, as the reference groups its steps. */
+export const stages = [
+  { id: "plan-the-project", title: "Plan the project", note: "Once at the start, and again when the plan changes.", steps: planning },
+  { id: "build-each-feature", title: "Build each feature", note: "For every roadmap feature, in its own branch and worktree.", steps: feature },
+];
+
 /**
  * The fields of the reference, in their fixed order, and the field of each
  * label of a fact; a label not named here is a stop, a retry or an exception.
@@ -266,6 +273,19 @@ export interface Row {
   facts: { label: string; value: string; shown: boolean }[];
 }
 
+/** The facts in the fields of the given keys, in the fixed order; a field without facts is omitted. */
+function rows(facts: [string, string][], keys: readonly Field[]): Row[] {
+  return fields.filter(([field]) => keys.includes(field)).flatMap(([field, label]) => {
+    const mine = facts.filter(([term]) => (fieldOf[term] ?? "stops") === field);
+    if (!mine.length) return [];
+    const shown = mine.length > 1 || !["who", "command"].includes(field);
+    return [{ label, facts: mine.map(([term, value]) => ({ label: term, value, shown })) }];
+  });
+}
+
+/** A step of the reference: its facts in all five fields. */
+export const reference = (step: Step): Row[] => rows(step.facts, fields.map(([field]) => field));
+
 /** The detail of a station: its title, the summaries of its steps, its rows per tab, and its steps. */
 export function details(key: string) {
   const steps = (stations[key] ?? []).map((id) => {
@@ -275,17 +295,10 @@ export function details(key: string) {
   });
   if (!steps.length) return undefined;
   const facts = steps.flatMap((step) => step.facts);
-  const rows = (keys: readonly Field[]): Row[] =>
-    fields.filter(([field]) => keys.includes(field)).flatMap(([field, label]) => {
-      const mine = facts.filter(([term]) => (fieldOf[term] ?? "stops") === field);
-      if (!mine.length) return [];
-      const shown = mine.length > 1 || !["who", "command"].includes(field);
-      return [{ label, facts: mine.map(([term, value]) => ({ label: term, value, shown })) }];
-    });
   return {
     title: steps[0].title,
     summaries: steps.map((step) => step.text),
-    tabs: tabs.map((tab) => ({ ...tab, rows: rows(tab.fields) })),
+    tabs: tabs.map((tab) => ({ ...tab, rows: rows(facts, tab.fields) })),
     steps: steps.map(({ id, title }) => ({ id, title })),
   };
 }
