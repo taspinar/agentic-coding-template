@@ -1,9 +1,9 @@
-// Tests of the step detail of the workflow map against the steps of "Every
-// step in detail", which both show. Run by check.sh --build:
+// Tests of the workflow reference and of the step detail of the workflow map
+// against the steps, which both show. Run by check.sh --build:
 //   node --test "src/**/*.test.ts"  (in documentation/)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { details, feature, fields, planning, stations, tabs } from "./steps.ts";
+import { details, feature, fields, planning, reference, stages, stations, tabs } from "./steps.ts";
 import { feature as featureLine, planning as planningLine } from "./workflow.ts";
 
 test("every station of the map opens a detail, and every step it names exists", () => {
@@ -44,4 +44,25 @@ test("a station with two steps shows both, titled by the first", () => {
   assert.deepEqual(findings.steps.map((step) => step.id), ["decide-on-the-findings", "apply-the-fixes"]);
   const gate = findings.tabs[0].rows.find((row) => row.label === "Gate or decision")!;
   assert.deepEqual(gate.facts.map((fact) => fact.label), ["your decision", "next"]);
+});
+
+test("the reference shows every step once, by stage, and every fact of a step in exactly one of the five fields", () => {
+  assert.deepEqual(stages.flatMap((stage) => stage.steps), [...planning, ...feature]);
+  const ids = [...planning, ...feature].map((step) => step.id);
+  assert.equal(new Set([...ids, ...stages.map((stage) => stage.id)]).size, ids.length + stages.length, "anchors are unique");
+  for (const step of [...planning, ...feature]) {
+    const rows = reference(step);
+    const shown = rows.flatMap((row) => row.facts.map((fact) => `${fact.label}: ${fact.value}`));
+    assert.deepEqual(shown.sort(), step.facts.map(([term, value]) => `${term}: ${value}`).sort(), step.id);
+    const order = rows.map((row) => fields.findIndex(([, label]) => label === row.label));
+    assert.deepEqual(order, [...order].sort((a, b) => a - b), step.id);
+    assert.ok(rows.every((row) => row.facts.length), `${step.id}: an empty field is omitted`);
+  }
+});
+
+test("a reference field keeps the original labels where it gathers several or is not who or command", () => {
+  const rows = reference(feature.find((step) => step.id === "commit-the-feature")!);
+  assert.deepEqual(rows.map((row) => row.label), ["Who acts", "Command", "Stops, retries and exceptions"]);
+  assert.equal(rows[0].facts[0].shown, false);
+  assert.deepEqual(rows[2].facts.map((fact) => [fact.label, fact.shown]), [["refused if", true], ["without review", true], ["important", true]]);
 });

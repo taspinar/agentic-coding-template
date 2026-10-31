@@ -1,0 +1,32 @@
+---
+// The workflow reference: every step of the workflow (src/lib/steps.ts) with
+// what happens and its facts in the five fixed fields, by stage. It was
+// "Every step in detail" on /workflow, whose old anchors lead here.
+import DocsPage from "../../../components/DocsPage.astro";
+import { parts as values, reference, stages } from "../../../lib/steps";
+
+const toc = stages.map((stage) => ({
+  slug: stage.id, text: stage.title,
+  children: stage.steps.map((step) => ({ slug: step.id, text: step.title })),
+}));
+---
+<DocsPage id="reference/workflow" title="Workflow reference" description="Every step of the workflow: what happens, who acts, the command, what goes in and comes out, the gate, and when it stops or retries." toc={toc} class="ref">
+  {stages.map((stage) => <>
+    <h2 id={stage.id}>{stage.title}</h2>
+    <p>{stage.note}</p>
+    {stage.steps.map((step) => (
+      <section class="ref-step" id={step.id} aria-labelledby={`${step.id}-h`}>
+        <h3 id={`${step.id}-h`}>{step.title}</h3>
+        <p class="what">{values(step.text).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</p>
+        <dl class="ref-fields">
+          {reference(step).map((row) => <>
+            <dt>{row.label}</dt>
+            <dd>{row.facts.length === 1 && !row.facts[0].shown
+              ? values(row.facts[0].value).map((v) => (v.code ? <code>{v.part}</code> : v.part))
+              : <ul>{row.facts.map((fact) => <li><span class="sub">{fact.label}</span> {values(fact.value).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</li>)}</ul>}</dd>
+          </>)}
+        </dl>
+      </section>
+    ))}
+  </>)}
+</DocsPage>

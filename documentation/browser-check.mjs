@@ -258,6 +258,23 @@ try {
     }
     await docs.close();
   }
+  // The workflow reference: an old anchor of /workflow goes on to its step,
+  // "On this page" stays beside the text on a wide screen, and a code block copies.
+  {
+    const wide = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+    const p = await wide.newPage();
+    await p.goto(origin + base + 'workflow/#review-the-code');
+    await p.waitForURL(origin + base + 'docs/reference/workflow/#review-the-code');
+    assert(await p.locator('#review-the-code').isVisible());
+    await p.mouse.wheel(0, 4000);
+    const toc = await p.locator('.docs-toc').boundingBox();
+    const text = await p.locator('.docs-body').boundingBox();
+    assert(toc.x >= text.x + text.width && toc.y >= 0 && toc.y < 900, 'On this page is not beside the text');
+    await p.goto(origin + base + 'docs/getting-started/');
+    await p.locator('.code-block .copy').first().click();
+    assert.equal(await p.evaluate(() => navigator.clipboard.readText()), await p.locator('.code-block pre').first().evaluate(e => e.innerText.replace(/\n$/, '')));
+    await wide.close();
+  }
   for (const file of files) {
     const path = base + file.replace(/index\.html$/, '');
     const slug = file.replace(/\/index\.html$/, '').replace(/\.html$/, '').replaceAll('/', '-');

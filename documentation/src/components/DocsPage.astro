@@ -1,0 +1,88 @@
+---
+// A page of the documentation: the search and the sidebar in groups
+// (src/lib/docs.ts), "On this page" (beside the text on wide screens, above it
+// in one column), the text, and the previous and next pages in the order of
+// the sidebar. Code blocks of the text get a copy button.
+import { getCollection } from "astro:content";
+import Base from "../layouts/Base.astro";
+import PageHead from "./PageHead.astro";
+import DocsSearch from "./DocsSearch.astro";
+import { href } from "../lib/links";
+import { path, sidebar } from "../lib/docs";
+
+export type Heading = { slug: string; text: string; children?: Heading[] };
+interface Props { id: string; title: string; description: string; toc: Heading[]; class?: string }
+const { id, title, description, toc, class: kind } = Astro.props;
+
+const groups = sidebar(await getCollection("docs"));
+const pages = groups.flatMap((group) => group.pages);
+const position = pages.findIndex((page) => page.id === id);
+const previous = pages[position - 1];
+const next = pages[position + 1];
+const link = (page: { id: string }) => href(path(page.id));
+---
+<Base title={title} description={description}>
+  <PageHead title={title} lede={description} />
+  <div class="wrap docs-layout">
+    <aside class="docs-sidebar">
+      <DocsSearch />
+      <details class="docs-disclosure">
+        <summary>Documentation pages</summary>
+      <nav aria-label="Documentation">
+        {groups.map((group) => <>
+          {group.label && <p class="nav-group">{group.label}</p>}
+          <ul>{group.pages.map((page) => <li><a href={link(page)} aria-current={page.id === id ? "page" : undefined}>{page.title}</a></li>)}</ul>
+        </>)}
+      </nav>
+      </details>
+    </aside>
+    {toc.length > 0 && <details class="docs-disclosure docs-toc">
+      <summary>On this page</summary>
+      <nav aria-label="On this page">
+      <ul>{toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a>
+        {h.children?.length ? <ul>{h.children.map((c) => <li><a href={`#${c.slug}`}>{c.text}</a></li>)}</ul> : null}</li>)}</ul>
+    </nav></details>}
+    <div class="docs-body">
+      <article data-search><div class:list={["prose", kind]}><slot /></div></article>
+      <nav class="docs-pagination" aria-label="Previous and next pages">
+        {previous && <a rel="prev" href={link(previous)}>Previous: {previous.title}</a>}
+        {next && <a rel="next" href={link(next)}>Next: {next.title}</a>}
+      </nav>
+    </div>
+  </div>
+</Base>
+
+<script>
+  const narrow = matchMedia("(max-width: 760px)");
+  const disclosures = document.querySelectorAll<HTMLDetailsElement>(".docs-disclosure");
+  const adapt = () => disclosures.forEach(element => { element.open = !narrow.matches; });
+  adapt();
+  narrow.addEventListener("change", adapt);
+
+  // A copy button on every code block; it says in its label what it did.
+  document.querySelectorAll<HTMLPreElement>(".docs-body pre.astro-code").forEach(pre => {
+    const block = document.createElement("div");
+    block.className = "code-block";
+    pre.replaceWith(block);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "copy";
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy the code");
+    const status = document.createElement("span");
+    status.className = "sr";
+    status.setAttribute("role", "status");
+    block.append(pre, button, status);
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pre.innerText.replace(/\n$/, ""));
+        button.textContent = "Copied";
+        status.textContent = "Copied to the clipboard.";
+      } catch {
+        button.textContent = "Copy";
+        status.textContent = "Copying failed: select the code and copy it.";
+      }
+      setTimeout(() => { button.textContent = "Copy"; status.textContent = ""; }, 2000);
+    });
+  });
+</script>

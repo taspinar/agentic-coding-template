@@ -1,16 +1,18 @@
 ---
 // The workflow: the explorer (the line map with its states, walkthrough and
-// step detail), the two ways of running a feature, and every step with who
-// runs it, the script, the result and when it stops (src/lib/steps.ts, the
-// content of the step detail too). The facts are those of docs/development.md.
+// step detail), the two ways of running a feature, and where every step is
+// described in detail: the workflow reference (/docs/reference/workflow/,
+// from src/lib/steps.ts). The anchors of the steps that were on this page
+// stay here and lead there. The facts are those of docs/development.md.
 import Base from "../layouts/Base.astro";
 import PageHead from "../components/PageHead.astro";
 import Section from "../components/Section.astro";
 import WorkflowMap from "../components/WorkflowMap.astro";
-import { repoFile } from "../lib/links";
-import { planning, feature, parts as values } from "../lib/steps";
+import { href, repoFile } from "../lib/links";
+import { stages } from "../lib/steps";
 
 const guide = repoFile("docs/development.md");
+const reference = href("docs/reference/workflow/");
 ---
 <Base title="Workflow" description="How the ACT workflow runs: a project is planned once, then each feature goes from its Issue to the merge, step by step or unattended, by risk level and profile.">
   <PageHead tight title="From idea to reviewed pull request." lede="A project is planned once. Each feature then moves through its own implementation, verification, review and approval path. Agents do the work, checks provide the evidence, and you keep the decisions and the merge." />
@@ -42,28 +44,19 @@ const guide = repoFile("docs/development.md");
         </dl>
       </div>
     </div>
-    <p>Every command, input, output, gate and stop condition, step by step, is in the workflow reference: <a href="#steps">Every step in detail</a>.</p>
   </Section>
 
   <Section id="steps" title="Every step in detail">
-    <Fragment slot="note">Every command and option in <a href={guide}><code>docs/development.md</code></a>.</Fragment>
-    <h3 class="stage-title">Plan the project</h3>
-    <p class="stage-note">Once at the start, and again when the plan changes.</p>
-    {planning.map((step) => (
-      <article class="step" id={step.id} aria-labelledby={`${step.id}-h`}>
-        <h4 id={`${step.id}-h`}>{step.title}</h4>
-        <p>{values(step.text).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</p>
-        <dl class="facts">{step.facts.map(([term, value]) => <><dt>{term}</dt><dd>{values(value).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</dd></>)}</dl>
-      </article>
-    ))}
-    <h3 class="stage-title">Build each feature</h3>
-    <p class="stage-note">For every roadmap feature, in its own branch and worktree.</p>
-    {feature.map((step) => (
-      <article class="step" id={step.id} aria-labelledby={`${step.id}-h`}>
-        <h4 id={`${step.id}-h`}>{step.title}</h4>
-        <p>{values(step.text).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</p>
-        <dl class="facts">{step.facts.map(([term, value]) => <><dt>{term}</dt><dd>{values(value).map((v) => (v.code ? <code>{v.part}</code> : v.part))}</dd></>)}</dl>
-      </article>
+    <Fragment slot="note">Moved to the documentation.</Fragment>
+    <p>Every command, input, output, gate and stop condition, step by step, is in the <a href={reference}>workflow reference</a>.</p>
+    {stages.map((stage) => (
+      <p class="moved-note">{stage.title}: {stage.steps.map((step, i) => <>{i > 0 && " · "}<a id={step.id} href={`${reference}#${step.id}`}>{step.title}</a></>)}</p>
     ))}
   </Section>
 </Base>
+
+<script>
+  // An old link to a step of this page goes on to the step in the reference.
+  const moved = location.hash && document.querySelector<HTMLAnchorElement>(`#steps a[id="${CSS.escape(location.hash.slice(1))}"]`);
+  if (moved) location.replace(moved.href);
+</script>
