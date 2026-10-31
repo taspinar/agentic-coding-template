@@ -46,8 +46,8 @@ const mediumRounds = [
   { round: 3, kind: "complete feature", verdict: "PASS", finding: "–", decision: "–" },
 ];
 ---
-<Base title="Examples" description="Features of this repository built with ACT, ordered by risk: a high-risk and a medium-risk run followed from the Issue to the pull request, with agents, review rounds, triage, verification evidence and the merge.">
-  <PageHead title="Examples" lede="ACT is built with ACT. These are real runs of this repository, ordered by risk, followed from the Issue to the merged pull request with the records each step left.">
+<Base title="Examples" description="Features of this repository built with Agent Codeyard, ordered by risk: a high-risk and a medium-risk run followed from the Issue to the pull request, with agents, review rounds, triage, verification evidence and the merge.">
+  <PageHead title="Examples" lede="This site is built with Agent Codeyard. These are real runs of this repository, ordered by risk, followed from the Issue to the merged pull request with the records each step left.">
     <ol class="contents">
       <li><a href="#levels">The examples by risk</a></li>
       <li><a href="#e2e">High risk, end to end: #217</a></li>
@@ -75,7 +75,7 @@ const mediumRounds = [
 
   <Section id="e2e" title="High risk, end to end: #217">
     <Fragment slot="note"><a href={issue(217)}>Issue #217</a>, <a href={pull(222)}>PR #222</a>. One unattended run of <code>run-feature.sh</code>, 28 October 2026.</Fragment>
-    <p class="lede">The feature that gave every later review round the decisions of the earlier ones. It came out of ACT's analysis of its own runs, and it is followed here from its requirements to the merge.</p>
+    <p class="lede">The feature that gave every later review round the decisions of the earlier ones. It came out of Codeyard's analysis of its own runs, and it is followed here from its requirements to the merge.</p>
 
     <h3>Requirements</h3>
     <p>The run analysis of 28 October 2026 found that in five runs the reviewer raised a finding again as unresolved after it had been fixed, and that in one feature it raised findings again that the triage had accepted. The Issue asks that every review after round 1 receives the decisions of all earlier rounds, that a finding names the one it continues (<code>unresolved</code> or <code>worsened</code>), and that the stored review is checked against the recorded decisions. It has six acceptance criteria; the last one reads “No gate is weakened: a FIX_NOW finding that is really unresolved is still reported and still blocks.” Out of scope: the triage rules, the round limit, and the owner-exception mechanism.</p>
@@ -283,7 +283,7 @@ Risk: medium
     <Fragment slot="note"><a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a> of this repository; <a href={issue(170)}>Issue #170</a>.</Fragment>
     <ul class="rules">
       <li><b>A low-risk run.</b> A low level exists only under <code>profile: light</code>, or with a <code>low:</code> class in <code>risk.conf</code>. This repository has neither, so none of its features was low, and this page does not invent one. Under the light profile a low feature may be committed without a review; the commit and the pull request say so, and the merge then needs your approval.</li>
-      <li><b>Onboarding an existing repository.</b> ACT starts new projects from the template with <code>gh repo create --template</code>. Bringing an existing repository into the workflow is <a href={issue(170)}>planned in #170</a> and not built, so there is no run of it to show.</li>
+      <li><b>Onboarding an existing repository.</b> Codeyard starts new projects from the template with <code>gh repo create --template</code>. Bringing an existing repository into the workflow is <a href={issue(170)}>planned in #170</a> and not built, so there is no run of it to show.</li>
     </ul>
   </Section>
 

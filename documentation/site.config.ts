@@ -13,9 +13,11 @@ function basePath(value: string | undefined): string {
 
 export const site = {
   /** The product name. */
-  name: "Agentic Coding Template",
-  /** The short name, used in the mark and in page titles. */
-  shortName: "ACT",
+  name: "Agent Codeyard",
+  /** The short name, used in running text after the full name. */
+  shortName: "Codeyard",
+  /** The earlier name, which only About names, once, as "formerly". */
+  formerName: "Agentic Coding Template (ACT)",
   /** The positioning line. */
   tagline: "Autonomous coding. Accountable engineering.",
   /** The supporting line, the description of the home page. */

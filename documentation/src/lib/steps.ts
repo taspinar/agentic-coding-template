@@ -194,7 +194,7 @@ export const feature: Step[] = [
   {
     id: "merge",
     title: "Review and merge",
-    text: "Read the pull request, its checks and the published triage before you merge. Your approval is needed when the change touches a protected path, when the reviewer rated the impact on the architecture major or breaking, or when nobody rated it, as for a feature without a review. ACT states and checks this; GitHub enforces it only with the rulesets and code owners you configure.",
+    text: "Read the pull request, its checks and the published triage before you merge. Your approval is needed when the change touches a protected path, when the reviewer rated the impact on the architecture major or breaking, or when nobody rated it, as for a feature without a review. Codeyard states and checks this; GitHub enforces it only with the rulesets and code owners you configure.",
     facts: [
       ["who", "You, or a maintainer by your repository's rules; no script merges"],
       ["script", "`./scripts/check-guardrails.sh` lists what needs you"],

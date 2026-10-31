@@ -7,7 +7,7 @@ const here = Astro.url.pathname;
 ---
 <header class="top">
   <div class="wrap">
-    <a class="mark" href={href()} aria-label={`${site.shortName}, ${site.name}: home`}><b>{site.shortName}</b><span>{site.name}</span></a>
+    <a class="mark" href={href()} aria-label={`${site.name}: home`}><b>{site.name}</b></a>
     <nav class="nav" aria-label="Site">
       {sections.map((section) => {
         const target = href(section.path);

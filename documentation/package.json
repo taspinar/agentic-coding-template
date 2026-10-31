@@ -2,7 +2,7 @@
   "name": "act-documentation",
   "private": true,
   "type": "module",
-  "description": "The website of the Agentic Coding Template (ACT), built with Astro.",
+  "description": "The website of Agent Codeyard, built with Astro.",
   "engines": {
     "node": ">=22.12.0"
   },

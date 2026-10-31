@@ -115,10 +115,10 @@ const proposals = [
 
   <Section id="why" title="Generation is no longer the bottleneck">
     <p>Claude Code and Codex produce working changes in minutes. What they do not settle on their own is whether the change does what was asked, whether someone other than its author checked it, whether the checks ran on exactly that code, and who decided it may ship.</p>
-    <p>ACT is the workflow around the agents. It does not write code. It turns an approved plan into Issues, has one agent implement and an agent of another provider review, records the evidence for every acceptance criterion, and leaves the merge to you. Everything runs from your repository with shell scripts and plain files; there is no platform to host.</p>
+    <p>Agent Codeyard is the workflow around the agents. It does not write code. It turns an approved plan into Issues, has one agent implement and an agent of another provider review, records the evidence for every acceptance criterion, and leaves the merge to you. Everything runs from your repository with shell scripts and plain files; there is no platform to host.</p>
     <div class="ledger" role="group" aria-label="Who does what">
       <div><h3>The agents</h3><ul><li>Write the code and the tests</li><li>Review a change, read-only</li><li>Propose what to do with each finding</li></ul></div>
-      <div><h3>ACT</h3><ul><li>Computes the risk level of each change</li><li>Picks the agent and model for the level</li><li>Refuses a review by the implementer's own provider</li><li>Commits only verified, reviewed, complete work</li></ul></div>
+      <div><h3>Codeyard</h3><ul><li>Computes the risk level of each change</li><li>Picks the agent and model for the level</li><li>Refuses a review by the implementer's own provider</li><li>Commits only verified, reviewed, complete work</li></ul></div>
       <div><h3>You</h3><ul><li>Approve the plan</li><li>Answer what the agents cannot decide</li><li>Approve protected changes</li><li>Merge</li></ul></div>
     </div>
   </Section>
@@ -242,7 +242,7 @@ const proposals = [
       </ol>
     </div>
     <div class="split">
-      <div><h3>ACT enforces</h3><ul>
+      <div><h3>Codeyard enforces</h3><ul>
         <li>The risk level, and that no agent lowers it</li>
         <li>A reviewer of another provider than the implementer</li>
         <li>Verification before review and before commit</li>
@@ -260,7 +260,7 @@ const proposals = [
     </div>
   </Section>
 
-  <Section id="runs" title="ACT builds ACT">
+  <Section id="runs" title="Codeyard builds Codeyard">
     <Fragment slot="note">Recent changes to this repository, made with its own workflow. <a href={href("examples/")}>Followed in detail</a>.</Fragment>
     <Table>
       <caption>From the run records and the reviews published on each Issue. Verification is one full run of <code>verify.sh</code> on the maintainer's server.</caption>
@@ -316,7 +316,7 @@ const proposals = [
       <li><b>Nothing changes by itself.</b> Each proposal names its place, and you take it through the review and approval there.</li>
       <li><b>Repeatable, and nothing counted twice.</b> Each analysis keeps its input and sources; evidence an earlier analysis used is marked as such.</li>
     </ul>
-    <p class="needs">ACT ran it on itself on 28 October 2026: 41 runs of 19 features. Among the findings: in five runs the reviewer raised a fixed finding again as unresolved; six of seven failed runs recorded no reason for the stop; the self-test suite had grown from 463 s to 915 s in two days. Five proposals became Issues, all merged:</p>
+    <p class="needs">Codeyard ran it on itself on 28 October 2026: 41 runs of 19 features. Among the findings: in five runs the reviewer raised a fixed finding again as unresolved; six of seven failed runs recorded no reason for the stop; the self-test suite had grown from 463 s to 915 s in two days. Five proposals became Issues, all merged:</p>
     <Table>
       <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col">result</th></tr></thead>
       <tbody>

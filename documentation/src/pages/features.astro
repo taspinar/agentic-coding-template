@@ -47,7 +47,7 @@ const record = `{"schema":"run-record/v1",[...]"time":"2026-10-30T19:27:28Z",
  "type":"agent-start","role":"reviewer","profile":"read-only",
  "agent":"codex","model":"gpt-6-luna","level":"medium",[...]}`;
 ---
-<Base title="Features" description="The engineering problems ACT answers around Claude Code and Codex: requirements and architecture before code, isolated features, evidence per criterion, independent review, process that scales with risk, safe unattended runs and human authority.">
+<Base title="Features" description="The engineering problems Agent Codeyard answers around Claude Code and Codex: requirements and architecture before code, isolated features, evidence per criterion, independent review, process that scales with risk, safe unattended runs and human authority.">
   <PageHead title="Features" lede="Code generation is one step of engineering. These are the problems around it that the workflow answers, each with a real record it left and the docs page with the detail.">
     <ol class="contents">
       {contents.map((item) => <li><a href={`#${item.id}`}>{item.title}</a></li>)}
@@ -370,7 +370,7 @@ Triage mode: full (the default; .agents/policies/risk.conf of the base has no 'm
       <li><b>Never merges.</b> The run ends at an open pull request and never removes a worktree.</li>
     </ul>
     <pre role="region" class="excerpt" aria-label="Excerpt of the run record of feature 241"><span class="src">.agents/records/feature-241.jsonl · run of PR #249, excerpt</span>{record}</pre>
-    <p>Every run leaves such a record on your machine: each step and its duration, the agent, model and level, the verification seconds, the findings and why a run stopped. <code>report-runs.sh</code> summarises it per feature and <code>analyze-runs.sh</code> lets a read-only analyst propose changes; <a href={href("#learn")}>the analysis of 28 October 2026</a> is how ACT found what to change in itself.</p>
+    <p>Every run leaves such a record on your machine: each step and its duration, the agent, model and level, the verification seconds, the findings and why a run stopped. <code>report-runs.sh</code> summarises it per feature and <code>analyze-runs.sh</code> lets a read-only analyst propose changes; <a href={href("#learn")}>the analysis of 28 October 2026</a> is how Codeyard found what to change in itself.</p>
     <dl class="facts">
       <dt>records</dt><dd><code>.agents/records/feature-&lt;issue&gt;.jsonl</code> in the primary checkout, ignored by Git, format <code>run-record/v1</code> (<a href={`${repoFile("docs/development.md")}#run-records`}><code>docs/development.md</code></a>)</dd>
       <dt>docs</dt><dd><a href={href("docs/technical-reference/#what-is-recorded-on-your-machine")}>What is recorded on your machine</a></dd>
@@ -410,7 +410,7 @@ Triage mode: full (the default; .agents/policies/risk.conf of the base has no 'm
 - scripts/review-feature.sh: the file defines or carries out the workflow and its gate
 - the independent review classified the impact on the architecture as major: [...]</pre>
     <div class="split">
-      <div><h3>ACT enforces</h3><ul>
+      <div><h3>Codeyard enforces</h3><ul>
         <li>The risk level, and that no agent lowers it</li>
         <li>A reviewer of another provider, read-only</li>
         <li>Verification before review and before commit</li>

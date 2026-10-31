@@ -1,4 +1,6 @@
-# Agentic Coding Template
+# Agent Codeyard
+
+Agent Codeyard, formerly Agentic Coding Template (ACT).
 
 A GitHub template for building software with AI coding agents. It provides a
 repeatable workflow for planning projects, implementing features, checking the
