@@ -33,6 +33,12 @@ const history = [
     text: "Agent attribution became configurable and is disabled by default; Codex may write the runtime files it needs. The five proposals of the run analysis of 28 October were built: earlier review decisions in every round, a recorded reason for every stop, timed checks, warnings about undeclared models. Test escalation was narrowed to removed or changed lines, and the owner can raise the level before the first session." },
   { title: "This website", when: "30 October", prs: prs([244, 245, 246, 247, 248]),
     text: "An MIT licence, then the redesign of this site, tracked in #234." },
+  { title: "The first site finished", when: "30–31 October", prs: prs([249, 251, 252]),
+    text: "Features, Examples and About written from the repository's own records; accessibility, performance and publication checked, with a guide for a rename and a custom domain; the browser check detects a missing browser instead of installing one on every run." },
+  { title: "The product-first redesign", when: "31 October", prs: prs([260, 261, 262, 263]),
+    text: "A product-first homepage, from the problem through the route of one feature, risk, review and the owner's gates to the records of one real feature. The workflow map became an explorer with the detail of each step, Features were organised around engineering problems and Examples by risk, and the workflow reference moved into the regrouped docs." },
+  { title: "Agent Codeyard", when: "31 October", prs: prs([264]),
+    text: "The site took the name Agent Codeyard, with a social preview image for every page; the repository, its URLs and the scripts kept their names, so generated projects are unaffected." },
 ];
 
 // The frameworks compared, from the earlier research page, statuses corrected (#235, item 9).
@@ -167,6 +173,7 @@ const improvements = [
 
   <Section id="contribute" title="Source, licence and contributing">
     <dl class="facts">
+      <dt>maintainer</dt><dd>Agent Codeyard is an open-source project by Ahmet Taspinar, founder of <a href="https://jidai.nl/">JIDAI</a>.</dd>
       <dt>source</dt><dd><a href={site.repository}>{site.repository.replace(/^https:\/\//, "")}</a></dd>
       <dt>licence</dt><dd>MIT, in <a href={repoFile("LICENSE")}><code>LICENSE</code></a>. A project created from the template chooses its own licence.</dd>
       <dt>contributing</dt><dd><a href={repoFile("CONTRIBUTING.md")}><code>CONTRIBUTING.md</code></a>: changes start from an Issue, on a feature branch, following <a href={repoFile("AGENTS.md")}><code>AGENTS.md</code></a></dd>
