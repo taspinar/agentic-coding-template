@@ -130,6 +130,19 @@ components:
     textColor: "{colors.ground}"
     rounded: "{rounded.round}"
     size: "1.35rem"
+  reset-button:
+    textColor: "{colors.ink}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.hair}"
+  detail-button:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    rounded: "{rounded.hair}"
+  tab:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.body-sm}"
+  tab-selected:
+    textColor: "{colors.ink}"
   terminal:
     backgroundColor: "{colors.terminal-ground}"
     textColor: "{colors.terminal-ink}"
@@ -180,7 +193,9 @@ Dark theme swaps every token to its `-dark` value via `prefers-color-scheme: dar
 ### Named Rules
 **The One Line Rule.** Green means the route. It appears only on route strokes, link underlines, focus, the mark ring, record highlights, the "changed" label and the hero's second clause. No green backgrounds, panels, badges or decoration.
 
-**The Ink Decides Rule.** Stations and owner gates are ink, never green. The line is green; what happens on it is black (white in dark).
+**The Ink Decides Rule.** Stations and owner gates are ink, never green. The line is green; what happens on it is black (white in dark). One state exception: the station a reader has selected in the workflow explorer is filled `line` (its ring stays ink), and a focused station's symbol is stroked `line`, because selection and focus are direct signals, like the focus outline.
+
+**The Separator Dot Rule.** A green middle dot (`·` in `line-ink`) may separate short facts on one line (hero fact line, scenario summary). It is a separator, not an icon; it disappears when the facts wrap into a grid.
 
 ## Typography
 
@@ -203,7 +218,7 @@ Dark theme swaps every token to its `-dark` value via `prefers-color-scheme: dar
 ### Named Rules
 **The Value in Mono Rule.** Overpass Mono is for code, file/script/model/agent names, setting values, verification seconds and the terminal. Prose, headings, labels, station names and condition notes stay in Overpass. A map sub-label is mono only when it is a value (`verify.sh`, `claude opus`), sans when it is a description (`full triage`, `by you`).
 
-**The Lowercase Label Rule.** Field labels are small, bold, lowercase sans in ink-3. No uppercase tracked labels, no eyebrow text above headings.
+**The Lowercase Label Rule.** Field labels are small, bold, lowercase sans in ink-3. No uppercase tracked labels, no eyebrow text above headings. Terms of a definition list that read as words (reference-field labels, comparison rows, docs sidebar group labels) are sentence case; they are still never uppercase or tracked.
 
 ## Layout
 
@@ -214,6 +229,7 @@ Dark theme swaps every token to its `-dark` value via `prefers-color-scheme: dar
   - **≤1100px:** hero, section grid and annotated record collapse to one column; every SVG map and its legend are hidden and the words list is shown in its place; the mark's tagline hides; the record stops wrapping and scrolls horizontally.
   - **≤760px:** header nav moves to a full-width second row that scrolls horizontally (theme toggle pushed right); ledger and split go to one column; tables stack; section padding drops to s-7, hero top to s-6.
 - **Measures:** prose 68ch, lede 46ch, caption 80ch, display 14ch.
+- **Docs pages:** a sidebar with links in groups (Concepts, Workflow, Reference, Setup and maintenance); each group label is xs (`t-xs`), bold, ink-3, sentence case, `s-5` above. These are navigation group labels, not kickers: they head a list of links, never a heading. On wide screens the "On this page" list of a long reference page stays beside the text (sticky, like the section header column); in one column it sits above the text between hairlines.
 
 ## Elevation & Depth
 
@@ -250,8 +266,39 @@ A `figure` between hairlines: title-level heading left, switches right, SVG map,
 ### Converging map and rules list (Learn from your runs)
 The same line grammar for many-to-one: short green feature lines end in ring stations (the run records) and join the trunk at 45° into one station (`Analysis`, sub-label `analyze-runs.sh` in mono, `read-only` in sans). A filled diamond (`You decide`) follows on the ink line, which then fans out at 45° into the places a proposal can go, each ending in a ring with its label to the right. Text in this map is set larger (station 18, sub 16, note 15 viewBox units) because its viewBox is wider. Below 1100px it gives way to its words list. The rules beneath it use `.rules`: a two-column list (one column ≤760px) headed by a 2px ink rule, with each item a bold lead-in sentence in ink followed by ink-2 text.
 
+### Workflow explorer (/workflow)
+The route map with switches, extended into a tool for finding one step.
+- **Scenario summary:** above the switches, a row headed by a 2px ink rule with a hairline below: the plain-language summary of the current switch state in body size 700 ink (`Medium risk · standard profile · step by step`, parts separated by green dots), the map's caption text under it in small ink-2 (the figure's own caption is hidden, not duplicated; the summary is `aria-live="polite"`), and a Reset button right (small 600 ink, 1px hairline border, 2px corners, `rule-strong` on hover) that restores medium / standard / step by step / both / all paths.
+- **Grouped switches:** two rows. Primary row: `risk`, `profile`, `run`. Minor row: `part`, `situation`, options in xs type, with a hairline and `s-3` above it.
+- **Conditional routes stay visible by default:** with the situation switch at "all paths", every dashed branch and the outlined "you answer" diamond are drawn, softened (dashed `rule-strong`, ink-3 notes); choosing a situation draws that branch as taken. A reader sees that the exceptions exist before asking for one.
+- **Clickable stations:** stations and gates with details are buttons (`tabindex="0"`, `aria-label="Details: …"`, Enter/Space). Focus: the station symbol's stroke turns `line` at 6px (no outline box). Hover: the station name gets a green underline. Selected: ring filled `line`, labels in the heavy weight.
+- **Hint:** one small ink-2 line under the map naming what selecting a step shows.
+- **Step detail panel:** a section under a 2px ink rule. Head row: heading at `t-xl`, heavy weight, receiving focus on keyboard open; a Close link-button right (small 600 ink-2, `rule-strong` underline) that returns focus to the station. Tabs Overview / Technical / Failure states: small 600 ink-2 text buttons over a hairline, gap `s-5`; the selected tab is ink with a 3px green inset underline (the nav underline). ArrowLeft/ArrowRight move between tabs (roving tabindex). Overview: the step's summary at body size plus Who acts and Gate or decision; Technical: Command and Inputs and outputs; Failure states: Stops, retries and exceptions — all as reference fields. It ends with a small ink-2 line "In the reference:" linking the matching reference steps.
+- **Narrow screens:** where the words list replaces the map, each item with details gets a "Details" button after its name (xs 600 ink-2, 1px hairline border, 2px corners) and the same panel opens inside that list item, heading at `t-lg`, tab text small.
+
+### Reference fields
+A definition list on a 12rem label column and a fluid value column (gap `s-2` × `s-5`, small text, wide measure). Each row has a hairline above; labels 700 ink. Five fixed fields, always in this order: **Who acts**, **Command**, **Inputs and outputs**, **Gate or decision**, **Stops, retries and exceptions**. Where a field gathers several original entries, each keeps its original sub-label inline before the text (`input`, `result`, `your decision`…) in 600 ink-3. A field with no content is omitted (owner decision: no "none" rows). At ≤760px label and value stack in one column. On the workflow reference page every step is a `section` with a hairline and `s-4` above, its h3, one summary paragraph, then its reference fields; stages are h2.
+
 ### Words list (map fallback and text alternative)
 An ordered list with a 6px green spine; each item gets a ring marker (0.95rem, 3.5px ink); owner-gate items get a filled ink diamond. Station name in 700, sub-label in body-small ink-2 (mono when a value), conditions as small ink-2 sentences. It is referenced by the map's `aria-describedby`, is shown instead of the map at ≤1100px, and follows the switch state (bypassed stations hidden).
+
+### Fact line (homepage hero)
+Directly under the hero grid, spanning both columns: one line of four short facts between two hairlines (`s-3` padding, `s-6` above), small 600 ink, separated by green middle dots (`line-ink`, `s-3` either side). At ≤760px it becomes a two-column grid without dots. Never tiles, cards, numbers-as-stats or icons.
+
+### Handoff
+Implementer and reviewer side by side under a 2px ink rule: three columns (fluid / auto, min 9rem / fluid). Each side is an h3 at body size and a small ink-2 bullet list. Between them a horizontal 6px green line (`stroke`, `line`) labelled "the content it checked" in xs 600 ink-2 on `ground`, set just above the line; `aria-hidden`, since both lists already say it. At ≤760px it stacks: implementer, the line, reviewer.
+
+### Gates list
+An ordered list of the owner's decision points on a vertical 6px ink line (it is the ink planning line, not the green route). Each item has a diamond marker on the line: filled ink = you decide, outlined (2.5px ink, `ground` fill) = you answer when asked. Item: a bold name on its own line, then one small ink-2 sentence; wide measure.
+
+### Artifact trail
+The records one real change left, as a line map: a 6px green line along the top of a six-column grid, a ring station (0.8rem, 3px ink, `ground` fill) on the line above each item, and a filled ink diamond above the last (the owner's merge). Each item: bold name, an optional real link (600) to the Issue or PR, and one small ink-2 line. Six columns, three at ≤1100px, and at ≤760px a vertical list with the green line on the left and the stations on it. Real records only.
+
+### Closing call to action
+The last homepage section, under a 2px ink rule with s-8 padding: a heading at display size and tracking (max 16ch), the same actions as the hero (primary button plus a text link), and one line of small ink-2 print. No other content.
+
+### Comparison grid
+Two columns under a 2px ink rule, gap `s-6`; each column an h3 at body size over a hairline, then a definition list: xs 700 ink-3 sentence-case terms and small values. Rows are in the same order on both sides so they read across. One column at ≤760px. Used for step by step versus unattended.
 
 ### Ledger
 Three equal columns under a 2px ink rule, separated by 1px hairlines; h3 at body size, small ink-2 bullet lists. Used for "who does what". One column with hairlines between at ≤760px.
@@ -285,6 +332,8 @@ Dark block in both themes, 2px corners, s-5 padding, mono 0.88rem/1.75; comments
 - **Do** use Overpass Mono only for code, file, script and model names, values and seconds.
 - **Do** separate with 1px hairlines and head structures with 2px ink rules.
 - **Do** use real evidence only: linked Issues, PRs, review rounds and measured verification seconds.
+- **Do** keep conditional routes visible, softened, by default; a switch draws the chosen one as taken.
+- **Do** give every process step the five reference fields in their fixed order, omitting empty ones.
 
 ### Don't:
 - **Don't** use cards: no bordered, rounded or raised boxes around content groups; tinted grounds are for verbatim artifacts only.
@@ -294,3 +343,4 @@ Dark block in both themes, 2px corners, s-5 padding, mono 0.88rem/1.75; comments
 - **Don't** invent statistics, testimonials, user counts or benchmarks.
 - **Don't** put eyebrow or kicker text above headings, or use uppercase tracked labels.
 - **Don't** add a second accent colour or encode meaning in colour alone.
+- **Don't** follow the Agent Codeyard blueprint where it conflicts with this file (owner decision): this DESIGN.md wins. No eyebrows, a neutral ground, no tiles or feature cards.

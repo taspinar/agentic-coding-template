@@ -492,3 +492,44 @@ html:not(.js) .map-actions { display: none; }
   .docs-layout { gap: var(--s-4); }
   .docs-toc { padding-bottom: var(--s-3); margin-bottom: var(--s-4); }
 }
+
+/* Home in the product-first order (#254, design/prototype-v2/proto-home.css):
+   the fact line, the handoff, the gates list, the artifact trail and the
+   closing call to action. */
+.facts-line { display: flex; flex-wrap: wrap; gap: var(--s-2) 0; margin: var(--s-6) 0 0; padding: var(--s-3) 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); font: var(--w-semibold) var(--t-sm) var(--sans); color: var(--ink); max-width: none; }
+.facts-line span + span::before { content: "·"; color: var(--line-ink); margin: 0 var(--s-3); }
+.handoff { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s-5); align-items: stretch; border-top: 2px solid var(--ink); padding-top: var(--s-4); }
+.handoff h3 { font-size: var(--t-md); margin-bottom: var(--s-2); }
+.handoff ul { margin: 0; padding-left: var(--s-indent); font-size: var(--t-sm); color: var(--ink-2); }
+.handoff li + li { margin-top: var(--s-1); }
+.handoff-mid { display: flex; align-items: center; margin: 0; position: relative; min-width: 9rem; }
+.handoff-mid::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: var(--stroke); background: var(--line); border-radius: 3px; }
+.handoff-mid span { position: relative; margin: 0 auto; background: var(--ground); padding: 0 var(--s-2); font: var(--w-semibold) var(--t-xs) var(--sans); color: var(--ink-2); transform: translateY(-1.3rem); }
+.gates { list-style: none; margin: 0; padding: 0 0 0 var(--s-route-indent); position: relative; }
+.gates::before { content: ""; position: absolute; left: 0.45rem; top: 0.6rem; bottom: 0.6rem; width: var(--stroke); background: var(--ink); border-radius: 3px; }
+.gates li { position: relative; padding: 0 0 var(--s-4) var(--s-3); max-width: var(--measure-wide); }
+.gates li::before { content: ""; position: absolute; left: -1.43rem; top: 0.3rem; width: 0.95rem; height: 0.95rem; transform: rotate(45deg) scale(0.85); background: var(--ink); }
+.gates li.ask::before { background: var(--ground); border: 2.5px solid var(--ink); }
+.gates b { display: block; }
+.gates span { font-size: var(--t-sm); color: var(--ink-2); }
+.trail { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: var(--stroke) solid var(--line); }
+.trail li { padding: var(--s-3) var(--s-3) 0 0; font-size: var(--t-sm); position: relative; }
+.trail li::before { content: ""; position: absolute; top: calc(-0.5 * var(--stroke) - 0.55rem); left: 0; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--ground); border: 3px solid var(--ink); }
+.trail li:last-child::before { border-radius: 0; transform: rotate(45deg); background: var(--ink); }
+.trail b { display: block; }
+.trail a { font-weight: var(--w-semibold); }
+.trail span { display: block; color: var(--ink-2); }
+.cta { padding: var(--s-8) var(--gutter); border-top: 2px solid var(--ink); }
+.cta h2 { font-size: var(--t-display); max-width: 16ch; letter-spacing: var(--track-display); }
+.cta .actions { margin-top: var(--s-5); }
+.cta p { color: var(--ink-2); font-size: var(--t-sm); margin-top: var(--s-4); }
+@media (max-width: 1100px) { .trail { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--s-5); } }
+@media (max-width: 760px) {
+  .facts-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2) var(--s-4); }
+  .facts-line span + span::before { content: none; }
+  .handoff { grid-template-columns: minmax(0, 1fr); }
+  .handoff-mid { min-height: 2.5rem; }
+  .trail { grid-template-columns: minmax(0, 1fr); border-top: 0; border-left: var(--stroke) solid var(--line); padding-left: var(--s-4); }
+  .trail li { padding: 0 0 var(--s-4); }
+  .trail li::before { top: 0.2rem; left: calc(-1 * var(--s-4) - 0.5 * var(--stroke) - 0.55rem); }
+}
