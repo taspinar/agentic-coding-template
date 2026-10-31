@@ -18,5 +18,23 @@ jobs:
           node-version-file: documentation/.nvmrc
           cache: npm
           cache-dependency-path: documentation/package-lock.json
+      - name: Install documentation browser dependencies
+        if: hashFiles('documentation/.nvmrc') != ''
+        working-directory: documentation
+        run: npm ci --no-audit --no-fund && npx --no-install playwright install --with-deps chromium
       - name: Verify template/project
         run: ./scripts/verify.sh --all
+      - name: Attach documentation screenshots and reports
+        id: documentation-artifact
+        if: always() && hashFiles('documentation/reports/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-review
+          path: documentation/reports/
+          retention-days: 30
+      - name: Link the visual review from the pull request check
+        if: always() && hashFiles('documentation/reports/**') != ''
+        env:
+          ARTIFACT_URL: ${{ steps.documentation-artifact.outputs.artifact-url }}
+        run: |
+          echo "[Download documentation screenshots and reports]($ARTIFACT_URL). Review every page at 375, 768 and 1440 px in both themes against documentation/design/PRODUCT.md and documentation/validation.md." >> "$GITHUB_STEP_SUMMARY"

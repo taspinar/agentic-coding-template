@@ -182,7 +182,7 @@ const proposals = [
   <Section id="trace" title="Every claim has a record">
     <Fragment slot="note">From the pull request of <a href={pull(222)}>#222</a>, written by <code>finish-feature.sh</code>.</Fragment>
     <div class="artifact">
-      <pre class="record" aria-label="Excerpt of the description of pull request 222"><span class="src">{repositoryName}/pull/222 · excerpt</span><span class="pin" aria-hidden="true">1</span><mark>Completion: complete</mark>
+      <pre role="region" tabindex="0" class="record" aria-label="Excerpt of the description of pull request 222"><span class="src">{repositoryName}/pull/222 · excerpt</span><span class="pin" aria-hidden="true">1</span><mark>Completion: complete</mark>
 - met: A complete review in round 3 or later, started
   by run-feature.sh or by hand without --changes,
   receives the decisions of every approved triage …
@@ -301,7 +301,7 @@ const proposals = [
 
   <Section id="start" title="Start a project">
     <Fragment slot="note">The full <a href={href("docs/")}>getting-started guide</a>.</Fragment>
-    <pre class="term" aria-label="Terminal commands"><span class="c"># a new repository from the template</span>
+    <pre role="region" tabindex="0" class="term" aria-label="Terminal commands"><span class="c"># a new repository from the template</span>
 <span class="p">$ </span>gh repo create my-project --template {templateName} --private --clone
 <span class="p">$ </span>cd my-project
 <span class="p">$ </span>./scripts/doctor.sh

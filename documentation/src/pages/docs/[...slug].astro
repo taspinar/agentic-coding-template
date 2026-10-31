@@ -24,15 +24,19 @@ const link = (entry: typeof page) => href(`docs/${entry.id === "index" ? "" : en
   <div class="wrap docs-layout">
     <aside class="docs-sidebar">
       <DocsSearch />
+      <details class="docs-disclosure">
+        <summary>Documentation pages</summary>
       <nav aria-label="Documentation">
         <ul>{pages.map(entry => <li><a href={link(entry)} aria-current={entry.id === page.id ? "page" : undefined}>{entry.data.title}</a></li>)}</ul>
       </nav>
+      </details>
     </aside>
     <div class="docs-body">
-      {headings.length > 0 && <nav class="docs-toc" aria-label="On this page">
-        <b>On this page</b>
+      {headings.length > 0 && <details class="docs-disclosure docs-toc">
+        <summary>On this page</summary>
+        <nav aria-label="On this page">
         <ul>{headings.filter(h => h.depth <= 3).map(h => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}</ul>
-      </nav>}
+      </nav></details>}
       <article data-search><Prose><Content /></Prose></article>
       <nav class="docs-pagination" aria-label="Previous and next pages">
         {previous && <a rel="prev" href={link(previous)}>Previous: {previous.data.title}</a>}
@@ -41,3 +45,11 @@ const link = (entry: typeof page) => href(`docs/${entry.id === "index" ? "" : en
     </div>
   </div>
 </Base>
+
+<script>
+  const narrow = matchMedia("(max-width: 760px)");
+  const disclosures = document.querySelectorAll<HTMLDetailsElement>(".docs-disclosure");
+  const adapt = () => disclosures.forEach(element => { element.open = !narrow.matches; });
+  adapt();
+  narrow.addEventListener("change", adapt);
+</script>

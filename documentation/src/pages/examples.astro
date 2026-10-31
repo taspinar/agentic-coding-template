@@ -109,7 +109,7 @@ const rounds = [
       </tbody>
     </Table>
     <p>Round 3 is the review doing its job: the fix of round 1 was correct, but the new rule could still let a re-raised finding lower its severity, which would have weakened the very gate the Issue protects. Round 5 found one minor point, and the triage accepted it with a rationale, quoted below.</p>
-    <pre class="excerpt" aria-label="Excerpt of the triage of round 5"><span class="src">{issue(217).replace(/^https:\/\//, "")} · round 5 · triage, excerpt</span>### MIN1. The review schema makes `previous` required
+    <pre role="region" class="excerpt" aria-label="Excerpt of the triage of round 5"><span class="src">{issue(217).replace(/^https:\/\//, "")} · round 5 · triage, excerpt</span>### MIN1. The review schema makes `previous` required
 
 - Severity: minor
 - Rationale: Listing `previous` in `required` while allowing null
@@ -137,7 +137,7 @@ const rounds = [
 
     <h3>The pull request</h3>
     <p>The description of <a href={pull(222)}>PR #222</a> carries the completion record with evidence for all six criteria, the verification, the review line, the risk level with its reasons, and the merge approval block. The <a href={href("#trace")}>home page</a> shows it annotated.</p>
-    <pre class="excerpt" aria-label="Excerpt of the description of pull request 222"><span class="src">{pull(222).replace(/^https:\/\//, "")} · excerpt</span>Review: round 5, PASS WITH MINOR FINDINGS, by codex (gpt-6-luna); triage published on #217
+    <pre role="region" class="excerpt" aria-label="Excerpt of the description of pull request 222"><span class="src">{pull(222).replace(/^https:\/\//, "")} · excerpt</span>Review: round 5, PASS WITH MINOR FINDINGS, by codex (gpt-6-luna); triage published on #217
 
 Merge approval:
 - required from the project owner, for exactly this commit

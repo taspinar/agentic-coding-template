@@ -404,6 +404,7 @@ pre.astro-code code { font-size: inherit; background: none; padding: 0; }
 .docs-body { min-width: 0; }
 .docs-toc { border-bottom: 1px solid var(--rule); padding-bottom: var(--s-5); margin-bottom: var(--s-6); font-size: var(--t-sm); }
 .docs-toc ul { padding-left: var(--s-indent); }
+.docs-toc a { display: inline-block; min-height: 24px; }
 .docs-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-4); margin-top: var(--s-7); padding-top: var(--s-4); border-top: 1px solid var(--rule); }
 .docs-search { margin-bottom: var(--s-5); }
 .docs-search input { width: 100%; padding: var(--s-2); margin-top: var(--s-2); font: inherit; background: var(--ground); color: var(--ink); border: 1px solid var(--rule-strong); }
@@ -478,4 +479,16 @@ html:not(.js) .map-actions { display: none; }
 .excerpt .src { display: block; color: var(--ink-3); margin-bottom: var(--s-2); }
 @media (max-width: 760px) {
   .contents { columns: 1; }
+}
+
+/* Native disclosures keep the article close on small screens, including without JS. */
+.docs-disclosure summary { cursor: pointer; font-weight: var(--w-bold); }
+@media (min-width: 761px) {
+  html.js .docs-disclosure > summary { display: none; }
+  html.js .docs-disclosure > nav { display: block; }
+  html.js .docs-disclosure::details-content { content-visibility: visible; }
+}
+@media (max-width: 760px) {
+  .docs-layout { gap: var(--s-4); }
+  .docs-toc { padding-bottom: var(--s-3); margin-bottom: var(--s-4); }
 }
