@@ -1,6 +1,7 @@
 ---
-// Real features of this repository, built with its own workflow. The example
-// candidates are those of the audit on #235. Every figure comes from a source
+// Real features of this repository, built with its own workflow, ordered by
+// their risk level. The high-risk candidates are those of the audit on #235;
+// #241 is the medium feature of the run records with a review finding. Every figure comes from a source
 // named beside it: the Issue and its published review and triage comments,
 // the pull request description that finish-feature.sh and publish-feature.sh
 // wrote, or the run record of the feature (.agents/records/feature-<n>.jsonl
@@ -13,9 +14,8 @@ import { href, issue, pull, repoFile } from "../lib/links";
 
 const comment = (number: number, id: string) => `${issue(number)}#issuecomment-${id}`;
 
-// The five features of the audit's candidate list, from their run records and pull requests.
+// The other high-risk features of the audit's candidate list, from their run records and pull requests.
 const features = [
-  { issue: 217, pull: 222, anchor: "e2e", change: "Give every later review round the earlier decisions", rounds: "5", findings: "2 major fixed, 1 minor accepted", verify: "1046, 1049, 1118", run: "1 h 30 min" },
   { issue: 189, pull: 194, anchor: "owner", change: "Compute the risk level of a feature from one policy", rounds: "3", findings: "none", verify: "556, 575, 572", run: "four runs; the implementer resumed by hand" },
   { issue: 193, pull: 199, anchor: "repair", change: "Treat performance budgets as measurements", rounds: "4", findings: "1 major, re-raised once; 1 minor; all fixed", verify: "761, 762, 761", run: "1 h 18 min" },
   { issue: 204, pull: 205, anchor: "short", change: "Show the reviewer no change in paths the fingerprint leaves out", rounds: "1", findings: "none", verify: "909", run: "38 min" },
@@ -38,42 +38,42 @@ const rounds = [
   { round: 4, kind: "the fixes", verdict: "no findings", finding: "–", decision: "–" },
   { round: 5, kind: "complete feature", verdict: "PASS WITH MINOR FINDINGS", finding: "MIN1, minor: the review schema makes previous required", decision: "ACCEPT", link: comment(217, "6483051924") },
 ];
+
+// The review rounds of #241: the run record, the comment on the Issue and the description of PR #249.
+const mediumRounds = [
+  { round: 1, kind: "complete feature", verdict: "CHANGES REQUIRED", finding: "M1, major: examples do not link each candidate to its source files", decision: "FIX_NOW", link: comment(241, "6531925164") },
+  { round: 2, kind: "the fixes", verdict: "no findings", finding: "–", decision: "–" },
+  { round: 3, kind: "complete feature", verdict: "PASS", finding: "–", decision: "–" },
+];
 ---
-<Base title="Examples" description="Features of this repository built with ACT, followed from the Issue to the pull request: risk level, agents, review rounds, triage, verification evidence and the merge.">
-  <PageHead title="Examples" lede="ACT is built with ACT. These are features of this repository, followed from the Issue to the merged pull request, with the records each step left.">
+<Base title="Examples" description="Features of this repository built with ACT, ordered by risk: a high-risk and a medium-risk run followed from the Issue to the pull request, with agents, review rounds, triage, verification evidence and the merge.">
+  <PageHead title="Examples" lede="ACT is built with ACT. These are real runs of this repository, ordered by risk, followed from the Issue to the merged pull request with the records each step left.">
     <ol class="contents">
-      <li><a href="#features">Five features at a glance</a></li>
-      <li><a href="#e2e">One feature end to end: #217</a></li>
-      <li><a href="#owner">The owner in the loop: #189</a></li>
-      <li><a href="#repair">A fix that did not hold: #193</a></li>
-      <li><a href="#short">The short path: #204 and #16</a></li>
+      <li><a href="#levels">The examples by risk</a></li>
+      <li><a href="#e2e">High risk, end to end: #217</a></li>
+      <li><a href="#features">High risk, more runs: #189, #193, #204, #16</a></li>
+      <li><a href="#medium">Medium risk: #241</a></li>
+      <li><a href="#absent">What is not shown</a></li>
       <li><a href="#sources">Where the figures come from</a></li>
     </ol>
   </PageHead>
 
-  <Section id="features" title="Five features at a glance">
-    <Fragment slot="note">From the run record of each feature and the description of its pull request. <a href="#sources">Sources</a>.</Fragment>
-    <p>All five changed the workflow and its gate, so all five were high risk: the full triage applied, and each pull request said that the merge needed the owner's approval.</p>
+  <Section id="levels" title="The examples by risk">
+    <Fragment slot="note">The levels as each run recorded them. <a href={href("features/#risk")}>Risk-proportionate workflow</a>.</Fragment>
+    <p class="lede">The risk level of a feature decides which model writes it and what the review rounds require. This repository runs the shipped risk policy, without a <code>profile</code> line, so every feature is medium or high.</p>
     <Table>
-      <caption>Verification: each full run of <code>verify.sh</code>, in seconds, on the maintainer's server; every other verification of the feature reused a recorded pass. Run: from the start of <code>run-feature.sh</code> to the pull request.</caption>
-      <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col" class="num">rounds</th><th scope="col">findings</th><th scope="col">full verifications (s)</th><th scope="col">run</th><th scope="col">result</th></tr></thead>
+      <caption>From the risk lines of each pull request description and the run records. Run: from the start of <code>run-feature.sh</code> to the pull request.</caption>
+      <thead><tr><th scope="col">level</th><th scope="col">example</th><th scope="col">why this level</th><th scope="col" class="num">rounds</th><th scope="col">run</th><th scope="col">merge approval</th></tr></thead>
       <tbody>
-        {features.map((row) => (
-          <tr>
-            <th scope="row"><a href={`#${row.anchor}`}>#{row.issue}</a></th>
-            <td data-col="change">{row.change}</td>
-            <td data-col="rounds" class="num">{row.rounds}</td>
-            <td data-col="findings">{row.findings}</td>
-            <td data-col="full verifications (s)" class="k">{row.verify}</td>
-            <td data-col="run">{row.run}</td>
-            <td data-col="result"><a href={pull(row.pull)}>PR #{row.pull}</a></td>
-          </tr>
-        ))}
+        <tr><th scope="row"><span class="lvl high">high</span></th><td data-col="example"><a href="#e2e">#217</a>, <a href={pull(222)}>PR #222</a></td><td data-col="why this level">It changes the reviewer's contract, the review schema and gate scripts</td><td data-col="rounds" class="num">5</td><td data-col="run">1 h 30 min</td><td data-col="merge approval">required</td></tr>
+        <tr><th scope="row"><span class="lvl medium">medium</span></th><td data-col="example"><a href="#medium">#241</a>, <a href={pull(249)}>PR #249</a></td><td data-col="why this level">Website pages that no class of the policy names: the default</td><td data-col="rounds" class="num">3</td><td data-col="run">13 min</td><td data-col="merge approval">not required</td></tr>
+        <tr><th scope="row"><span class="lvl">low</span></th><td data-col="example" class="off">–</td><td data-col="why this level">Exists only under <code>profile: light</code>, which this repository does not use</td><td data-col="rounds" class="num off">–</td><td data-col="run" class="off">–</td><td data-col="merge approval" class="off">–</td></tr>
       </tbody>
     </Table>
+    <p>Under the shipped policy, medium and high run the same rounds: full verification, full review and full triage. What the level changed between these two runs is the model of the fixes and the owner's approval of the merge.</p>
   </Section>
 
-  <Section id="e2e" title="One feature end to end: #217">
+  <Section id="e2e" title="High risk, end to end: #217">
     <Fragment slot="note"><a href={issue(217)}>Issue #217</a>, <a href={pull(222)}>PR #222</a>. One unattended run of <code>run-feature.sh</code>, 28 October 2026.</Fragment>
     <p class="lede">The feature that gave every later review round the decisions of the earlier ones. It came out of ACT's analysis of its own runs, and it is followed here from its requirements to the merge.</p>
 
@@ -123,7 +123,22 @@ const rounds = [
     <p>The full verification ran three times, once after each writing session: 1046, 1049 and 1118 seconds. Eight more times a step required a verification and reused the recorded pass, because the content had not changed since. Every review report names the reviewed tree and the verification that passed for it.</p>
 
     <h3>The run</h3>
-    <ol class="words timeline">
+    <figure class="plain">
+      <svg class="lines" viewBox="0 0 1300 150" role="img" aria-labelledby="run-217-t" aria-describedby="run-217-words">
+        <title id="run-217-t">The run of #217: Issue, implementation, round 1 and its fixes, rounds 2 and 3 and their fixes, rounds 4 and 5, commit and pull request, and the merge by the owner.</title>
+        <path class="l2" d="M70 60 H1230"/>
+        <circle class="dot" cx="70" cy="60" r="10"/><text class="st" x="70" y="97" text-anchor="middle">Issue</text><text class="sub k" x="70" y="117" text-anchor="middle">21:37</text>
+        <circle class="dot" cx="215" cy="60" r="10"/><text class="st" x="215" y="97" text-anchor="middle">Implement</text><text class="sub k" x="215" y="117" text-anchor="middle">21:38</text>
+        <circle class="dot" cx="360" cy="60" r="10"/><text class="st" x="360" y="97" text-anchor="middle">Round 1</text><text class="sub k" x="360" y="117" text-anchor="middle">22:22</text>
+        <circle class="dot" cx="505" cy="60" r="10"/><text class="st" x="505" y="97" text-anchor="middle">Fixes</text><text class="sub k" x="505" y="117" text-anchor="middle">22:22</text>
+        <circle class="dot" cx="650" cy="60" r="10"/><text class="st" x="650" y="97" text-anchor="middle">Rounds 2–3</text><text class="sub k" x="650" y="117" text-anchor="middle">22:43</text>
+        <circle class="dot" cx="795" cy="60" r="10"/><text class="st" x="795" y="97" text-anchor="middle">Fixes</text><text class="sub k" x="795" y="117" text-anchor="middle">22:43</text>
+        <circle class="dot" cx="940" cy="60" r="10"/><text class="st" x="940" y="97" text-anchor="middle">Rounds 4–5</text><text class="sub k" x="940" y="117" text-anchor="middle">23:07</text>
+        <circle class="dot" cx="1085" cy="60" r="10"/><text class="st" x="1085" y="97" text-anchor="middle">Commit, PR</text><text class="sub k" x="1085" y="117" text-anchor="middle">23:08</text>
+        <rect class="gate" x="1220" y="50" width="20" height="20" transform="rotate(45 1230 60)"/><text class="st" x="1230" y="97" text-anchor="middle">Merge</text><text class="sub k" x="1230" y="117" text-anchor="middle">29 Oct, 01:14</text>
+      </svg>
+    </figure>
+    <ol class="words timeline" id="run-217-words">
       <li><b>Issue created</b><small class="k">21:37 UTC</small><p>From the run analysis, with six acceptance criteria.</p></li>
       <li><b>Implementation</b><small class="k">21:38 – 22:22</small><p>claude opus, unattended; verification 1046 s; completion record: complete.</p></li>
       <li><b>Round 1 and triage</b><small class="k">22:22</small><p>M1 major, FIX_NOW.</p></li>
@@ -148,7 +163,29 @@ Merge approval:
 - approval request: .agents/approval-requests/217.json (asks and records; grants nothing)</pre>
   </Section>
 
-  <Section id="owner" title="The owner in the loop: #189">
+  <Section id="features" title="High risk, more runs">
+    <Fragment slot="note">From the run record of each feature and the description of its pull request. <a href="#sources">Sources</a>.</Fragment>
+    <p>Four more features of the audit's candidate list. All four changed the workflow and its gate, so all were high risk: the full triage applied, and each pull request said that the merge needed the owner's approval.</p>
+    <Table>
+      <caption>Verification: each full run of <code>verify.sh</code>, in seconds, on the maintainer's server; every other verification of the feature reused a recorded pass. Run: from the start of <code>run-feature.sh</code> to the pull request.</caption>
+      <thead><tr><th scope="col">issue</th><th scope="col">change</th><th scope="col" class="num">rounds</th><th scope="col">findings</th><th scope="col">full verifications (s)</th><th scope="col">run</th><th scope="col">result</th></tr></thead>
+      <tbody>
+        {features.map((row) => (
+          <tr>
+            <th scope="row"><a href={`#${row.anchor}`}>#{row.issue}</a></th>
+            <td data-col="change">{row.change}</td>
+            <td data-col="rounds" class="num">{row.rounds}</td>
+            <td data-col="findings">{row.findings}</td>
+            <td data-col="full verifications (s)" class="k">{row.verify}</td>
+            <td data-col="run">{row.run}</td>
+            <td data-col="result"><a href={pull(row.pull)}>PR #{row.pull}</a></td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  </Section>
+
+  <Section id="owner" title="High risk, the owner in the loop: #189">
     <Fragment slot="note"><a href={issue(189)}>Issue #189</a>, <a href={pull(194)}>PR #194</a>, 27 October 2026.</Fragment>
     <p class="lede">The feature that introduced the risk level. The owner sharpened its scope in a comment, and caught a defect before the merge.</p>
     <ul class="rules">
@@ -160,17 +197,94 @@ Merge approval:
     <p>Source files changed by <a href={pull(194)}>PR #194</a>: {changed[194].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
   </Section>
 
-  <Section id="repair" title="A fix that did not hold: #193">
+  <Section id="repair" title="High risk, a fix that did not hold: #193">
     <Fragment slot="note"><a href={issue(193)}>Issue #193</a>, <a href={pull(199)}>PR #199</a>, 27 October 2026.</Fragment>
     <p>The feature that made budget checks measurements. In round 1 the reviewer found that a failing timeout utility was reported as an exceeded budget (major) and that a budget's output was cut short (minor); the triage decided to fix both. In round 2 the reviewer raised the major finding again, as “Unresolved M1”: the fix now treated exit status 128 as a failure of the call, though a measurement can return it. A second fix round resolved it, and rounds 3 and 4 passed. Each round's report and triage is <a href={issue(193)}>on the Issue</a>.</p>
     <p>Source files changed by <a href={pull(199)}>PR #199</a>: {changed[199].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
   </Section>
 
-  <Section id="short" title="The short path: #204 and #16">
+  <Section id="short" title="High risk, the short path: #204 and #16">
     <Fragment slot="note"><a href={pull(205)}>PR #205</a> and <a href={pull(213)}>PR #213</a>, 28 October 2026.</Fragment>
     <p>Most features do not need several rounds. <a href={issue(204)}>#204</a> ran from <code>run-feature.sh</code> to the pull request in 38 minutes: one implementation session, one verification of 909 seconds reused twice, one review that passed. <a href={issue(16)}>#16</a>, the clarification gate itself, took 26 minutes: the implementer received the owner's two comments with the Issue, which settled the design, and the single review passed.</p>
     <p>Source files changed by #204 in <a href={pull(205)}>PR #205</a>: {changed[205].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
     <p>Source files changed by #16 in <a href={pull(213)}>PR #213</a>: {changed[213].map((path, i) => (<>{i > 0 && ", "}<a href={repoFile(path)}><code>{path}</code></a></>))}.</p>
+  </Section>
+
+  <Section id="medium" title="Medium risk: #241">
+    <Fragment slot="note"><a href={issue(241)}>Issue #241</a>, <a href={pull(249)}>PR #249</a>. One unattended run of <code>run-feature.sh</code>, 30 October 2026.</Fragment>
+    <p class="lede">The feature that wrote the first Features, Examples and About pages of this site. It changed website pages only, and it is followed here with the same records as #217.</p>
+
+    <h3>Requirements</h3>
+    <p>The Issue asks for the three pages from real repository evidence, with six acceptance criteria; the first reads “Every statement links to or matches its source; no invented figure or testimonial”, and the Examples criterion asks for examples linked to their Issues, pull requests and source files.</p>
+
+    <h3>Risk level and agents</h3>
+    <dl class="facts">
+      <dt>risk</dt><dd><span class="lvl medium">medium</span>: the four changed files, three pages and the style sheet, are named by no class of <code>risk.conf</code>, so each gets the default. No escalation applied, the reviewer classified the impact on the architecture as minor, and the triage was full, the default.</dd>
+      <dt>implementer</dt><dd><code>claude opus</code>, the plain line <code>implementer</code></dd>
+      <dt>fixes</dt><dd><code>claude opus</code>, the plain line <code>triage-implementer</code>; at high, as in #217, <code>claude fable</code></dd>
+      <dt>review</dt><dd><code>codex gpt-6-luna</code>, read-only</dd>
+      <dt>triage</dt><dd><code>claude sonnet</code>, read-only</dd>
+    </dl>
+
+    <h3>Independent review and triage</h3>
+    <Table>
+      <caption>Rounds 1 and 3 reviewed the complete feature, round 2 only the fix. The triage of round 1 is published on the Issue, marked as approved by an unattended run.</caption>
+      <thead><tr><th scope="col" class="num">round</th><th scope="col">reviewed</th><th scope="col">verdict</th><th scope="col">finding</th><th scope="col">decision</th></tr></thead>
+      <tbody>
+        {mediumRounds.map((row) => (
+          <tr>
+            <th scope="row" class="num">{row.link ? <a href={row.link}>{row.round}</a> : row.round}</th>
+            <td data-col="reviewed">{row.kind}</td>
+            <td data-col="verdict" class="k">{row.verdict}</td>
+            <td data-col="finding" class:list={{ off: row.finding === "–" }}>{row.finding}</td>
+            <td data-col="decision" class:list={["k", { off: row.decision === "–" }]}>{row.decision}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+    <p>A medium feature gets the same review as a high one under the shipped policy, and round 1 shows why: the pages linked the source files of only one example, which the Issue asked for every example. A major finding is always fixed; the fix added the source files of the other four, the same lists this page shows under <a href="#features">High risk, more runs</a>.</p>
+
+    <h3>Verification evidence</h3>
+    <p>The full verification ran twice, after the implementation and after the fix: 14 and 15 seconds, of which 13 were the check of this site. The workflow's own self-tests in <a href={repoFile("scripts/verify-workflow.conf")}><code>verify-workflow.conf</code></a> run only when a workflow file changes. #217 changed several, so its verifications of 1046 to 1118 seconds included that suite, which the file's header records at 915 seconds when its budget was set; #241 changed none. Five more times a step reused the recorded pass.</p>
+
+    <h3>The run</h3>
+    <figure class="plain">
+      <svg class="lines" viewBox="0 0 1100 150" role="img" aria-labelledby="run-241-t" aria-describedby="run-241-words">
+        <title id="run-241-t">The run of #241: implementation, round 1 and its fix, rounds 2 and 3, commit and pull request, and the merge by the owner.</title>
+        <path class="l2" d="M70 60 H1030"/>
+        <circle class="dot" cx="70" cy="60" r="10"/><text class="st" x="70" y="97" text-anchor="middle">Implement</text><text class="sub k" x="70" y="117" text-anchor="middle">19:27</text>
+        <circle class="dot" cx="262" cy="60" r="10"/><text class="st" x="262" y="97" text-anchor="middle">Round 1</text><text class="sub k" x="262" y="117" text-anchor="middle">19:38</text>
+        <circle class="dot" cx="454" cy="60" r="10"/><text class="st" x="454" y="97" text-anchor="middle">Fix</text><text class="sub k" x="454" y="117" text-anchor="middle">19:38</text>
+        <circle class="dot" cx="646" cy="60" r="10"/><text class="st" x="646" y="97" text-anchor="middle">Rounds 2–3</text><text class="sub k" x="646" y="117" text-anchor="middle">19:40</text>
+        <circle class="dot" cx="838" cy="60" r="10"/><text class="st" x="838" y="97" text-anchor="middle">Commit, PR</text><text class="sub k" x="838" y="117" text-anchor="middle">19:40</text>
+        <rect class="gate" x="1020" y="50" width="20" height="20" transform="rotate(45 1030 60)"/><text class="st" x="1030" y="97" text-anchor="middle">Merge</text><text class="sub k" x="1030" y="117" text-anchor="middle">20:09</text>
+      </svg>
+    </figure>
+    <ol class="words timeline" id="run-241-words">
+      <li><b>Implementation</b><small class="k">19:27 – 19:38 UTC</small><p>claude opus, unattended, 642 s; completion record: complete, six of six criteria met.</p></li>
+      <li><b>Round 1 and triage</b><small class="k">19:38</small><p>M1 major, FIX_NOW.</p></li>
+      <li><b>Fix</b><small class="k">19:38 – 19:40</small><p>claude opus, 85 s; verification 15 s.</p></li>
+      <li><b>Rounds 2 and 3</b><small class="k">19:40</small><p>Round 2: no findings. Round 3, the complete feature: PASS.</p></li>
+      <li><b>Commit and pull request</b><small class="k">19:40</small><p><code>finish-feature.sh</code> committed and <code>publish-feature.sh</code> opened PR #249.</p></li>
+      <li class="you"><b>Merge by the owner</b><small class="k">20:09 UTC</small><p>No approval was required; no script merges, so the owner merged it.</p></li>
+    </ol>
+    <pre role="region" class="excerpt" aria-label="Excerpt of the description of pull request 249"><span class="src">{pull(249).replace(/^https:\/\//, "")} · excerpt</span>Review: round 3, PASS, by codex (gpt-6-luna); triage published on #241
+
+Merge approval:
+- not required
+- the independent review classified the impact on the architecture as minor, and no protected path is changed
+[...]
+Risk: medium
+[...]
+- profile: none</pre>
+  </Section>
+
+  <Section id="absent" title="What is not shown">
+    <Fragment slot="note"><a href={repoFile(".agents/policies/risk.conf")}><code>risk.conf</code></a> of this repository; <a href={issue(170)}>Issue #170</a>.</Fragment>
+    <ul class="rules">
+      <li><b>A low-risk run.</b> A low level exists only under <code>profile: light</code>, or with a <code>low:</code> class in <code>risk.conf</code>. This repository has neither, so none of its features was low, and this page does not invent one. Under the light profile a low feature may be committed without a review; the commit and the pull request say so, and the merge then needs your approval.</li>
+      <li><b>Onboarding an existing repository.</b> ACT starts new projects from the template with <code>gh repo create --template</code>. Bringing an existing repository into the workflow is <a href={issue(170)}>planned in #170</a> and not built, so there is no run of it to show.</li>
+    </ul>
   </Section>
 
   <Section id="sources" title="Where the figures come from">
